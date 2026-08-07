@@ -4,10 +4,11 @@
 //   1. makes sure the hangar server is running (spawning it only if it isn't),
 //   2. shows the web UI in a window.
 //
-// No preload, no IPC, no packaging. The renderer talks to the server directly
-// over HTTP, exactly as it does in a browser.
+// In development it uses the source server and Vite. In a packaged build it
+// uses the bundled server and static renderer shipped inside the application.
 
 import { spawn } from "node:child_process"
+import { readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -21,8 +22,12 @@ for (const stream of [process.stdout, process.stderr]) {
 }
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const SERVER_ENTRY = resolve(HERE, "../server/src/cli.ts")
+const SERVER_ENTRY = app.isPackaged
+  ? resolve(HERE, "dist/server/cli.mjs")
+  : resolve(HERE, "../server/src/cli.ts")
+const WEB_ENTRY = resolve(HERE, "dist/web/index.html")
 const PRELOAD_ENTRY = resolve(HERE, "preload.cjs")
+const RELEASE_NOTES_ENTRY = resolve(HERE, "RELEASE_NOTES.md")
 
 const PORT = Number(process.env.HANGAR_PORT ?? 4780)
 const WEB_URL = process.env.HANGAR_WEB_URL ?? "http://localhost:4790"
@@ -58,11 +63,16 @@ async function probeHealth() {
  * tree later — the server starts child processes of its own.
  */
 function spawnServer() {
-  // The system `node` from PATH, deliberately: Electron's bundled Node cannot
-  // run TypeScript, and the server entry is a .ts file.
-  const child = spawn("node", [SERVER_ENTRY, "serve", "--port", String(PORT)], {
+  // Development sources require system Node 24. Packaged builds use Electron's
+  // bundled Node runtime and the precompiled server, so the .app is standalone.
+  const executable = app.isPackaged ? process.execPath : "node"
+  const env = app.isPackaged
+    ? { ...process.env, ELECTRON_RUN_AS_NODE: "1" }
+    : process.env
+  const child = spawn(executable, [SERVER_ENTRY, "serve", "--port", String(PORT)], {
     stdio: "inherit",
     detached: true,
+    env,
   })
 
   child.on("error", (error) => {
@@ -171,7 +181,10 @@ function createWindow() {
     if (window.isDestroyed()) return
     // Rejection is expected while the dev server is down; did-fail-load drives
     // the retry, so swallow it rather than leaking an unhandled rejection.
-    window.loadURL(WEB_URL).catch(() => {})
+    const navigation = app.isPackaged
+      ? window.loadFile(WEB_ENTRY)
+      : window.loadURL(WEB_URL)
+    navigation.catch(() => {})
   }
 
   const scheduleRetry = (errorDescription) => {
@@ -180,8 +193,9 @@ function createWindow() {
       console.error(`[hangar] gave up loading ${WEB_URL}: ${errorDescription}`)
       return
     }
+    const target = app.isPackaged ? WEB_ENTRY : WEB_URL
     console.error(
-      `[hangar] ${WEB_URL} not ready (${errorDescription}) — retrying`,
+      `[hangar] ${target} not ready (${errorDescription}) — retrying`,
     )
     retryTimer = setTimeout(load, LOAD_RETRY_INTERVAL_MS)
   }
@@ -206,11 +220,19 @@ function createWindow() {
   return window
 }
 
-// If the supervisor that launched us (concurrently, a terminal) dies, we get
-// reparented to launchd and would linger as a headless orphan — bail instead.
-setInterval(() => {
-  if (process.ppid === 1) app.quit()
-}, 2000).unref()
+// If the development supervisor dies, we get reparented to launchd and would
+// linger as a headless orphan. A packaged app is normally owned by launchd, so
+// this guard must only run in development.
+if (!app.isPackaged) {
+  setInterval(() => {
+    if (process.ppid === 1) app.quit()
+  }, 2000).unref()
+}
+
+ipcMain.handle("hangar:app-info", () => ({
+  version: app.getVersion(),
+  releaseNotes: readFileSync(RELEASE_NOTES_ENTRY, "utf8"),
+}))
 
 ipcMain.handle("hangar:choose-directory", async (_event, requestedTitle) => {
   const options = {

@@ -3,6 +3,9 @@ import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 
 export default defineConfig({
+  // Packaged Electron loads dist/index.html over file://, so asset URLs must
+  // stay relative. This also works unchanged under Vite's dev server.
+  base: "./",
   plugins: [react(), tailwindcss()],
   server: { port: 4790 },
   // Local-only app: xterm + React in one chunk is fine.

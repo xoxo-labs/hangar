@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS, type AppSettings, type BrowserChoice, type ThemeSetting } from "@hangar/contracts"
-import { type KeyboardEvent, type ReactNode, useState } from "react"
+import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react"
 import * as actions from "../actions"
 import { useStore } from "../store"
 import { Button } from "../ui/Button"
@@ -69,12 +69,18 @@ export function SettingsDialog() {
 
 function SettingsForm({ initial }: { initial: AppSettings }) {
   const close = useStore((s) => s.closeSettings)
+  const openReleaseNotes = useStore((s) => s.openReleaseNotes)
+  const [version, setVersion] = useState("development")
   const [settings, setSettings] = useState(() => structuredClone(initial))
   const appearance = settings.appearance
   const links = settings.links
   const terminal = settings.terminal
   const log = settings.terminalLogging
   const history = settings.sessionHistory
+
+  useEffect(() => {
+    if (window.hangarDesktop) void window.hangarDesktop.appInfo().then((info) => setVersion(info.version))
+  }, [])
 
   const patchAppearance = (next: Partial<AppSettings["appearance"]>) =>
     setSettings((current) => ({
@@ -205,6 +211,12 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
                   <option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option><option value="forever">Forever</option>
                 </Select>
               </Field>
+            </div>
+          </Section>
+          <Section title="About">
+            <div className="flex items-center justify-between rounded-md border border-surface-5 p-[10px]">
+              <div><strong className="block text-base font-book">Hangar</strong><span className="text-xs tabular-nums text-surface-9">Version {version}</span></div>
+              <Button onClick={() => { close(); openReleaseNotes() }}>Release notes</Button>
             </div>
           </Section>
           <Section title="Terminal logs">

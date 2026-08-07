@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react"
 import { ConfirmDialog } from "./components/ConfirmDialog"
 import { HistoryWorkspace } from "./components/HistoryWorkspace"
 import { ProjectDialog } from "./components/ProjectDialog"
+import { ReleaseNotesWorkspace } from "./components/ReleaseNotesWorkspace"
 import { SettingsDialog } from "./components/SettingsDialog"
 import { Sidebar } from "./components/Sidebar"
 import { StatusBar } from "./components/StatusBar"
@@ -13,6 +14,7 @@ export function App() {
   const sessions = useStore((s) => s.sessions)
   const activeId = useStore((s) => s.activeId)
   const activeHistory = useStore((s) => s.activeHistory)
+  const releaseNotesActive = useStore((s) => s.releaseNotesActive)
   const terminalIds = useStore((s) => s.terminalIds)
   const openSettings = useStore((s) => s.openSettings)
 
@@ -46,9 +48,11 @@ export function App() {
           {paneIds.map((id) => (
             <TerminalPane key={id} id={id} active={id === activeId} />
           ))}
-          {activeHistory !== null
-            ? <HistoryWorkspace runId={activeHistory === "overview" ? null : activeHistory} />
-            : activeId === null && <Placeholder />}
+          {releaseNotesActive
+            ? <ReleaseNotesWorkspace />
+            : activeHistory !== null
+              ? <HistoryWorkspace runId={activeHistory === "overview" ? null : activeHistory} />
+              : activeId === null && <Placeholder />}
         </div>
       </main>
       <StatusBar />

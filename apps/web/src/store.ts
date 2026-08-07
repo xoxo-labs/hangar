@@ -65,8 +65,15 @@ type Store = {
   activeId: SessionId | null
   /** History overview or archived run currently visible. */
   activeHistory: "overview" | string | null
-  /** Archived runs opened as tabs, in tab order. */
+  /** Whether the History overview tab is currently open. */
+  historyOpen: boolean
+  /** Archived runs opened as tabs. */
   historyTabs: string[]
+  /** Whether the release notes tab is open and/or selected. */
+  releaseNotesOpen: boolean
+  releaseNotesActive: boolean
+  /** Keys controlling the visual order of every open workspace tab. */
+  tabOrder: string[]
   /** Timestamped ANSI output loaded lazily for historical tabs. */
   historyReplays: Record<string, HistoryReplay>
   /** Sessions that already own an xterm instance (panes are rendered for these). */
@@ -93,8 +100,12 @@ type Store = {
   setStatus: (status: ConnectionStatus) => void
   setActive: (id: SessionId | null) => void
   openHistory: () => void
+  closeHistory: () => void
   openHistoryRun: (runId: string) => void
   closeHistoryRun: (runId: string) => void
+  openReleaseNotes: () => void
+  closeReleaseNotes: () => void
+  reorderTab: (source: string, target: string) => void
   beginHistoryReplay: (runId: string) => void
   setHistoryReplay: (runId: string, events: HistoryOutputEvent[], truncated: boolean) => void
   openInspector: (id: SessionId) => void
@@ -121,7 +132,11 @@ export const useStore = create<Store>((set) => ({
   metricHistory: {},
   activeId: null,
   activeHistory: null,
+  historyOpen: false,
   historyTabs: [],
+  releaseNotesOpen: false,
+  releaseNotesActive: false,
+  tabOrder: [],
   historyReplays: {},
   terminalIds: [],
   inspectingId: null,
@@ -170,10 +185,19 @@ export const useStore = create<Store>((set) => ({
       const activeHistory = focus
         ? null
         : state.activeHistory !== null && state.activeHistory !== "overview" && !validRuns.has(state.activeHistory)
-          ? "overview"
+          ? (state.historyOpen ? "overview" : null)
           : state.activeHistory
-      const nextActiveId = activeHistory === null ? activeId : null
-      return { projects, sessions: ordered, history, historyTabs, historyReplays, metricHistory, activeId: nextActiveId, activeHistory, settings }
+      const validTabKeys = new Set([
+        ...ordered.map((session) => `session:${session.id}`),
+        ...(state.historyOpen ? ["history"] : []),
+        ...historyTabs.map((runId) => `history:${runId}`),
+        ...(state.releaseNotesOpen ? ["release-notes"] : []),
+      ])
+      const tabOrder = state.tabOrder.filter((key) => validTabKeys.delete(key))
+      tabOrder.push(...validTabKeys)
+      const releaseNotesActive = focus ? false : state.releaseNotesActive
+      const nextActiveId = activeHistory === null && !releaseNotesActive ? activeId : null
+      return { projects, sessions: ordered, history, historyTabs, historyReplays, metricHistory, activeId: nextActiveId, activeHistory, releaseNotesActive, tabOrder, settings }
     }),
 
   updateMetrics: (id, runId, metrics) =>
@@ -198,22 +222,65 @@ export const useStore = create<Store>((set) => ({
 
   setStatus: (status) => set({ status }),
 
-  setActive: (activeId) => set({ activeId, activeHistory: null }),
+  setActive: (activeId) => set({ activeId, activeHistory: null, releaseNotesActive: false }),
 
-  openHistory: () => set({ activeId: null, activeHistory: "overview" }),
+  openHistory: () => set((state) => ({
+    activeId: null,
+    activeHistory: "overview",
+    historyOpen: true,
+    releaseNotesActive: false,
+    tabOrder: state.tabOrder.includes("history") ? state.tabOrder : [...state.tabOrder, "history"],
+  })),
+
+  closeHistory: () => set((state) => ({
+    historyOpen: false,
+    tabOrder: state.tabOrder.filter((key) => key !== "history"),
+    ...(state.activeHistory === "overview" ? {
+      activeHistory: null,
+      activeId: state.sessions.at(-1)?.id ?? null,
+    } : {}),
+  })),
 
   openHistoryRun: (runId) =>
     set((state) => ({
       activeId: null,
       activeHistory: runId,
+      releaseNotesActive: false,
       historyTabs: state.historyTabs.includes(runId) ? state.historyTabs : [...state.historyTabs, runId],
+      tabOrder: state.tabOrder.includes(`history:${runId}`) ? state.tabOrder : [...state.tabOrder, `history:${runId}`],
     })),
 
   closeHistoryRun: (runId) =>
     set((state) => ({
       historyTabs: state.historyTabs.filter((id) => id !== runId),
-      ...(state.activeHistory === runId ? { activeHistory: "overview" as const } : {}),
+      tabOrder: state.tabOrder.filter((key) => key !== `history:${runId}`),
+      ...(state.activeHistory === runId ? {
+        activeHistory: state.historyOpen ? "overview" as const : null,
+        activeId: state.historyOpen ? null : (state.sessions.at(-1)?.id ?? null),
+      } : {}),
     })),
+
+  openReleaseNotes: () => set((state) => ({
+    activeId: null,
+    activeHistory: null,
+    releaseNotesOpen: true,
+    releaseNotesActive: true,
+    tabOrder: state.tabOrder.includes("release-notes") ? state.tabOrder : [...state.tabOrder, "release-notes"],
+  })),
+
+  closeReleaseNotes: () => set((state) => ({
+    releaseNotesOpen: false,
+    releaseNotesActive: false,
+    tabOrder: state.tabOrder.filter((key) => key !== "release-notes"),
+    activeId: state.releaseNotesActive ? (state.sessions.at(-1)?.id ?? null) : state.activeId,
+  })),
+
+  reorderTab: (source, target) => set((state) => {
+    if (source === target || !state.tabOrder.includes(source) || !state.tabOrder.includes(target)) return state
+    const tabOrder = state.tabOrder.filter((key) => key !== source)
+    tabOrder.splice(tabOrder.indexOf(target), 0, source)
+    return { tabOrder }
+  }),
 
   beginHistoryReplay: (runId) =>
     set((state) => ({

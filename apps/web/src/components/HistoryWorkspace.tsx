@@ -132,7 +132,7 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
           <div className="mb-[5px] flex items-center gap-[9px]">
             <Dot tone={result.dot} />
             <h2 className="m-0 truncate text-xl font-strong">{entry.project} <span className="font-normal text-surface-8">/</span> {entry.process}</h2>
-            <span className="rounded-full border border-surface-5 bg-surface-a3 px-[7px] py-[2px] text-2xs font-semibold tracking-wider text-surface-9 uppercase">Historical</span>
+            <span className="px-[3px] py-[2px] text-2xs font-semibold tracking-wider text-surface-9 uppercase">Historical</span>
           </div>
           <p className="m-0 text-sm text-surface-9">{formatFullDate(entry.startedAt)} · {formatDuration(entry.durationMs)} · <span className={result.tone}>{result.label}</span></p>
         </div>
@@ -256,7 +256,7 @@ function ArchivedOutput({ entry, replay, cutoff }: { entry: SessionHistoryEntry;
       <div className="flex items-center gap-[8px]">
         <span className="size-[6px] rounded-full bg-surface-8" />
         <h3 className="m-0 text-xs font-semibold tracking-caps text-surface-10 uppercase">Terminal output</h3>
-        <span className="rounded-sm bg-surface-a3 px-[5px] py-[2px] text-2xs text-surface-8">read only</span>
+        <span className="px-[2px] py-[2px] text-2xs text-surface-8">read only</span>
       </div>
       {entry.hasReplay && <time className="font-mono text-xs tabular-nums text-surface-8">through +{formatDuration(outputTime)}</time>}
     </header>

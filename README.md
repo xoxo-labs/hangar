@@ -22,6 +22,17 @@ pnpm dev            # server + web + Electron window
 pnpm dev:headless   # server + web only — open http://localhost:4790
 ```
 
+To build a standalone macOS application (no separately installed Node runtime
+needed at launch):
+
+```sh
+pnpm package:mac    # apps/desktop/release/mac-arm64/Hangar.app
+pnpm dist:mac       # also creates an installable DMG
+```
+
+Local builds are intentionally unsigned. If Gatekeeper blocks the first launch,
+right-click `Hangar.app`, choose **Open**, then confirm **Open**.
+
 ## Registry
 
 Lives in `~/.hangar/projects.json` (override the directory with `$HANGAR_HOME`).

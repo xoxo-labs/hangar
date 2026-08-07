@@ -29,7 +29,8 @@ export function Sidebar() {
   const sessions = useStore((s) => s.sessions)
   const openEditor = useStore((s) => s.openEditor)
   const openHistory = useStore((s) => s.openHistory)
-  const activeHistory = useStore((s) => s.activeHistory)
+  const closeHistory = useStore((s) => s.closeHistory)
+  const historyOpen = useStore((s) => s.historyOpen)
   const historyCount = useStore((s) => s.history.length)
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<{ name: string; side: "before" | "after" } | null>(null)
@@ -108,9 +109,10 @@ export function Sidebar() {
           type="button"
           className={cx(
             "flex w-full items-center gap-[8px] rounded-md px-[9px]! py-[7px]! text-left text-base!",
-            activeHistory !== null ? "bg-surface-a4 text-surface-12!" : "text-surface-9! hover:bg-surface-a3! hover:text-surface-12!",
+            historyOpen ? "text-surface-12!" : "text-surface-9! hover:text-surface-12!",
           )}
-          onClick={openHistory}
+          aria-pressed={historyOpen}
+          onClick={historyOpen ? closeHistory : openHistory}
         >
           <span className="text-[14px]" aria-hidden="true">◷</span>
           <span className="flex-1">History</span>

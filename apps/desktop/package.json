@@ -5,12 +5,54 @@
   "type": "module",
   "main": "main.mjs",
   "scripts": {
-    "dev": "electron ."
+    "dev": "electron .",
+    "build:server": "esbuild ../server/src/cli.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/server/cli.mjs --external:node-pty --external:ws",
+    "build": "rm -rf dist && pnpm --filter @hangar/web build && mkdir -p dist/web && cp -R ../web/dist/. dist/web/ && pnpm build:server",
+    "package:mac": "pnpm build && electron-builder --mac dir --publish never",
+    "dist:mac": "pnpm build && electron-builder --mac dmg --publish never"
   },
   "engines": {
     "node": ">=24"
   },
+  "dependencies": {
+    "node-pty": "^1.1.0",
+    "ws": "^8.18.0"
+  },
   "devDependencies": {
-    "electron": "^43.3.0"
+    "electron": "^43.3.0",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.25.0"
+  },
+  "build": {
+    "appId": "works.xoxo.hangar",
+    "productName": "Hangar",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/node-pty/**"
+    ],
+    "files": [
+      "main.mjs",
+      "preload.cjs",
+      "RELEASE_NOTES.md",
+      "dist/**/*",
+      "package.json",
+      "node_modules/node-pty/**/*",
+      "node_modules/ws/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "assets/icon.icns",
+      "identity": null,
+      "target": [
+        "dir",
+        "dmg"
+      ]
+    },
+    "dmg": {
+      "title": "Hangar ${version}"
+    }
   }
 }
