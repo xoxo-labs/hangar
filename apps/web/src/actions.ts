@@ -9,6 +9,11 @@ export function stop(project: string, process?: string): void {
   send({ type: "stop", project, ...(process === undefined ? {} : { process }) })
 }
 
+/** Stops running targets and starts them again on exit; idle ones just start. */
+export function restart(project: string, process?: string): void {
+  send({ type: "restart", project, ...(process === undefined ? {} : { process }) })
+}
+
 /** Closing a tab stops a live session and drops an already-dead one. */
 export function close(session: SessionInfo): void {
   if (session.status === "running") stop(session.project, session.process)

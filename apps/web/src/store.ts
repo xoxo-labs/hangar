@@ -3,6 +3,17 @@ import { create } from "zustand"
 
 export type ConnectionStatus = "connecting" | "connected" | "reconnecting"
 
+/** How long an armed destructive button waits for its confirming second click. */
+export const ARM_TIMEOUT = 2500
+
+let armTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearArmTimer(): void {
+  if (armTimer === null) return
+  clearTimeout(armTimer)
+  armTimer = null
+}
+
 type Store = {
   /** Registry projects, as last broadcast by the server. */
   projects: Project[]
@@ -21,6 +32,8 @@ type Store = {
   editorOpen: boolean
   /** Project the dialog is editing; null while it is creating a new one. */
   editingProject: string | null
+  /** Key of the one destructive button awaiting its confirming second click. */
+  armed: string | null
 
   applyState: (projects: Project[], sessions: SessionInfo[]) => void
   setStatus: (status: ConnectionStatus) => void
@@ -32,9 +45,13 @@ type Store = {
   /** Opens the dialog: with a name to edit that project, without one to create. */
   openEditor: (project?: string) => void
   closeEditor: () => void
+  /** Arms one button, disarming any other; clears itself after ARM_TIMEOUT. */
+  arm: (key: string) => void
+  /** Disarms — with a key, only if that key is still the armed one. */
+  disarm: (key?: string) => void
 }
 
-export const useStore = create<Store>((set) => ({
+export const useStore = create<Store>((set, get) => ({
   projects: [],
   sessions: [],
   activeId: null,
@@ -45,6 +62,7 @@ export const useStore = create<Store>((set) => ({
   lastError: null,
   editorOpen: false,
   editingProject: null,
+  armed: null,
 
   applyState: (projects, sessions) =>
     set((state) => {
@@ -92,6 +110,19 @@ export const useStore = create<Store>((set) => ({
   openEditor: (project) => set({ editorOpen: true, editingProject: project ?? null }),
 
   closeEditor: () => set({ editorOpen: false, editingProject: null }),
+
+  arm: (key) => {
+    clearArmTimer()
+    armTimer = setTimeout(() => get().disarm(key), ARM_TIMEOUT)
+    set({ armed: key })
+  },
+
+  disarm: (key) => {
+    const { armed } = get()
+    if (armed === null || (key !== undefined && armed !== key)) return
+    clearArmTimer()
+    set({ armed: null })
+  },
 }))
 
 /** `?port=` on the page URL wins over the contract's default port. */

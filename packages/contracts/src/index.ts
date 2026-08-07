@@ -48,6 +48,8 @@ export type ClientMsg =
   | { type: "stop"; project: string; process?: string }
   | { type: "write"; id: SessionId; data: string }
   | { type: "resize"; id: SessionId; cols: number; rows: number }
+  /** Stop then start again all (or one) of a project's processes. Not-running targets just start. */
+  | { type: "restart"; project: string; process?: string }
   /** Remove an exited session (clears its buffer and drops it from state). */
   | { type: "dismiss"; id: SessionId }
   /** Create a project, or replace the one with the same name. */

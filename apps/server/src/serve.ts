@@ -78,6 +78,12 @@ export function serve(port: number): void {
       case "stop":
         manager.stop(msg.project, msg.process)
         return
+      case "restart": {
+        const project = findProject(loadRegistry(), msg.project)
+        if (!project) throw new Error(`no project named ${JSON.stringify(msg.project)}`)
+        manager.restart(project, msg.process)
+        return
+      }
       case "write":
         manager.write(msg.id, msg.data)
         return

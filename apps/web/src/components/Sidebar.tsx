@@ -44,6 +44,7 @@ function ProjectRow({ project, byId }: { project: Project; byId: Map<string, Ses
   const collapsed = useStore((s) => s.collapsed[project.name] ?? false)
   const toggleCollapsed = useStore((s) => s.toggleCollapsed)
   const openEditor = useStore((s) => s.openEditor)
+  const disarm = useStore((s) => s.disarm)
 
   const running = project.processes.some(
     (p) => byId.get(sessionId(project.name, p.name))?.status === "running",
@@ -51,7 +52,8 @@ function ProjectRow({ project, byId }: { project: Project; byId: Map<string, Ses
 
   return (
     <section className="project">
-      <div className="row project-row">
+      {/* Leaving the row cancels a confirmation the pointer left half-done. */}
+      <div className="row project-row" onMouseLeave={() => disarm()}>
         <button
           type="button"
           className="row-main"
@@ -87,15 +89,23 @@ function ProjectRow({ project, byId }: { project: Project; byId: Map<string, Ses
           >
             ▶
           </button>
-          <button
-            type="button"
-            className="icon-button"
+          {running && (
+            <ArmedButton
+              armKey={`restart:${project.name}`}
+              title="Restart all processes"
+              armedTitle="Click again to restart all"
+              glyph="↻"
+              onConfirm={() => actions.restart(project.name)}
+            />
+          )}
+          <ArmedButton
+            armKey={`stop:${project.name}`}
             title="Stop all processes"
+            armedTitle="Click again to stop all"
+            glyph="■"
             disabled={!running}
-            onClick={() => actions.stop(project.name)}
-          >
-            ■
-          </button>
+            onConfirm={() => actions.stop(project.name)}
+          />
         </div>
       </div>
 
@@ -129,12 +139,16 @@ function ProcessRow({
 }) {
   const activeId = useStore((s) => s.activeId)
   const setActive = useStore((s) => s.setActive)
+  const disarm = useStore((s) => s.disarm)
 
   const id = sessionId(project, name)
   const running = session?.status === "running"
 
   return (
-    <li className={`row process-row${activeId === id ? " selected" : ""}`}>
+    <li
+      className={`row process-row${activeId === id ? " selected" : ""}`}
+      onMouseLeave={() => disarm()}
+    >
       <button
         type="button"
         className="row-main"
@@ -148,15 +162,80 @@ function ProcessRow({
       </button>
 
       <div className="row-actions">
-        <button
-          type="button"
-          className="icon-button"
-          title={running ? `Stop ${name}` : `Start ${name}`}
-          onClick={() => (running ? actions.stop(project, name) : actions.start(project, name))}
-        >
-          {running ? "■" : "▶"}
-        </button>
+        {running ? (
+          <>
+            <ArmedButton
+              armKey={`restart:${id}`}
+              title={`Restart ${name}`}
+              armedTitle={`Click again to restart ${name}`}
+              glyph="↻"
+              onConfirm={() => actions.restart(project, name)}
+            />
+            <ArmedButton
+              armKey={`stop:${id}`}
+              title={`Stop ${name}`}
+              armedTitle={`Click again to stop ${name}`}
+              glyph="■"
+              onConfirm={() => actions.stop(project, name)}
+            />
+          </>
+        ) : (
+          <button
+            type="button"
+            className="icon-button"
+            title={`Start ${name}`}
+            onClick={() => actions.start(project, name)}
+          >
+            ▶
+          </button>
+        )}
       </div>
     </li>
+  )
+}
+
+/**
+ * An action that shouldn't fire on a stray click: the first click arms the
+ * button, a second one within `ARM_TIMEOUT` runs it. Only one button is armed
+ * at a time, and the arm dies with the timeout, a blur, or the pointer leaving
+ * the row.
+ */
+function ArmedButton({
+  armKey,
+  title,
+  armedTitle,
+  glyph,
+  disabled,
+  onConfirm,
+}: {
+  armKey: string
+  title: string
+  armedTitle: string
+  glyph: string
+  disabled?: boolean
+  onConfirm: () => void
+}) {
+  const armed = useStore((s) => s.armed === armKey)
+  const arm = useStore((s) => s.arm)
+  const disarm = useStore((s) => s.disarm)
+
+  return (
+    <button
+      type="button"
+      className={`icon-button${armed ? " armed" : ""}`}
+      title={armed ? armedTitle : title}
+      disabled={disabled}
+      onClick={() => {
+        if (!armed) {
+          arm(armKey)
+          return
+        }
+        disarm(armKey)
+        onConfirm()
+      }}
+      onBlur={() => disarm(armKey)}
+    >
+      {glyph}
+    </button>
   )
 }

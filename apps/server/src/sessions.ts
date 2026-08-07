@@ -14,6 +14,7 @@ import { expandHome } from "./registry.ts"
 /** Keep at most this much scrollback per session for late-joining clients. */
 const MAX_BUFFER_CHARS = 512 * 1024
 const KILL_GRACE_MS = 1500
+const RESTART_DIVIDER = "\r\n\x1b[2m— restarted —\x1b[0m\r\n"
 /** Inherit the full environment except vars that would confuse dev servers. */
 const ENV_BLOCKLIST = new Set(["PORT", "ELECTRON_RUN_AS_NODE", "HANGAR_PORT"])
 
@@ -52,6 +53,8 @@ type Session = {
 
 export class SessionManager {
   private sessions = new Map<SessionId, Session>()
+  /** Sessions that should respawn (with this project config) when their exit lands. */
+  private pendingRestarts = new Map<SessionId, Project>()
 
   /** Push a message to every connected client. */
   private broadcast: (msg: ServerMsg) => void
@@ -126,10 +129,13 @@ export class SessionManager {
         status: "running",
         exitCode: null,
         // Reuse the old buffer so a restart keeps prior scrollback context.
-        buffer: existing ? existing.buffer + `\r\n\x1b[2m— restarted —\x1b[0m\r\n` : "",
+        buffer: existing ? existing.buffer + RESTART_DIVIDER : "",
         killTimer: null,
       }
       this.sessions.set(id, session)
+      // Live clients only get buffers as connect-time snapshots, so the divider
+      // has to travel as output too or they'd never see the seam.
+      if (existing) this.broadcast({ type: "output", id, data: RESTART_DIVIDER })
 
       pty.onData((data) => {
         session.buffer = (session.buffer + data).slice(-MAX_BUFFER_CHARS)
@@ -142,10 +148,42 @@ export class SessionManager {
         session.exitCode = exitCode
         session.pty = null
         this.broadcast({ type: "exit", id, exitCode })
+        const restartAs = this.pendingRestarts.get(id)
+        if (restartAs) {
+          this.pendingRestarts.delete(id)
+          try {
+            this.start(restartAs, proc.name)
+            return // start() already broadcast the new state
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            this.broadcast({ type: "error", message: `restart ${id}: ${message}` })
+          }
+        }
         this.notifyState()
       })
     }
     this.notifyState()
+  }
+
+  /**
+   * Restart all (or one) of a project's processes: running sessions are stopped
+   * and respawn when their exit lands; everything else just starts.
+   */
+  restart(project: Project, only?: string): void {
+    const targets = only
+      ? project.processes.filter((p) => p.name === only)
+      : project.processes
+    if (targets.length === 0) throw new Error(`no process named ${JSON.stringify(only)}`)
+    for (const proc of targets) {
+      const id = sessionId(project.name, proc.name)
+      const session = this.sessions.get(id)
+      if (session?.status === "running") {
+        this.pendingRestarts.set(id, project)
+        this.stopSession(session)
+      } else {
+        this.start(project, proc.name)
+      }
+    }
   }
 
   /** Stop all (or one) of a project's sessions. State updates arrive via onExit. */
@@ -179,6 +217,7 @@ export class SessionManager {
 
   /** Graceful shutdown: signal everything, resolve when all sessions exited (or timeout). */
   async stopAll(timeoutMs = 3000): Promise<void> {
+    this.pendingRestarts.clear()
     const running = [...this.sessions.values()].filter((s) => s.status === "running")
     if (running.length === 0) return
     const done = Promise.all(

@@ -12,6 +12,7 @@
   --accent: #4c8dff;
   --green: #3fb950;
   --red: #f85149;
+  --amber: #e3b341;
   --gray: #55555d;
   --gray-done: #7a7a83;
   --radius: 6px;
@@ -62,7 +63,7 @@ code {
 
 .app {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
   height: 100%;
 }
@@ -196,31 +197,58 @@ code {
   transform: rotate(90deg);
 }
 
+/*
+ * Actions stay visible — dimmed until the row is hovered — so they are
+ * discoverable without hunting. Every slot the row can ever show is reserved,
+ * so the label never shifts when a run-state-only action appears.
+ */
 .row-actions {
   display: flex;
-  gap: 2px;
-  opacity: 0;
+  flex: none;
+  justify-content: flex-end;
+  gap: 3px;
+  opacity: 0.45;
+  transition: opacity 120ms ease;
+}
+
+/* 4 × 24px button + 3 × 3px gap */
+.project-row .row-actions {
+  min-width: 105px;
+}
+
+/* 2 × 24px button + 1 × 3px gap */
+.process-row .row-actions {
+  min-width: 51px;
 }
 
 .row:hover .row-actions,
-.row:focus-within .row-actions {
+.row:focus-within .row-actions,
+.row-actions:has(.armed) {
   opacity: 1;
 }
 
 .icon-button {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 13px;
   line-height: 1;
 }
 
 .icon-button:hover {
   background: var(--active);
   color: var(--text);
+}
+
+/* Armed: one more click and it fires. Tint only — the box never resizes. */
+.icon-button.armed,
+.icon-button.armed:hover {
+  background: #d2992238;
+  box-shadow: 0 0 0 1px #d2992288 inset;
+  color: var(--amber);
 }
 
 .icon-button:disabled {
@@ -580,7 +608,7 @@ code {
 
 .proc-grid {
   display: grid;
-  grid-template-columns: 1.1fr 2fr 1.2fr 20px;
+  grid-template-columns: 1.1fr 2fr 1.2fr 24px;
   gap: 4px;
   align-items: center;
   width: 100%;
