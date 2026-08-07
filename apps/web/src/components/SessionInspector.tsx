@@ -2,8 +2,10 @@ import type { SessionHistoryEntry, SessionInfo, SessionMetrics } from "@hangar/c
 import { useEffect, useMemo, useState } from "react"
 import { openLocalPort } from "../links"
 import { describe, toneOf } from "../status"
-import { useStore } from "../store"
+import { type SessionMetricPoint, useStore } from "../store"
 import { Dot } from "./Dot"
+
+const NO_METRIC_HISTORY: SessionMetricPoint[] = []
 
 export function SessionStrip({ session, onInspect }: { session: SessionInfo; onInspect: () => void }) {
   const now = useNow(session.status === "running")
@@ -42,6 +44,7 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
     [allHistory, session.id],
   )
   const metrics = session.metrics
+  const metricHistory = useStore((state) => state.metricHistory[session.id] ?? NO_METRIC_HISTORY)
   const browser = useStore((state) => state.settings.links.browser)
   const showNotice = useStore((state) => state.showNotice)
   const openPort = (port: number) => {
@@ -65,7 +68,7 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
           </dl>
         </section>
 
-        {metrics && <ResourceSection metrics={metrics} />}
+        {metrics && <ResourceSection metrics={metrics} history={metricHistory} />}
 
         {metrics && metrics.ports.length > 0 && <section className="inspector-section">
           <h3>Ports</h3>
@@ -87,20 +90,31 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
   )
 }
 
-function ResourceSection({ metrics }: { metrics: SessionMetrics }) {
+function ResourceSection({ metrics, history }: { metrics: SessionMetrics; history: SessionMetricPoint[] }) {
   return <section className="inspector-section">
-    <h3>Resources</h3>
+    <h3>Resources · last 15 minutes</h3>
     <div className="metric-grid">
-      <Metric label="CPU" value={formatCpu(metrics.cpuPercent)} peak={`peak ${formatCpu(metrics.peakCpuPercent)}`} />
-      <Metric label="Memory" value={formatBytes(metrics.memoryBytes)} peak={`peak ${formatBytes(metrics.peakMemoryBytes)}`} />
+      <Metric label="CPU" value={formatCpu(metrics.cpuPercent)} peak={`peak ${formatCpu(metrics.peakCpuPercent)}`} values={history.map((point) => point.cpuPercent)} tone="accent" />
+      <Metric label="Memory" value={formatBytes(metrics.memoryBytes)} peak={`peak ${formatBytes(metrics.peakMemoryBytes)}`} values={history.map((point) => point.memoryBytes)} tone="success" />
       <Metric label="Processes" value={String(metrics.processCount)} />
-      <Metric label="Output" value={`${formatBytes(metrics.outputBytesPerSecond)}/s`} peak={`${formatBytes(metrics.outputBytes)} total`} />
+      <Metric label="Output" value={`${formatBytes(metrics.outputBytesPerSecond)}/s`} peak={`${formatBytes(metrics.outputBytes)} total`} values={history.map((point) => point.outputBytesPerSecond)} tone="warning" />
     </div>
   </section>
 }
 
-function Metric({ label, value, peak }: { label: string; value: string; peak?: string }) {
-  return <div className="metric"><span>{label}</span><strong>{value}</strong>{peak && <small>{peak}</small>}</div>
+function Metric({ label, value, peak, values, tone }: { label: string; value: string; peak?: string; values?: number[]; tone?: "accent" | "success" | "warning" }) {
+  return <div className="metric"><span>{label}</span><strong>{value}</strong>{values && <Sparkline values={values} tone={tone ?? "accent"} />}{peak && <small>{peak}</small>}</div>
+}
+
+function Sparkline({ values, tone }: { values: number[]; tone: "accent" | "success" | "warning" }) {
+  if (values.length < 2) return <span className="sparkline-empty">collecting…</span>
+  const maximum = Math.max(1, ...values)
+  const points = values.map((value, index) => {
+    const x = values.length === 1 ? 0 : index / (values.length - 1) * 100
+    const y = 27 - value / maximum * 25
+    return `${x.toFixed(2)},${y.toFixed(2)}`
+  }).join(" ")
+  return <svg className={`sparkline sparkline-${tone}`} viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"><polyline points={points} /></svg>
 }
 
 function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
@@ -110,8 +124,8 @@ function Detail({ label, value, mono = false }: { label: string; value: string; 
 function HistoryRow({ entry }: { entry: SessionHistoryEntry }) {
   return <div className="history-row">
     <span className={`history-result ${entry.reason}`}>{entry.reason === "completed" ? "✓" : entry.reason === "failed" ? "×" : "■"}</span>
-    <div><strong>{formatDate(entry.startedAt)}</strong><small>{formatDuration(entry.durationMs)} · {entry.reason}{entry.exitCode === null ? "" : ` (${entry.exitCode})`}</small></div>
-    <span>{formatBytes(entry.peakMemoryBytes)}</span>
+    <div><strong>{formatDate(entry.startedAt)}</strong><small>{formatDuration(entry.durationMs)} · {entry.reason}{entry.exitCode === null ? "" : ` (${entry.exitCode})`} · {formatBytes(entry.totalOutputBytes)} output</small></div>
+    <span>{formatCpu(entry.peakCpuPercent)} · {formatBytes(entry.peakMemoryBytes)}</span>
   </div>
 }
 

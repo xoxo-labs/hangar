@@ -246,7 +246,7 @@ code {
 .app {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
 }
 
@@ -269,11 +269,6 @@ code {
   min-width: 0;
   min-height: 0;
   background: var(--color-surface-1);
-}
-
-.statusbar {
-  grid-row: 2;
-  grid-column: 1 / -1;
 }
 
 /* ---------- sidebar ---------- */
@@ -733,18 +728,35 @@ code {
 .terminal-pane {
   position: absolute;
   inset: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 6px 4px 0 8px;
+}
+
+.terminal-pane::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 28px;
+  background: var(--color-surface-2);
+  border-top: 1px solid var(--color-surface-4);
+  pointer-events: none;
 }
 
 .terminal-host {
-  flex: 1 1 auto;
+  position: absolute;
+  inset: 6px 4px 28px 8px;
   min-height: 0;
+  overflow: hidden;
 }
 
 .terminal-pane .xterm {
   height: 100%;
+}
+
+/* xterm defaults its viewport to pure black. When the available height is not
+ * an exact number of terminal rows, that color shows in the remainder. */
+.terminal-pane .xterm-viewport {
+  background-color: var(--color-surface-1) !important;
 }
 
 /* xterm 6 renders its own scrollbar DOM rather than a native WebKit one. */
@@ -843,15 +855,17 @@ code {
 .session-strip {
   display: flex;
   align-items: center;
-  align-self: flex-start;
   gap: 8px;
-  flex: 0 0 32px;
+  position: absolute;
+  z-index: 1;
+  bottom: 0;
+  left: 8px;
   width: max-content;
-  height: 32px;
+  height: 28px;
   padding: 0 4px 0 0;
   color: var(--color-surface-9);
   font-size: 10.5px;
-  line-height: 1;
+  line-height: 1.2;
   text-align: left;
   white-space: nowrap;
 }
@@ -859,15 +873,20 @@ code {
 .session-strip-details {
   display: flex;
   align-items: center;
+  align-self: center;
   gap: 8px;
-  height: 100%;
   color: inherit;
   font-size: inherit;
-  line-height: 1;
+  line-height: inherit;
 }
 
 .session-strip-details:hover {
   color: var(--color-surface-12);
+}
+
+.session-strip-details:focus,
+.session-strip-port:focus {
+  outline: none;
 }
 
 .session-strip strong {
@@ -884,14 +903,14 @@ code {
 }
 
 .session-strip-port {
-  height: 20px;
-  padding: 0 5px;
+  align-self: center;
+  padding: 3px 5px;
   border-radius: 4px;
   color: var(--color-accent-10);
   font-family: inherit;
   font-size: 10.5px;
   font-variant-numeric: tabular-nums;
-  line-height: 1;
+  line-height: inherit;
 }
 
 .session-strip-port:hover {
@@ -907,7 +926,7 @@ code {
   z-index: 8;
   top: 0;
   right: 0;
-  bottom: 32px;
+  bottom: 28px;
   display: flex;
   flex-direction: column;
   width: min(360px, calc(100% - 32px));
@@ -964,10 +983,16 @@ code {
 .detail-list dd.mono { font-family: var(--font-mono); font-size: 10px; }
 
 .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
-.metric { display: flex; flex-direction: column; min-height: 72px; padding: 9px; background: var(--color-surface-a2); border: 1px solid var(--color-surface-5); border-radius: 6px; }
+.metric { display: flex; flex-direction: column; min-height: 100px; padding: 9px; background: var(--color-surface-a2); border: 1px solid var(--color-surface-5); border-radius: 6px; }
 .metric > span { color: var(--color-surface-9); font-size: 9.5px; }
 .metric strong { margin-top: 4px; color: var(--color-surface-12); font-size: 16px; font-weight: 550; }
 .metric small { margin-top: auto; color: var(--color-surface-8); font-size: 9.5px; }
+.sparkline { width: 100%; height: 28px; margin: 5px 0 3px; overflow: visible; }
+.sparkline polyline { fill: none; stroke: currentColor; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.sparkline-accent { color: var(--color-accent-10); }
+.sparkline-success { color: var(--color-success-10); }
+.sparkline-warning { color: var(--color-warning-10); }
+.metric .sparkline-empty { margin: 10px 0; color: var(--color-surface-7); font-size: 9px; }
 
 .port-list, .history-list { display: flex; flex-direction: column; gap: 5px; }
 .port-list button { display: flex; align-items: center; justify-content: space-between; padding: 7px 8px; background: var(--color-surface-a2); border: 1px solid var(--color-surface-5); border-radius: 5px; color: var(--color-surface-9); font-size: 10px; }
@@ -1021,13 +1046,16 @@ code {
 /* ---------- statusbar ---------- */
 
 .statusbar {
+  position: fixed;
+  z-index: 10;
+  right: 4px;
+  bottom: 0;
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 24px;
-  padding: 0 10px;
-  background: var(--color-surface-3);
-  border-top: 1px solid var(--color-surface-4);
+  height: 28px;
+  padding: 0 4px;
+  background: transparent;
   color: var(--color-surface-9);
   font-size: 11px;
   user-select: none;

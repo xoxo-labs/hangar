@@ -12,6 +12,13 @@ import { create } from "zustand"
 
 export type ConnectionStatus = "connecting" | "connected" | "reconnecting"
 
+export type SessionMetricPoint = {
+  sampledAt: number
+  cpuPercent: number
+  memoryBytes: number
+  outputBytesPerSecond: number
+}
+
 /** A destructive action waiting for the user's OK in the confirm dialog. */
 export type ConfirmRequest = {
   /** "stop-close" also closes the session's tab once the exit lands. */
@@ -44,6 +51,8 @@ type Store = {
   sessions: SessionInfo[]
   /** Persisted run summaries, newest first. */
   history: SessionHistoryEntry[]
+  /** Recent live samples, kept in memory for session sparklines. */
+  metricHistory: Record<SessionId, SessionMetricPoint[]>
   /** Session whose terminal is visible, or null when nothing is open. */
   activeId: SessionId | null
   /** Sessions that already own an xterm instance (panes are rendered for these). */
@@ -90,6 +99,7 @@ export const useStore = create<Store>((set) => ({
   projects: [],
   sessions: [],
   history: [],
+  metricHistory: {},
   activeId: null,
   terminalIds: [],
   inspectingId: null,
@@ -127,15 +137,30 @@ export const useStore = create<Store>((set) => ({
       const activeId =
         focus?.id ?? (stillOpen ? state.activeId : (ordered.at(-1)?.id ?? null))
 
-      return { projects, sessions: ordered, history, activeId, settings }
+      const metricHistory = Object.fromEntries(
+        Object.entries(state.metricHistory).filter(([id]) => ordered.some((session) => session.id === id)),
+      )
+      return { projects, sessions: ordered, history, metricHistory, activeId, settings }
     }),
 
   updateMetrics: (id, runId, metrics) =>
-    set((state) => ({
-      sessions: state.sessions.map((session) =>
-        session.id === id && session.runId === runId ? { ...session, metrics } : session,
-      ),
-    })),
+    set((state) => {
+      const current = state.sessions.find((session) => session.id === id)
+      if (!current || current.runId !== runId) return state
+      const previous = state.metricHistory[id] ?? []
+      const point: SessionMetricPoint = {
+        sampledAt: metrics.sampledAt,
+        cpuPercent: metrics.cpuPercent,
+        memoryBytes: metrics.memoryBytes,
+        outputBytesPerSecond: metrics.outputBytesPerSecond,
+      }
+      return {
+        sessions: state.sessions.map((session) =>
+          session.id === id ? { ...session, metrics } : session,
+        ),
+        metricHistory: { ...state.metricHistory, [id]: [...previous, point].slice(-450) },
+      }
+    }),
 
   setStatus: (status) => set({ status }),
 
