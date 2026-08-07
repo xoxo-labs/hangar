@@ -109,9 +109,11 @@ export class SessionManager {
       Object.assign(env, project.env)
 
       const shell = process.env.SHELL ?? "/bin/zsh"
-      // A login shell (-l) gives GUI-launched servers a real PATH; -c runs the
-      // command and exits, so the session lifetime is the command's lifetime.
-      const pty = ptySpawn(shell, ["-lc", proc.cmd], {
+      // Interactive terminals stay in a login shell. Commands use -c and exit
+      // when the command does; -l gives GUI-launched servers a real PATH.
+      const args = proc.shell ? ["-l"] : ["-lc", proc.cmd]
+      const displayedCommand = proc.shell ? `${shell} -l` : proc.cmd
+      const pty = ptySpawn(shell, args, {
         name: "xterm-256color",
         cols: 80,
         rows: 24,
@@ -123,7 +125,7 @@ export class SessionManager {
         id,
         project: project.name,
         process: proc.name,
-        cmd: proc.cmd,
+        cmd: displayedCommand,
         pty,
         pid: pty.pid,
         status: "running",

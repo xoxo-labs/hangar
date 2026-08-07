@@ -4,12 +4,22 @@ import * as actions from "../actions"
 import { useStore } from "../store"
 
 /** A process being edited. `id` only keeps React keys stable across row removals. */
-type Row = { id: number; name: string; cmd: string; cwd: string }
+type Row = { id: number; name: string; cmd: string; cwd: string; shell: boolean }
+type PackageScript = { name: string; value: string; cmd: string }
+type ProjectInfo = {
+  path: string
+  exists: boolean
+  package: null | {
+    name: string | null
+    manager: string
+    scripts: PackageScript[]
+  }
+}
 
 let nextRowId = 0
 function emptyRow(): Row {
   nextRowId += 1
-  return { id: nextRowId, name: "", cmd: "", cwd: "" }
+  return { id: nextRowId, name: "", cmd: "", cwd: "", shell: false }
 }
 
 export function ProjectDialog() {
@@ -27,18 +37,71 @@ function Dialog({ editing }: { editing: string | null }) {
   const running = useStore((s) =>
     s.sessions.some((session) => session.project === editing && session.status === "running"),
   )
+  const port = useStore((s) => s.port)
 
   const [name, setName] = useState(existing?.name ?? "")
   const [path, setPath] = useState(existing?.path ?? "")
   const [rows, setRows] = useState<Row[]>(() =>
     existing && existing.processes.length > 0
-      ? existing.processes.map((p) => ({ ...emptyRow(), name: p.name, cmd: p.cmd, cwd: p.cwd ?? "" }))
+      ? existing.processes.map((p) => ({
+          ...emptyRow(),
+          name: p.name,
+          cmd: p.cmd,
+          cwd: p.cwd ?? "",
+          shell: p.shell ?? false,
+        }))
       : [emptyRow()],
   )
   const [confirmingRemove, setConfirmingRemove] = useState(false)
+  const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null)
+  const [inspecting, setInspecting] = useState(false)
+  const [browsing, setBrowsing] = useState(false)
 
   const firstField = useRef<HTMLInputElement>(null)
+  const nameEdited = useRef(false)
   useEffect(() => firstField.current?.focus(), [])
+
+  useEffect(() => {
+    const candidate = path.trim()
+    if (candidate === "") {
+      setProjectInfo(null)
+      setInspecting(false)
+      return
+    }
+
+    setProjectInfo(null)
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      setInspecting(true)
+      fetch(`http://127.0.0.1:${port}/project-info?path=${encodeURIComponent(candidate)}`, {
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error("Could not inspect project")
+          return response.json() as Promise<ProjectInfo>
+        })
+        .then(setProjectInfo)
+        .catch((error: unknown) => {
+          if (!(error instanceof DOMException && error.name === "AbortError")) setProjectInfo(null)
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setInspecting(false)
+        })
+    }, 250)
+
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [path, port])
+
+  useEffect(() => {
+    if (editing !== null || nameEdited.current || projectInfo === null || !projectInfo.exists) return
+    const folderName = projectInfo.path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? ""
+    const packageName = projectInfo.package?.name?.split("/").pop() ?? ""
+    const suggested = (packageName || folderName).trim().replace(/[\s/]+/g, "-")
+    if (suggested !== "") setName(suggested)
+  }, [editing, projectInfo])
 
   const problem = useMemo(() => validate(name, path, rows), [name, path, rows])
   const valid = problem === null
@@ -79,6 +142,35 @@ function Dialog({ editing }: { editing: string | null }) {
   const patchRow = (id: number, patch: Partial<Row>): void =>
     setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)))
 
+  const browse = async (): Promise<void> => {
+    const choose = window.hangarDesktop?.chooseProjectDirectory
+    if (!choose || browsing) return
+    setBrowsing(true)
+    try {
+      const selected = await choose()
+      if (selected !== null) setPath(selected)
+    } finally {
+      setBrowsing(false)
+    }
+  }
+
+  const addPackageScript = (script: PackageScript): void => {
+    setRows((current) => {
+      if (current.some((row) => row.name.trim() === script.name)) return current
+      const blank = current.find(
+        (row) => row.name === "" && row.cmd === "" && row.cwd === "" && !row.shell,
+      )
+      if (blank) {
+        return current.map((row) =>
+          row.id === blank.id
+            ? { ...row, name: script.name, cmd: script.cmd, shell: false }
+            : row,
+        )
+      }
+      return [...current, { ...emptyRow(), name: script.name, cmd: script.cmd }]
+    })
+  }
+
   return (
     <div className="overlay" onMouseDown={onBackdrop}>
       <div
@@ -103,28 +195,72 @@ function Dialog({ editing }: { editing: string | null }) {
               spellCheck={false}
               autoComplete="off"
               placeholder="my-app"
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                nameEdited.current = true
+                setName(e.target.value)
+              }}
             />
             <span className="field-hint">
               {editing === null ? "No spaces or slashes." : "The name identifies the project and can't change."}
             </span>
           </label>
 
-          <label className="field">
-            <span className="field-label">Path</span>
-            <input
-              ref={editing === null ? null : firstField}
-              className="input mono"
-              value={path}
-              spellCheck={false}
-              autoComplete="off"
-              placeholder="~/code/my-app"
-              onChange={(e) => setPath(e.target.value)}
-            />
+          <div className="field">
+            <label className="field-label" htmlFor="project-path">Path</label>
+            <div className="path-row">
+              <input
+                id="project-path"
+                ref={editing === null ? null : firstField}
+                className="input mono"
+                value={path}
+                spellCheck={false}
+                autoComplete="off"
+                placeholder="~/code/my-app"
+                onChange={(e) => setPath(e.target.value)}
+              />
+              {window.hangarDesktop && (
+                <button
+                  type="button"
+                  className="button browse-button"
+                  disabled={browsing}
+                  onClick={() => void browse()}
+                >
+                  {browsing ? "Opening…" : "Choose…"}
+                </button>
+              )}
+            </div>
             <span className="field-hint">
-              <code>~</code> expands to your home directory.
+              {inspecting ? "Looking for package.json…" : <><code>~</code> expands to your home directory.</>}
             </span>
-          </label>
+          </div>
+
+          {projectInfo?.package && projectInfo.package.scripts.length > 0 && (
+            <div className="field package-scripts">
+              <span className="field-label">
+                package.json scripts · {projectInfo.package.manager}
+              </span>
+              <div className="package-script-list">
+                {projectInfo.package.scripts.map((script) => {
+                  const added = rows.some((row) => row.name.trim() === script.name)
+                  return (
+                    <div className="package-script" key={script.name} title={script.value}>
+                      <code>{script.name}</code>
+                      <span>{script.value}</span>
+                      <button
+                        type="button"
+                        className="text-button"
+                        disabled={added}
+                        onClick={() => addPackageScript(script)}
+                      >
+                        {added ? "Added" : "+ Add"}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+              <span className="field-hint">Add any scripts you want, then edit them or add custom commands below.</span>
+            </div>
+          )}
 
           <div className="field">
             <span className="field-label">Processes</span>
@@ -152,6 +288,18 @@ function Dialog({ editing }: { editing: string | null }) {
               onClick={() => setRows((current) => [...current, emptyRow()])}
             >
               + Add process
+            </button>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() =>
+                setRows((current) => [
+                  ...current,
+                  { ...emptyRow(), name: uniqueTerminalName(current), shell: true },
+                ])
+              }
+            >
+              + Add empty terminal
             </button>
           </div>
         </div>
@@ -218,14 +366,20 @@ function ProcRow({
         placeholder="web"
         onChange={(e) => onChange({ name: e.target.value })}
       />
-      <input
-        className="input mono"
-        value={row.cmd}
-        spellCheck={false}
-        autoComplete="off"
-        placeholder="pnpm dev"
-        onChange={(e) => onChange({ cmd: e.target.value })}
-      />
+      {row.shell ? (
+        <div className="shell-command" title="Starts your interactive login shell">
+          Interactive shell
+        </div>
+      ) : (
+        <input
+          className="input mono"
+          value={row.cmd}
+          spellCheck={false}
+          autoComplete="off"
+          placeholder="pnpm dev"
+          onChange={(e) => onChange({ cmd: e.target.value })}
+        />
+      )}
       <input
         className="input mono"
         value={row.cwd}
@@ -253,7 +407,7 @@ function validate(name: string, path: string, rows: Row[]): string | null {
   if (/[\s/]/.test(name)) return "Name can't contain spaces or slashes."
   if (path.trim() === "") return "Path is required."
   if (rows.length === 0) return "A project needs at least one process."
-  if (rows.some((row) => row.name.trim() === "" || row.cmd.trim() === "")) {
+  if (rows.some((row) => row.name.trim() === "" || (!row.shell && row.cmd.trim() === ""))) {
     return "Every process needs a name and a command."
   }
   const names = new Set(rows.map((row) => row.name.trim()))
@@ -269,7 +423,20 @@ function toProject(
 ): Project {
   const processes: ProjectProcess[] = rows.map((row) => {
     const cwd = row.cwd.trim()
-    return { name: row.name.trim(), cmd: row.cmd.trim(), ...(cwd === "" ? {} : { cwd }) }
+    return {
+      name: row.name.trim(),
+      cmd: row.shell ? "" : row.cmd.trim(),
+      ...(row.shell ? { shell: true } : {}),
+      ...(cwd === "" ? {} : { cwd }),
+    }
   })
   return { name: name.trim(), path: path.trim(), processes, ...(env === undefined ? {} : { env }) }
+}
+
+function uniqueTerminalName(rows: Row[]): string {
+  const names = new Set(rows.map((row) => row.name.trim()))
+  if (!names.has("terminal")) return "terminal"
+  let suffix = 2
+  while (names.has(`terminal-${suffix}`)) suffix += 1
+  return `terminal-${suffix}`
 }

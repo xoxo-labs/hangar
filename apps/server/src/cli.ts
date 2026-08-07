@@ -106,9 +106,9 @@ function cmdAdd(argv: string[]): void {
   if (existing && !values.force) {
     fail(`project ${JSON.stringify(project.name)} already exists (use --force to overwrite)`)
   }
-  registry.projects = registry.projects.filter((p) => p.name !== project.name)
-  registry.projects.push(project)
-  registry.projects.sort((a, b) => a.name.localeCompare(b.name))
+  const existingIndex = registry.projects.findIndex((p) => p.name === project.name)
+  if (existingIndex === -1) registry.projects.push(project)
+  else registry.projects[existingIndex] = project
   saveRegistry(registry)
   process.stdout.write(`${existing ? "updated" : "added"} ${project.name}\n`)
 }

@@ -281,24 +281,38 @@ code {
 .brand {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 14px 14px 10px;
+  flex: none;
+  gap: 9px;
+  min-height: 48px;
+  padding: 7px 14px;
+  background: var(--color-surface-3);
+  border-bottom: 1px solid var(--color-surface-5);
+}
+
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.1;
 }
 
 .brand h1 {
   margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-size: 13.5px;
+  font-weight: 650;
+  letter-spacing: 0.015em;
 }
 
-.brand-mark {
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  background: linear-gradient(150deg, var(--color-accent-9), var(--color-brand-10));
-  box-shadow: 0 0 0 1px var(--color-surface-a4) inset;
+.brand-subtitle {
+  margin-top: 2px;
+  color: var(--color-surface-8);
+  font-size: 8.5px;
+  font-weight: 550;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
+
 
 /*
  * Electron chrome: the frameless window (titleBarStyle hiddenInset) puts the
@@ -308,15 +322,17 @@ code {
  */
 .electron .brand {
   -webkit-app-region: drag;
-  /* Lights group ends ≈70px in (trafficLightPosition x:18 + 3 lights); 84px
-   * leaves a clear gutter. Fixed 44px height keeps the mark and the lights on
-   * the same optical centerline (lights y:16 + 12px diameter → center 22). */
-  padding: 0 14px 0 84px;
-  min-height: 44px;
+  /* trafficLightPosition is x:18/y:18. The three 12px controls end around
+   * x:70; 92px leaves comfortable space before the wordmark. */
+  height: 48px;
+  padding: 0 14px 0 92px;
 }
 
 .electron .tabbar {
   -webkit-app-region: drag;
+  /* Match the sidebar title strip while keeping tabs in the lower 34px. */
+  height: 48px;
+  padding-top: 14px;
 }
 
 .electron .tab,
@@ -331,6 +347,28 @@ code {
   padding: 4px 8px 12px;
 }
 
+.projects-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 6px 8px;
+  color: var(--color-surface-9);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.projects-count {
+  min-width: 17px;
+  padding: 1px 5px;
+  background: var(--color-surface-a3);
+  border-radius: 8px;
+  font-size: 9px;
+  letter-spacing: 0;
+  text-align: center;
+}
+
 .empty {
   margin: 12px 6px;
   color: var(--color-surface-10);
@@ -339,7 +377,42 @@ code {
 }
 
 .project {
+  position: relative;
   margin-bottom: 6px;
+}
+
+.project.dragging {
+  opacity: 0.45;
+}
+
+.project.drop-before::before,
+.project.drop-after::after {
+  position: absolute;
+  z-index: 2;
+  right: 4px;
+  left: 4px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--color-accent-9);
+  content: "";
+  pointer-events: none;
+}
+
+.project.drop-before::before {
+  top: -4px;
+}
+
+.project.drop-after::after {
+  bottom: -4px;
+}
+
+.project-row {
+  background: var(--color-surface-a2);
+  cursor: grab;
+}
+
+.project-row:active {
+  cursor: grabbing;
 }
 
 .row {
@@ -381,7 +454,9 @@ code {
 }
 
 .project-row .row-name {
-  font-weight: 550;
+  color: var(--color-surface-12);
+  font-size: 12.5px;
+  font-weight: 600;
 }
 
 .row-sub {
@@ -472,13 +547,24 @@ code {
 
 .processes {
   list-style: none;
-  margin: 1px 0 0;
-  padding: 0 0 0 16px;
+  margin: 3px 0 0 10px;
+  padding: 0 0 0 8px;
+  border-left: 1px solid var(--color-surface-5);
 }
 
 .process-row .row-main {
-  padding: 4px 6px;
+  padding: 5px 6px;
   color: var(--color-surface-10);
+}
+
+.process-row .row-name {
+  font-size: 11.5px;
+}
+
+.process-row .row-sub {
+  max-width: 150px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
 }
 
 .process-row:hover .row-main,
@@ -816,6 +902,66 @@ code {
   color: var(--color-surface-10);
 }
 
+.path-row {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.browse-button {
+  flex: none;
+  white-space: nowrap;
+}
+
+.package-scripts {
+  width: 100%;
+}
+
+.package-script-list {
+  width: 100%;
+  max-height: 150px;
+  overflow-y: auto;
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-surface-5);
+  border-radius: 5px;
+}
+
+.package-script {
+  display: grid;
+  grid-template-columns: minmax(70px, 0.7fr) minmax(120px, 2fr) 42px;
+  gap: 8px;
+  align-items: center;
+  min-height: 28px;
+  padding: 3px 7px;
+  border-bottom: 1px solid var(--color-surface-4);
+}
+
+.package-script:last-child {
+  border-bottom: 0;
+}
+
+.package-script code,
+.package-script span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.package-script code {
+  color: var(--color-surface-12);
+  font-size: 11px;
+}
+
+.package-script span {
+  color: var(--color-surface-9);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.package-script .text-button {
+  justify-self: end;
+}
+
 .proc-grid {
   display: grid;
   grid-template-columns: 1.1fr 2fr 1.2fr 24px;
@@ -830,6 +976,22 @@ code {
   letter-spacing: 0.03em;
 }
 
+.shell-command {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  overflow: hidden;
+  background: var(--color-surface-a2);
+  border: 1px solid var(--color-surface-5);
+  border-radius: 5px;
+  color: var(--color-surface-9);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-style: italic;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .text-button {
   padding: 3px 0;
   color: var(--color-surface-10);
@@ -838,6 +1000,11 @@ code {
 
 .text-button:hover {
   color: var(--color-accent-9);
+}
+
+.text-button:disabled {
+  color: var(--color-surface-7);
+  cursor: default;
 }
 
 .dialog-footer {

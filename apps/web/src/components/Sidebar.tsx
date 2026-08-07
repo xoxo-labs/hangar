@@ -1,5 +1,5 @@
 import { type Project, type SessionInfo, sessionId } from "@hangar/contracts"
-import { useMemo } from "react"
+import { type DragEvent, useMemo, useState } from "react"
 import * as actions from "../actions"
 import { describe, toneOf } from "../status"
 import { useStore } from "../store"
@@ -9,17 +9,25 @@ export function Sidebar() {
   const projects = useStore((s) => s.projects)
   const sessions = useStore((s) => s.sessions)
   const openEditor = useStore((s) => s.openEditor)
+  const [dragging, setDragging] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ name: string; side: "before" | "after" } | null>(null)
 
   const byId = useMemo(() => new Map(sessions.map((s) => [s.id, s])), [sessions])
 
   return (
     <aside className="sidebar">
       <header className="brand">
-        <span className="brand-mark" aria-hidden="true" />
-        <h1>hangar</h1>
+        <span className="brand-copy">
+          <h1>hangar</h1>
+          <span className="brand-subtitle">project workspace</span>
+        </span>
       </header>
 
       <nav className="projects">
+        <div className="projects-heading">
+          <span>Projects</span>
+          <span className="projects-count">{projects.length}</span>
+        </div>
         {projects.length === 0 ? (
           <p className="empty">
             No projects registered yet.
@@ -28,7 +36,36 @@ export function Sidebar() {
           </p>
         ) : (
           projects.map((project) => (
-            <ProjectRow key={project.name} project={project} byId={byId} />
+            <ProjectRow
+              key={project.name}
+              project={project}
+              byId={byId}
+              dragging={dragging === project.name}
+              dropSide={dropTarget?.name === project.name ? dropTarget.side : null}
+              onDragStart={() => {
+                setDragging(project.name)
+                setDropTarget(null)
+              }}
+              onDragOver={(side) => {
+                if (dragging !== null && dragging !== project.name) {
+                  setDropTarget({ name: project.name, side })
+                }
+              }}
+              onDrop={(side) => {
+                if (dragging !== null && dragging !== project.name) {
+                  const names = projects.map((item) => item.name).filter((item) => item !== dragging)
+                  const targetIndex = names.indexOf(project.name)
+                  names.splice(targetIndex + (side === "after" ? 1 : 0), 0, dragging)
+                  actions.reorderProjects(names)
+                }
+                setDragging(null)
+                setDropTarget(null)
+              }}
+              onDragEnd={() => {
+                setDragging(null)
+                setDropTarget(null)
+              }}
+            />
           ))
         )}
 
@@ -40,7 +77,25 @@ export function Sidebar() {
   )
 }
 
-function ProjectRow({ project, byId }: { project: Project; byId: Map<string, SessionInfo> }) {
+function ProjectRow({
+  project,
+  byId,
+  dragging,
+  dropSide,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+}: {
+  project: Project
+  byId: Map<string, SessionInfo>
+  dragging: boolean
+  dropSide: "before" | "after" | null
+  onDragStart: () => void
+  onDragOver: (side: "before" | "after") => void
+  onDrop: (side: "before" | "after") => void
+  onDragEnd: () => void
+}) {
   const collapsed = useStore((s) => s.collapsed[project.name] ?? false)
   const toggleCollapsed = useStore((s) => s.toggleCollapsed)
   const openEditor = useStore((s) => s.openEditor)
@@ -50,9 +105,34 @@ function ProjectRow({ project, byId }: { project: Project; byId: Map<string, Ses
     (p) => byId.get(sessionId(project.name, p.name))?.status === "running",
   )
 
+  const dragOver = (event: DragEvent<HTMLElement>): void => {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = "move"
+    const rect = event.currentTarget.getBoundingClientRect()
+    onDragOver(event.clientY < rect.top + rect.height / 2 ? "before" : "after")
+  }
+
   return (
-    <section className="project">
-      <div className="row project-row">
+    <section
+      className={`project${dragging ? " dragging" : ""}${dropSide ? ` drop-${dropSide}` : ""}`}
+      onDragOver={dragOver}
+      onDrop={(event) => {
+        event.preventDefault()
+        const rect = event.currentTarget.getBoundingClientRect()
+        onDrop(event.clientY < rect.top + rect.height / 2 ? "before" : "after")
+      }}
+    >
+      <div
+        className="row project-row"
+        draggable
+        title="Drag to reorder project"
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = "move"
+          event.dataTransfer.setData("text/plain", project.name)
+          onDragStart()
+        }}
+        onDragEnd={onDragEnd}
+      >
         <button
           type="button"
           className="row-main"
@@ -117,7 +197,7 @@ function ProjectRow({ project, byId }: { project: Project; byId: Map<string, Ses
               key={proc.name}
               project={project.name}
               name={proc.name}
-              cmd={proc.cmd}
+              cmd={proc.shell ? "Interactive shell" : proc.cmd}
               session={byId.get(sessionId(project.name, proc.name))}
             />
           ))}
@@ -146,7 +226,12 @@ function ProcessRow({
   const running = session?.status === "running"
 
   return (
-    <li className={`row process-row${activeId === id ? " selected" : ""}`}>
+    <li
+      className={`row process-row${activeId === id ? " selected" : ""}`}
+      onClick={() => {
+        if (session) setActive(id)
+      }}
+    >
       <button
         type="button"
         className="row-main"
@@ -156,6 +241,7 @@ function ProcessRow({
         <Dot tone={toneOf(session)} small title={describe(session)} />
         <span className="row-label">
           <span className="row-name">{name}</span>
+          <span className="row-sub" title={cmd}>{cmd}</span>
         </span>
       </button>
 

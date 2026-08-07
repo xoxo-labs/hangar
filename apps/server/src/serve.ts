@@ -1,9 +1,71 @@
 import { createServer } from "node:http"
-import { mkdirSync, watch } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, statSync, watch } from "node:fs"
+import { join, resolve } from "node:path"
 import { WebSocketServer, WebSocket } from "ws"
 import type { ClientMsg, Project, ServerMsg } from "@hangar/contracts"
-import { findProject, hangarHome, loadRegistry, saveRegistry, validateProject } from "./registry.ts"
+import {
+  expandHome,
+  findProject,
+  hangarHome,
+  loadRegistry,
+  saveRegistry,
+  validateProject,
+} from "./registry.ts"
 import { SessionManager } from "./sessions.ts"
+
+type PackageJson = {
+  name?: unknown
+  packageManager?: unknown
+  scripts?: unknown
+}
+
+function shellArg(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`
+}
+
+function inspectProject(inputPath: string): object {
+  const path = resolve(expandHome(inputPath))
+  if (!existsSync(path) || !statSync(path).isDirectory()) {
+    return { path, exists: false, package: null }
+  }
+
+  const packagePath = join(path, "package.json")
+  if (!existsSync(packagePath)) return { path, exists: true, package: null }
+
+  const parsed = JSON.parse(readFileSync(packagePath, "utf8")) as PackageJson
+  const declaredManager = typeof parsed.packageManager === "string"
+    ? parsed.packageManager.split("@")[0]
+    : null
+  const manager = declaredManager === "pnpm" || declaredManager === "yarn" ||
+      declaredManager === "bun" || declaredManager === "npm"
+    ? declaredManager
+    : existsSync(join(path, "pnpm-lock.yaml"))
+      ? "pnpm"
+      : existsSync(join(path, "yarn.lock"))
+        ? "yarn"
+        : existsSync(join(path, "bun.lock")) || existsSync(join(path, "bun.lockb"))
+          ? "bun"
+          : "npm"
+  const scripts = parsed.scripts && typeof parsed.scripts === "object"
+    ? Object.entries(parsed.scripts)
+        .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+        .map(([name, value]) => ({
+          name,
+          value,
+          cmd: `${manager} run ${shellArg(name)}`,
+        }))
+    : []
+
+  return {
+    path,
+    exists: true,
+    package: {
+      name: typeof parsed.name === "string" ? parsed.name : null,
+      manager,
+      scripts,
+    },
+  }
+}
 
 export function serve(port: number): void {
   const clients = new Set<WebSocket>()
@@ -30,9 +92,28 @@ export function serve(port: number): void {
   const manager = new SessionManager(broadcast, broadcastState)
 
   const httpServer = createServer((req, res) => {
-    if (req.url === "/health") {
+    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "127.0.0.1"}`)
+    if (url.pathname === "/health") {
       res.writeHead(200, { "content-type": "text/plain" })
       res.end("ok")
+      return
+    }
+    if (req.method === "GET" && url.pathname === "/project-info") {
+      try {
+        const path = url.searchParams.get("path") ?? ""
+        if (path.trim() === "") throw new Error("path is required")
+        res.writeHead(200, {
+          "content-type": "application/json",
+          "access-control-allow-origin": "*",
+        })
+        res.end(JSON.stringify(inspectProject(path)))
+      } catch (error) {
+        res.writeHead(400, {
+          "content-type": "application/json",
+          "access-control-allow-origin": "*",
+        })
+        res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
+      }
       return
     }
     res.writeHead(404)
@@ -97,9 +178,25 @@ export function serve(port: number): void {
         const errors = validateProject(msg.project)
         if (errors.length > 0) throw new Error(errors.join("; "))
         const registry = loadRegistry()
-        registry.projects = registry.projects.filter((p) => p.name !== msg.project.name)
-        registry.projects.push(msg.project)
-        registry.projects.sort((a, b) => a.name.localeCompare(b.name))
+        const existingIndex = registry.projects.findIndex((p) => p.name === msg.project.name)
+        if (existingIndex === -1) registry.projects.push(msg.project)
+        else registry.projects[existingIndex] = msg.project
+        saveRegistry(registry)
+        broadcastState()
+        return
+      }
+      case "reorderProjects": {
+        const registry = loadRegistry()
+        const currentNames = registry.projects.map((project) => project.name)
+        if (
+          msg.projects.length !== currentNames.length ||
+          new Set(msg.projects).size !== msg.projects.length ||
+          msg.projects.some((name) => !currentNames.includes(name))
+        ) {
+          throw new Error("project order must contain every project exactly once")
+        }
+        const byName = new Map(registry.projects.map((project) => [project.name, project]))
+        registry.projects = msg.projects.map((name) => byName.get(name)!)
         saveRegistry(registry)
         broadcastState()
         return

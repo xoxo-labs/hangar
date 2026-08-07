@@ -10,7 +10,7 @@
 import { spawn } from "node:child_process"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { app, BrowserWindow } from "electron"
+import { app, BrowserWindow, dialog, ipcMain } from "electron"
 
 // When launched under a supervisor (concurrently, a dead terminal), stdout and
 // stderr can vanish before we do; an unguarded console.* then throws EPIPE and
@@ -21,6 +21,7 @@ for (const stream of [process.stdout, process.stderr]) {
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SERVER_ENTRY = resolve(HERE, "../server/src/cli.ts")
+const PRELOAD_ENTRY = resolve(HERE, "preload.cjs")
 
 const PORT = Number(process.env.HANGAR_PORT ?? 4780)
 const WEB_URL = process.env.HANGAR_WEB_URL ?? "http://localhost:4790"
@@ -146,12 +147,13 @@ function createWindow() {
     minHeight: 600,
     backgroundColor: "#111213",
     titleBarStyle: "hiddenInset",
-    // Centers the lights on the 44px brand strip the web UI reserves.
-    trafficLightPosition: { x: 18, y: 16 },
+    // Centers the lights on the 48px title strip shared by sidebar and tabs.
+    trafficLightPosition: { x: 18, y: 18 },
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: PRELOAD_ENTRY,
     },
   })
 
@@ -206,6 +208,17 @@ function createWindow() {
 setInterval(() => {
   if (process.ppid === 1) app.quit()
 }, 2000).unref()
+
+ipcMain.handle("hangar:choose-project-directory", async () => {
+  const options = {
+    title: "Choose a project folder",
+    properties: ["openDirectory"],
+  }
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options)
+  return result.canceled ? null : (result.filePaths[0] ?? null)
+})
 
 app.whenReady().then(async () => {
   await ensureServer()

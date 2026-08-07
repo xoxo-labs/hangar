@@ -3,8 +3,10 @@
 export type ProjectProcess = {
   /** Short label shown in prefixes and used to target a single process, e.g. "web" */
   name: string
-  /** Shell command run in the process's cwd, e.g. "pnpm dev" */
+  /** Shell command run in the process's cwd, e.g. "pnpm dev". Empty for interactive shells. */
   cmd: string
+  /** Start an interactive login shell instead of running `cmd`. */
+  shell?: boolean
   /** Working directory relative to the project path; defaults to the project root */
   cwd?: string
 }
@@ -56,6 +58,8 @@ export type ClientMsg =
   | { type: "upsertProject"; project: Project }
   /** Remove a project from the registry. Refused while it has running sessions. */
   | { type: "removeProject"; project: string }
+  /** Persist the project order used by the sidebar. */
+  | { type: "reorderProjects"; projects: string[] }
 
 /** Messages the server broadcasts to every connected UI. */
 export type ServerMsg =

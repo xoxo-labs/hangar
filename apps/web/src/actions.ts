@@ -29,3 +29,7 @@ export function upsertProject(project: Project): void {
 export function removeProject(project: string): void {
   send({ type: "removeProject", project })
 }
+
+export function reorderProjects(projects: string[]): void {
+  send({ type: "reorderProjects", projects })
+}

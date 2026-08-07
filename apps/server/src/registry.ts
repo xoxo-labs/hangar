@@ -55,8 +55,8 @@ export function validateProject(project: Project): string[] {
     errors.push("a project needs at least one process")
   } else {
     for (const proc of project.processes) {
-      if (!proc.name || !proc.cmd) {
-        errors.push(`process needs name and cmd: ${JSON.stringify(proc)}`)
+      if (!proc.name || (!proc.shell && !proc.cmd)) {
+        errors.push(`process needs a name and either cmd or shell: ${JSON.stringify(proc)}`)
       }
     }
     const names = new Set(project.processes.map((p) => p.name))

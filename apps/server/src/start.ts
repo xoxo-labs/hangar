@@ -48,7 +48,8 @@ export async function startProject(project: Project, only?: string): Promise<num
     }
     const color = COLORS[i % COLORS.length] ?? ""
     const label = proc.name.padEnd(width)
-    const child = spawn(proc.cmd, {
+    const command = proc.shell ? `${process.env.SHELL ?? "/bin/zsh"} -l` : proc.cmd
+    const child = spawn(command, {
       cwd,
       shell: true,
       detached: true,
@@ -57,7 +58,7 @@ export async function startProject(project: Project, only?: string): Promise<num
     })
     child.stdout?.on("data", prefixedWriter(label, color, process.stdout))
     child.stderr?.on("data", prefixedWriter(label, color, process.stderr))
-    process.stdout.write(`${color}[${label}]${RESET} $ ${proc.cmd}  (pid ${child.pid})\n`)
+    process.stdout.write(`${color}[${label}]${RESET} $ ${command}  (pid ${child.pid})\n`)
     running.push({ proc, child })
   }
 
