@@ -1,6 +1,7 @@
 import * as actions from "../actions"
 import { describe, toneOf } from "../status"
 import { useStore } from "../store"
+import { ArmedButton } from "./ArmedButton"
 import { Dot } from "./Dot"
 
 export function TabBar() {
@@ -28,14 +29,25 @@ export function TabBar() {
             <Dot tone={toneOf(session)} small title={describe(session)} />
             <span className="tab-label">{session.id}</span>
           </button>
-          <button
-            type="button"
-            className="tab-close"
-            title={session.status === "running" ? "Stop session" : "Close session"}
-            onClick={() => actions.close(session)}
-          >
-            ×
-          </button>
+          {session.status === "running" ? (
+            <ArmedButton
+              armKey={`tab:${session.id}`}
+              className="tab-close"
+              glyph="×"
+              title={`Stop ${session.process}`}
+              armedTitle={`Click again to stop ${session.process}`}
+              onConfirm={() => actions.close(session)}
+            />
+          ) : (
+            <button
+              type="button"
+              className="tab-close"
+              title="Close session"
+              onClick={() => actions.close(session)}
+            >
+              ×
+            </button>
+          )}
         </div>
       ))}
     </div>

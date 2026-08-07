@@ -449,11 +449,34 @@ code {
   color: var(--color-surface-12);
 }
 
-/* Armed: one more click and it fires. Fill only — no ring, no resize. */
+/* Armed: one more click and it fires. Unmissable — solid amber, pulsing glow. */
 .icon-button.armed,
-.icon-button.armed:hover {
-  background: var(--color-warning-a5);
-  color: var(--color-warning-11);
+.icon-button.armed:hover,
+.tab-close.armed,
+.tab-close.armed:hover {
+  background: var(--color-warning-9);
+  color: var(--color-surface-1);
+  animation: arm-pulse 800ms ease-out infinite;
+}
+
+.tab .tab-close.armed {
+  opacity: 1;
+}
+
+@keyframes arm-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--color-warning-a7);
+  }
+  100% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-button.armed,
+  .tab-close.armed {
+    animation: none;
+  }
 }
 
 .icon-button:disabled {
