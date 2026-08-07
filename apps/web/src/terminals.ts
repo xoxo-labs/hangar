@@ -1,4 +1,4 @@
-import type { SessionId } from "@hangar/contracts"
+import { DEFAULT_SETTINGS, type AppSettings, type SessionId } from "@hangar/contracts"
 import { FitAddon } from "@xterm/addon-fit"
 import { Terminal } from "@xterm/xterm"
 import { useStore } from "./store"
@@ -33,9 +33,10 @@ function ensure(id: SessionId): Entry {
   const existing = entries.get(id)
   if (existing) return existing
 
+  const terminalSettings = useStore.getState().settings.terminal
   const term = new Terminal({
-    fontSize: 12,
-    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+    fontSize: terminalSettings.fontSize ?? DEFAULT_SETTINGS.terminal.fontSize,
+    fontFamily: terminalSettings.fontFamily ?? DEFAULT_SETTINGS.terminal.fontFamily,
     scrollback: 5000,
     cursorBlink: true,
     allowProposedApi: true,
@@ -45,11 +46,23 @@ function ensure(id: SessionId): Entry {
       cursor: TERMINAL_FOREGROUND,
       cursorAccent: TERMINAL_BACKGROUND,
       selectionBackground: "#3a4a63",
+      scrollbarSliderBackground: "#77727e70",
+      scrollbarSliderHoverBackground: "#aaa6b080",
+      scrollbarSliderActiveBackground: "#d0cdd7a0",
     },
   })
   const fit = new FitAddon()
   term.loadAddon(fit)
   term.onData((data) => send({ type: "write", id, data }))
+  term.onSelectionChange(() => {
+    if (!useStore.getState().settings.terminal.copyOnSelect || !term.hasSelection()) return
+    const selection = term.getSelection()
+    const lineCount = selection.split(/\r?\n/).length
+    void navigator.clipboard
+      .writeText(selection)
+      .then(() => useStore.getState().showNotice(`Copied ${lineCount} line${lineCount === 1 ? "" : "s"}`))
+      .catch(() => {})
+  })
 
   const entry: Entry = { term, fit, el: null, observer: null, cols: term.cols, rows: term.rows }
   entries.set(id, entry)
@@ -120,6 +133,53 @@ export function fitTerminal(id: SessionId): void {
 
 export function focusTerminal(id: SessionId): void {
   entries.get(id)?.term.focus()
+}
+
+/** Applies appearance changes to existing terminals and recalculates their PTY size. */
+export function applyTerminalSettings(settings: AppSettings["terminal"]): void {
+  const fontFamily = settings.fontFamily ?? DEFAULT_SETTINGS.terminal.fontFamily
+  const fontSize = settings.fontSize ?? DEFAULT_SETTINGS.terminal.fontSize
+  for (const [id, entry] of entries) {
+    if (entry.term.options.fontFamily === fontFamily && entry.term.options.fontSize === fontSize) continue
+    entry.term.options.fontFamily = fontFamily
+    entry.term.options.fontSize = fontSize
+    fitTerminal(id)
+  }
+}
+
+export function hasTerminalSelection(id: SessionId): boolean {
+  return entries.get(id)?.term.hasSelection() ?? false
+}
+
+export async function copyTerminalSelection(id: SessionId): Promise<number> {
+  const text = entries.get(id)?.term.getSelection() ?? ""
+  if (!text) return 0
+  await navigator.clipboard.writeText(text)
+  return text.split("\n").length
+}
+
+export async function copyTerminalOutput(id: SessionId, lastLines?: number): Promise<number> {
+  const term = entries.get(id)?.term
+  if (!term) return 0
+  const buffer = term.buffer.active
+  let end = buffer.length
+  while (end > 0 && !(buffer.getLine(end - 1)?.translateToString(true) ?? "")) end -= 1
+  const start = lastLines === undefined ? 0 : Math.max(0, end - lastLines)
+  const lines: string[] = []
+  for (let index = start; index < end; index += 1) {
+    lines.push(buffer.getLine(index)?.translateToString(true) ?? "")
+  }
+  if (lines.length === 0) return 0
+  if (lastLines !== undefined) {
+    term.selectLines(start, lines.length)
+    term.scrollToLine(start)
+  }
+  await navigator.clipboard.writeText(lines.join("\n"))
+  return lines.length
+}
+
+export function clearTerminal(id: SessionId): void {
+  entries.get(id)?.term.clear()
 }
 
 export function disposeTerminal(id: SessionId): void {

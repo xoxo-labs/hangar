@@ -25,6 +25,54 @@ export type Registry = {
   projects: Project[]
 }
 
+export type BrowserChoice = "system" | "safari" | "chrome" | "arc" | "firefox" | "brave" | "edge"
+
+export type AppSettings = {
+  links: {
+    /** Browser used for detected localhost ports. */
+    browser: BrowserChoice
+  }
+  terminal: {
+    copyOnSelect: boolean
+    fontFamily: string
+    fontSize: number
+  }
+  terminalLogging: {
+    enabled: boolean
+    directory: string
+    retentionDays: 7 | 30 | null
+    maxFileSizeMb: number
+    format: "plain" | "ansi"
+  }
+  sessionHistory: {
+    /** Persist run metadata and resource summaries. Terminal output is controlled separately. */
+    enabled: boolean
+    retentionDays: 7 | 30 | 90 | null
+  }
+}
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  links: {
+    browser: "system",
+  },
+  terminal: {
+    copyOnSelect: true,
+    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+    fontSize: 12,
+  },
+  terminalLogging: {
+    enabled: false,
+    directory: "~/.hangar/logs",
+    retentionDays: 30,
+    maxFileSizeMb: 50,
+    format: "plain",
+  },
+  sessionHistory: {
+    enabled: false,
+    retentionDays: 30,
+  },
+}
+
 /** The hangar server listens on this port unless HANGAR_PORT overrides it. */
 export const DEFAULT_PORT = 4780
 
@@ -33,15 +81,51 @@ export type SessionId = string
 
 export type SessionStatus = "running" | "exited"
 
+export type SessionMetrics = {
+  cpuPercent: number
+  memoryBytes: number
+  processCount: number
+  outputBytes: number
+  outputBytesPerSecond: number
+  ports: number[]
+  sampledAt: number
+  peakCpuPercent: number
+  peakMemoryBytes: number
+}
+
 export type SessionInfo = {
   id: SessionId
+  /** Unique for every launch; unlike id, changes after a restart. */
+  runId: string
   project: string
   process: string
   status: SessionStatus
   pid?: number
   exitCode?: number | null
+  startedAt: number
+  endedAt?: number
   /** The command the session is running */
   cmd: string
+  metrics?: SessionMetrics
+  /** Current on-disk output log, when logging was enabled at session start. */
+  logPath?: string
+}
+
+export type SessionHistoryEntry = {
+  runId: string
+  id: SessionId
+  project: string
+  process: string
+  cmd: string
+  startedAt: number
+  endedAt: number
+  durationMs: number
+  exitCode: number | null
+  reason: "completed" | "failed" | "stopped"
+  peakCpuPercent: number
+  peakMemoryBytes: number
+  totalOutputBytes: number
+  logPath?: string
 }
 
 /** Messages the UI sends to the server. */
@@ -60,11 +144,14 @@ export type ClientMsg =
   | { type: "removeProject"; project: string }
   /** Persist the project order used by the sidebar. */
   | { type: "reorderProjects"; projects: string[] }
+  | { type: "updateSettings"; settings: AppSettings }
 
 /** Messages the server broadcasts to every connected UI. */
 export type ServerMsg =
   /** Full picture: registry projects + all sessions. Sent on connect and after any change. */
-  | { type: "state"; projects: Project[]; sessions: SessionInfo[] }
+  | { type: "state"; projects: Project[]; sessions: SessionInfo[]; history: SessionHistoryEntry[]; settings: AppSettings }
+  /** Lightweight resource updates, kept out of full state broadcasts. */
+  | { type: "metrics"; id: SessionId; runId: string; metrics: SessionMetrics }
   /** Full scrollback of one session. Sent to a client right after connect, before live output. */
   | { type: "snapshot"; id: SessionId; data: string }
   | { type: "output"; id: SessionId; data: string }

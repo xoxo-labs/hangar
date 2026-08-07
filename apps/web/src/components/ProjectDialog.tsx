@@ -143,11 +143,11 @@ function Dialog({ editing }: { editing: string | null }) {
     setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)))
 
   const browse = async (): Promise<void> => {
-    const choose = window.hangarDesktop?.chooseProjectDirectory
+    const choose = window.hangarDesktop?.chooseDirectory
     if (!choose || browsing) return
     setBrowsing(true)
     try {
-      const selected = await choose()
+      const selected = await choose("Choose a project folder")
       if (selected !== null) setPath(selected)
     } finally {
       setBrowsing(false)

@@ -8,13 +8,13 @@ export function TabBar() {
   const activeId = useStore((s) => s.activeId)
   const setActive = useStore((s) => s.setActive)
   const requestConfirm = useStore((s) => s.requestConfirm)
-
-  if (sessions.length === 0) return <div className="tabbar empty-tabbar" />
+  const openSettings = useStore((s) => s.openSettings)
 
   return (
-    <div className="tabbar" role="tablist">
-      {sessions.map((session) => (
-        <div
+    <div className={`tabbar${sessions.length === 0 ? " empty-tabbar" : ""}`}>
+      <div className="tab-list" role="tablist">
+        {sessions.map((session) => (
+          <div
           key={session.id}
           className={`tab${session.id === activeId ? " active" : ""}`}
           role="tab"
@@ -45,8 +45,18 @@ export function TabBar() {
           >
             ×
           </button>
-        </div>
-      ))}
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="top-settings"
+        title="Settings (⌘,)"
+        aria-label="Settings"
+        onClick={openSettings}
+      >
+        ⚙
+      </button>
     </div>
   )
 }

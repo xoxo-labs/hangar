@@ -1,4 +1,13 @@
-import { DEFAULT_PORT, type Project, type SessionId, type SessionInfo } from "@hangar/contracts"
+import {
+  DEFAULT_PORT,
+  DEFAULT_SETTINGS,
+  type AppSettings,
+  type Project,
+  type SessionHistoryEntry,
+  type SessionId,
+  type SessionInfo,
+  type SessionMetrics,
+} from "@hangar/contracts"
 import { create } from "zustand"
 
 export type ConnectionStatus = "connecting" | "connected" | "reconnecting"
@@ -17,6 +26,7 @@ export type ConfirmRequest = {
  * refuses to dismiss a running session, so the client finishes the job.
  */
 const closeOnExit = new Set<SessionId>()
+let noticeTimer: ReturnType<typeof setTimeout> | null = null
 
 export function markCloseOnExit(id: SessionId): void {
   closeOnExit.add(id)
@@ -32,15 +42,22 @@ type Store = {
   projects: Project[]
   /** Live sessions, kept in a stable tab order (existing first, new appended). */
   sessions: SessionInfo[]
+  /** Persisted run summaries, newest first. */
+  history: SessionHistoryEntry[]
   /** Session whose terminal is visible, or null when nothing is open. */
   activeId: SessionId | null
   /** Sessions that already own an xterm instance (panes are rendered for these). */
   terminalIds: SessionId[]
+  /** Session whose details drawer is open. */
+  inspectingId: SessionId | null
   /** Projects the user collapsed in the sidebar. */
   collapsed: Record<string, boolean>
   status: ConnectionStatus
   port: number
+  settings: AppSettings
+  settingsOpen: boolean
   lastError: string | null
+  notice: string | null
   /** Whether the add/edit project dialog is up. */
   editorOpen: boolean
   /** Project the dialog is editing; null while it is creating a new one. */
@@ -48,16 +65,23 @@ type Store = {
   /** Stop/restart waiting in the confirm dialog; null when it is closed. */
   confirming: ConfirmRequest | null
 
-  applyState: (projects: Project[], sessions: SessionInfo[]) => void
+  applyState: (projects: Project[], sessions: SessionInfo[], history: SessionHistoryEntry[], settings: AppSettings) => void
+  updateMetrics: (id: SessionId, runId: string, metrics: SessionMetrics) => void
   setStatus: (status: ConnectionStatus) => void
   setActive: (id: SessionId | null) => void
+  openInspector: (id: SessionId) => void
+  toggleInspector: (id: SessionId) => void
+  closeInspector: () => void
   toggleCollapsed: (project: string) => void
   noteTerminal: (id: SessionId) => void
   dropTerminal: (id: SessionId) => void
   setError: (message: string | null) => void
+  showNotice: (message: string) => void
   /** Opens the dialog: with a name to edit that project, without one to create. */
   openEditor: (project?: string) => void
   closeEditor: () => void
+  openSettings: () => void
+  closeSettings: () => void
   requestConfirm: (request: ConfirmRequest) => void
   closeConfirm: () => void
 }
@@ -65,17 +89,22 @@ type Store = {
 export const useStore = create<Store>((set) => ({
   projects: [],
   sessions: [],
+  history: [],
   activeId: null,
   terminalIds: [],
+  inspectingId: null,
   collapsed: {},
   status: "connecting",
   port: readPort(),
+  settings: structuredClone(DEFAULT_SETTINGS),
+  settingsOpen: false,
   lastError: null,
+  notice: null,
   editorOpen: false,
   editingProject: null,
   confirming: null,
 
-  applyState: (projects, sessions) =>
+  applyState: (projects, sessions, history, settings) =>
     set((state) => {
       const next = new Map(sessions.map((s) => [s.id, s]))
       const ordered: SessionInfo[] = []
@@ -98,12 +127,25 @@ export const useStore = create<Store>((set) => ({
       const activeId =
         focus?.id ?? (stillOpen ? state.activeId : (ordered.at(-1)?.id ?? null))
 
-      return { projects, sessions: ordered, activeId }
+      return { projects, sessions: ordered, history, activeId, settings }
     }),
+
+  updateMetrics: (id, runId, metrics) =>
+    set((state) => ({
+      sessions: state.sessions.map((session) =>
+        session.id === id && session.runId === runId ? { ...session, metrics } : session,
+      ),
+    })),
 
   setStatus: (status) => set({ status }),
 
   setActive: (activeId) => set({ activeId }),
+
+  openInspector: (inspectingId) => set({ inspectingId }),
+
+  toggleInspector: (id) => set((state) => ({ inspectingId: state.inspectingId === id ? null : id })),
+
+  closeInspector: () => set({ inspectingId: null }),
 
   toggleCollapsed: (project) =>
     set((state) => ({ collapsed: { ...state.collapsed, [project]: !state.collapsed[project] } })),
@@ -118,9 +160,22 @@ export const useStore = create<Store>((set) => ({
 
   setError: (lastError) => set({ lastError }),
 
+  showNotice: (notice) => {
+    if (noticeTimer !== null) clearTimeout(noticeTimer)
+    set({ notice })
+    noticeTimer = setTimeout(() => {
+      noticeTimer = null
+      set({ notice: null })
+    }, 1800)
+  },
+
   openEditor: (project) => set({ editorOpen: true, editingProject: project ?? null }),
 
   closeEditor: () => set({ editorOpen: false, editingProject: null }),
+
+  openSettings: () => set({ settingsOpen: true }),
+
+  closeSettings: () => set({ settingsOpen: false }),
 
   requestConfirm: (confirming) => set({ confirming }),
 

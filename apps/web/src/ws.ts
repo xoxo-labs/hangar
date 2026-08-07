@@ -1,6 +1,6 @@
 import type { ClientMsg, ServerMsg } from "@hangar/contracts"
 import { takeCloseOnExit, useStore } from "./store"
-import { disposeTerminal, noteExit, writeOutput, writeSnapshot } from "./terminals"
+import { applyTerminalSettings, disposeTerminal, noteExit, writeOutput, writeSnapshot } from "./terminals"
 
 const MIN_BACKOFF = 500
 const MAX_BACKOFF = 5_000
@@ -66,10 +66,14 @@ function handle(msg: ServerMsg): void {
   switch (msg.type) {
     case "state": {
       const gone = store.sessions.filter((s) => !msg.sessions.some((next) => next.id === s.id))
-      store.applyState(msg.projects, msg.sessions)
+      store.applyState(msg.projects, msg.sessions, msg.history, msg.settings)
+      applyTerminalSettings(msg.settings.terminal)
       for (const session of gone) disposeTerminal(session.id)
       return
     }
+    case "metrics":
+      store.updateMetrics(msg.id, msg.runId, msg.metrics)
+      return
     case "snapshot":
       writeSnapshot(msg.id, msg.data)
       return

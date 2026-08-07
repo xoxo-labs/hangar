@@ -1,5 +1,8 @@
 const { contextBridge, ipcRenderer } = require("electron")
 
 contextBridge.exposeInMainWorld("hangarDesktop", {
-  chooseProjectDirectory: () => ipcRenderer.invoke("hangar:choose-project-directory"),
+  chooseDirectory: (title) => ipcRenderer.invoke("hangar:choose-directory", title),
+  openUrl: (url, browser) => ipcRenderer.invoke("hangar:open-url", url, browser),
+  openPath: (path) => ipcRenderer.invoke("hangar:open-path", path),
+  revealPath: (path) => ipcRenderer.invoke("hangar:reveal-path", path),
 })

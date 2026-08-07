@@ -1,19 +1,26 @@
-import { chmodSync, existsSync } from "node:fs"
+import { execFile } from "node:child_process"
+import { chmodSync, createWriteStream, existsSync, mkdirSync, type WriteStream } from "node:fs"
 import { createRequire } from "node:module"
-import { dirname, join } from "node:path"
+import { randomUUID } from "node:crypto"
+import { dirname, join, resolve } from "node:path"
+import { stripVTControlCharacters } from "node:util"
 import { spawn as ptySpawn, type IPty } from "node-pty"
 import {
   sessionId,
+  type AppSettings,
   type Project,
   type ServerMsg,
   type SessionId,
   type SessionInfo,
+  type SessionMetrics,
 } from "@hangar/contracts"
+import { appendHistory } from "./history.ts"
 import { expandHome } from "./registry.ts"
 
 /** Keep at most this much scrollback per session for late-joining clients. */
 const MAX_BUFFER_CHARS = 512 * 1024
 const KILL_GRACE_MS = 1500
+const METRICS_INTERVAL_MS = 2_000
 const RESTART_DIVIDER = "\r\n\x1b[2m— restarted —\x1b[0m\r\n"
 /** Inherit the full environment except vars that would confuse dev servers. */
 const ENV_BLOCKLIST = new Set(["PORT", "ELECTRON_RUN_AS_NODE", "HANGAR_PORT"])
@@ -38,8 +45,53 @@ function ensureSpawnHelperExecutable(): void {
   }
 }
 
+type SessionLog = Pick<
+  Session,
+  "logPath" | "logStream" | "logBytes" | "logMaxBytes" | "logFormat"
+>
+
+function safeSegment(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, "-")
+}
+
+function createSessionLog(project: string, processName: string, settings: AppSettings): SessionLog {
+  const config = settings.terminalLogging
+  const empty: SessionLog = {
+    logPath: undefined,
+    logStream: null,
+    logBytes: 0,
+    logMaxBytes: config.maxFileSizeMb * 1024 * 1024,
+    logFormat: config.format,
+  }
+  if (!config.enabled) return empty
+
+  try {
+    const directory = resolve(expandHome(config.directory), safeSegment(project), safeSegment(processName))
+    mkdirSync(directory, { recursive: true })
+    const timestamp = new Date().toISOString().replaceAll(":", "-").replace("T", "_").replace("Z", "")
+    const logPath = join(directory, `${timestamp}.log`)
+    return { ...empty, logPath, logStream: createWriteStream(logPath, { flags: "a" }) }
+  } catch {
+    return empty
+  }
+}
+
+function writeSessionLog(session: Session, data: string): void {
+  if (!session.logStream) return
+  const output = session.logFormat === "plain" ? stripVTControlCharacters(data) : data
+  const bytes = Buffer.byteLength(output)
+  if (session.logBytes + bytes > session.logMaxBytes) {
+    session.logStream.end("\n[hangar] log size limit reached\n")
+    session.logStream = null
+    return
+  }
+  session.logBytes += bytes
+  session.logStream.write(output)
+}
+
 type Session = {
   id: SessionId
+  runId: string
   project: string
   process: string
   cmd: string
@@ -47,34 +99,101 @@ type Session = {
   pid: number | undefined
   status: "running" | "exited"
   exitCode: number | null
+  startedAt: number
+  endedAt: number | undefined
+  metrics: SessionMetrics
+  outputBytesAtLastSample: number
+  stopRequested: boolean
+  historyEnabled: boolean
   buffer: string
   killTimer: NodeJS.Timeout | null
+  logPath: string | undefined
+  logStream: WriteStream | null
+  logBytes: number
+  logMaxBytes: number
+  logFormat: "plain" | "ansi"
+}
+
+type ProcessSample = { pid: number; ppid: number; cpu: number; rssKb: number }
+
+function run(command: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, { encoding: "utf8", env: { ...process.env, LC_ALL: "C" } }, (error, stdout) => {
+      if (error) reject(error)
+      else resolve(stdout)
+    })
+  })
+}
+
+function descendants(rootPid: number, samples: ProcessSample[]): ProcessSample[] {
+  const wanted = new Set([rootPid])
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const sample of samples) {
+      if (wanted.has(sample.ppid) && !wanted.has(sample.pid)) {
+        wanted.add(sample.pid)
+        changed = true
+      }
+    }
+  }
+  return samples.filter((sample) => wanted.has(sample.pid))
+}
+
+async function listeningPorts(pids: number[]): Promise<number[]> {
+  if (pids.length === 0) return []
+  try {
+    const output = await run("lsof", ["-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-p", pids.join(","), "-Fn"])
+    const ports = new Set<number>()
+    for (const line of output.split("\n")) {
+      const match = line.match(/:(\d+)(?: \(LISTEN\))?$/)
+      if (match) ports.add(Number(match[1]))
+    }
+    return [...ports].sort((a, b) => a - b)
+  } catch {
+    return []
+  }
 }
 
 export class SessionManager {
   private sessions = new Map<SessionId, Session>()
   /** Sessions that should respawn (with this project config) when their exit lands. */
   private pendingRestarts = new Map<SessionId, Project>()
+  private sampling = false
+  private sampleNumber = 0
 
   /** Push a message to every connected client. */
   private broadcast: (msg: ServerMsg) => void
   /** Ask the server to re-broadcast the full state (registry + sessions). */
   private notifyState: () => void
+  private getSettings: () => AppSettings
 
-  constructor(broadcast: (msg: ServerMsg) => void, notifyState: () => void) {
+  constructor(
+    broadcast: (msg: ServerMsg) => void,
+    notifyState: () => void,
+    getSettings: () => AppSettings,
+  ) {
     this.broadcast = broadcast
     this.notifyState = notifyState
+    this.getSettings = getSettings
+    const timer = setInterval(() => void this.sampleMetrics(), METRICS_INTERVAL_MS)
+    timer.unref()
   }
 
   list(): SessionInfo[] {
     return [...this.sessions.values()].map((s) => ({
       id: s.id,
+      runId: s.runId,
       project: s.project,
       process: s.process,
       cmd: s.cmd,
       status: s.status,
       pid: s.pid,
       exitCode: s.exitCode,
+      startedAt: s.startedAt,
+      ...(s.endedAt === undefined ? {} : { endedAt: s.endedAt }),
+      metrics: s.metrics,
+      ...(s.logPath ? { logPath: s.logPath } : {}),
     }))
   }
 
@@ -121,8 +240,12 @@ export class SessionManager {
         env,
       })
 
+      const settings = this.getSettings()
+      const logging = createSessionLog(project.name, proc.name, settings)
+      const startedAt = Date.now()
       const session: Session = {
         id,
+        runId: randomUUID(),
         project: project.name,
         process: proc.name,
         cmd: displayedCommand,
@@ -130,9 +253,26 @@ export class SessionManager {
         pid: pty.pid,
         status: "running",
         exitCode: null,
+        startedAt,
+        endedAt: undefined,
+        metrics: {
+          cpuPercent: 0,
+          memoryBytes: 0,
+          processCount: 1,
+          outputBytes: 0,
+          outputBytesPerSecond: 0,
+          ports: [],
+          sampledAt: startedAt,
+          peakCpuPercent: 0,
+          peakMemoryBytes: 0,
+        },
+        outputBytesAtLastSample: 0,
+        stopRequested: false,
+        historyEnabled: settings.sessionHistory.enabled,
         // Reuse the old buffer so a restart keeps prior scrollback context.
         buffer: existing ? existing.buffer + RESTART_DIVIDER : "",
         killTimer: null,
+        ...logging,
       }
       this.sessions.set(id, session)
       // Live clients only get buffers as connect-time snapshots, so the divider
@@ -141,6 +281,8 @@ export class SessionManager {
 
       pty.onData((data) => {
         session.buffer = (session.buffer + data).slice(-MAX_BUFFER_CHARS)
+        session.metrics.outputBytes += Buffer.byteLength(data)
+        writeSessionLog(session, data)
         this.broadcast({ type: "output", id, data })
       })
       pty.onExit(({ exitCode }) => {
@@ -148,7 +290,28 @@ export class SessionManager {
         session.killTimer = null
         session.status = "exited"
         session.exitCode = exitCode
+        session.endedAt = Date.now()
         session.pty = null
+        session.logStream?.end()
+        session.logStream = null
+        if (session.historyEnabled) {
+          appendHistory({
+            runId: session.runId,
+            id: session.id,
+            project: session.project,
+            process: session.process,
+            cmd: session.cmd,
+            startedAt: session.startedAt,
+            endedAt: session.endedAt,
+            durationMs: session.endedAt - session.startedAt,
+            exitCode,
+            reason: session.stopRequested ? "stopped" : exitCode === 0 ? "completed" : "failed",
+            peakCpuPercent: session.metrics.peakCpuPercent,
+            peakMemoryBytes: session.metrics.peakMemoryBytes,
+            totalOutputBytes: session.metrics.outputBytes,
+            ...(session.logPath ? { logPath: session.logPath } : {}),
+          }, this.getSettings())
+        }
         this.broadcast({ type: "exit", id, exitCode })
         const restartAs = this.pendingRestarts.get(id)
         if (restartAs) {
@@ -235,9 +398,59 @@ export class SessionManager {
     await Promise.race([done, new Promise((r) => setTimeout(r, timeoutMs))])
   }
 
+  private async sampleMetrics(): Promise<void> {
+    if (this.sampling) return
+    const running = [...this.sessions.values()].filter(
+      (session): session is Session & { pid: number } => session.status === "running" && session.pid !== undefined,
+    )
+    if (running.length === 0) return
+    this.sampling = true
+    this.sampleNumber += 1
+    try {
+      const output = await run("ps", ["-axo", "pid=,ppid=,%cpu=,rss="])
+      const samples: ProcessSample[] = output.split("\n").flatMap((line) => {
+        const [pid, ppid, cpu, rssKb] = line.trim().split(/\s+/).map(Number)
+        return Number.isFinite(pid) && Number.isFinite(ppid) && Number.isFinite(cpu) && Number.isFinite(rssKb)
+          ? [{ pid: pid!, ppid: ppid!, cpu: cpu!, rssKb: rssKb! }]
+          : []
+      })
+      for (const session of running) {
+        if (session.status !== "running") continue
+        const tree = descendants(session.pid, samples)
+        const cpuPercent = tree.reduce((sum, item) => sum + item.cpu, 0)
+        const memoryBytes = tree.reduce((sum, item) => sum + item.rssKb * 1024, 0)
+        const elapsed = Math.max(0.001, (Date.now() - session.metrics.sampledAt) / 1000)
+        const outputBytesPerSecond = Math.round(
+          (session.metrics.outputBytes - session.outputBytesAtLastSample) / elapsed,
+        )
+        session.outputBytesAtLastSample = session.metrics.outputBytes
+        const ports = this.sampleNumber % 3 === 1
+          ? await listeningPorts(tree.map((item) => item.pid))
+          : session.metrics.ports
+        session.metrics = {
+          ...session.metrics,
+          cpuPercent: Math.round(cpuPercent * 10) / 10,
+          memoryBytes,
+          processCount: tree.length,
+          outputBytesPerSecond,
+          ports,
+          sampledAt: Date.now(),
+          peakCpuPercent: Math.max(session.metrics.peakCpuPercent, cpuPercent),
+          peakMemoryBytes: Math.max(session.metrics.peakMemoryBytes, memoryBytes),
+        }
+        this.broadcast({ type: "metrics", id: session.id, runId: session.runId, metrics: session.metrics })
+      }
+    } catch {
+      // Resource stats are best-effort and must never affect the managed process.
+    } finally {
+      this.sampling = false
+    }
+  }
+
   private stopSession(session: Session): void {
     if (session.status !== "running" || session.pid === undefined) return
     if (session.killTimer) return // escalation already in flight
+    session.stopRequested = true
     this.signal(session, "SIGTERM")
     session.killTimer = setTimeout(() => {
       if (session.status === "running") this.signal(session, "SIGKILL")

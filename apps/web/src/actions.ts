@@ -1,4 +1,4 @@
-import type { Project, SessionInfo } from "@hangar/contracts"
+import type { AppSettings, Project, SessionInfo } from "@hangar/contracts"
 import { send } from "./ws"
 
 export function start(project: string, process?: string): void {
@@ -32,4 +32,8 @@ export function removeProject(project: string): void {
 
 export function reorderProjects(projects: string[]): void {
   send({ type: "reorderProjects", projects })
+}
+
+export function updateSettings(settings: AppSettings): void {
+  send({ type: "updateSettings", settings })
 }

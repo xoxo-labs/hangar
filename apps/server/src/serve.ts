@@ -2,7 +2,7 @@ import { createServer } from "node:http"
 import { existsSync, mkdirSync, readFileSync, statSync, watch } from "node:fs"
 import { join, resolve } from "node:path"
 import { WebSocketServer, WebSocket } from "ws"
-import type { ClientMsg, Project, ServerMsg } from "@hangar/contracts"
+import type { AppSettings, ClientMsg, Project, ServerMsg } from "@hangar/contracts"
 import {
   expandHome,
   findProject,
@@ -11,7 +11,9 @@ import {
   saveRegistry,
   validateProject,
 } from "./registry.ts"
+import { loadHistory } from "./history.ts"
 import { SessionManager } from "./sessions.ts"
+import { loadSettings, saveSettings } from "./settings.ts"
 
 type PackageJson = {
   name?: unknown
@@ -79,17 +81,20 @@ export function serve(port: number): void {
 
   const stateMsg = (): ServerMsg => {
     let projects: Project[]
+    let settings: AppSettings
     try {
       projects = loadRegistry().projects
+      settings = loadSettings()
     } catch (error) {
       broadcast({ type: "error", message: String(error) })
       projects = []
+      settings = loadSettings()
     }
-    return { type: "state", projects, sessions: manager.list() }
+    return { type: "state", projects, sessions: manager.list(), history: loadHistory(settings), settings }
   }
   const broadcastState = (): void => broadcast(stateMsg())
 
-  const manager = new SessionManager(broadcast, broadcastState)
+  const manager = new SessionManager(broadcast, broadcastState, loadSettings)
 
   const httpServer = createServer((req, res) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "127.0.0.1"}`)
@@ -201,6 +206,10 @@ export function serve(port: number): void {
         broadcastState()
         return
       }
+      case "updateSettings":
+        saveSettings(msg.settings)
+        broadcastState()
+        return
       case "removeProject": {
         const registry = loadRegistry()
         if (!findProject(registry, msg.project)) {

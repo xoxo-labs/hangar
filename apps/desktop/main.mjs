@@ -8,9 +8,10 @@
 // over HTTP, exactly as it does in a browser.
 
 import { spawn } from "node:child_process"
-import { dirname, resolve } from "node:path"
+import { homedir } from "node:os"
+import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { app, BrowserWindow, dialog, ipcMain } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
 
 // When launched under a supervisor (concurrently, a dead terminal), stdout and
 // stderr can vanish before we do; an unguarded console.* then throws EPIPE and
@@ -209,15 +210,58 @@ setInterval(() => {
   if (process.ppid === 1) app.quit()
 }, 2000).unref()
 
-ipcMain.handle("hangar:choose-project-directory", async () => {
+ipcMain.handle("hangar:choose-directory", async (_event, requestedTitle) => {
   const options = {
-    title: "Choose a project folder",
+    title: typeof requestedTitle === "string" ? requestedTitle : "Choose a folder",
     properties: ["openDirectory"],
   }
   const result = mainWindow
     ? await dialog.showOpenDialog(mainWindow, options)
     : await dialog.showOpenDialog(options)
   return result.canceled ? null : (result.filePaths[0] ?? null)
+})
+
+function expandHome(path) {
+  return path === "~" ? homedir() : path.startsWith("~/") ? join(homedir(), path.slice(2)) : path
+}
+
+const BROWSER_APPS = {
+  safari: "Safari",
+  chrome: "Google Chrome",
+  arc: "Arc",
+  firefox: "Firefox",
+  brave: "Brave Browser",
+  edge: "Microsoft Edge",
+}
+
+ipcMain.handle("hangar:open-url", async (_event, rawUrl, browser) => {
+  if (typeof rawUrl !== "string") return "Invalid URL"
+  let url
+  try {
+    url = new URL(rawUrl)
+  } catch {
+    return "Invalid URL"
+  }
+  if (!["http:", "https:"].includes(url.protocol) || !["127.0.0.1", "localhost"].includes(url.hostname)) {
+    return "Only local HTTP links are allowed"
+  }
+  const appName = BROWSER_APPS[browser]
+  if (process.platform === "darwin" && appName) {
+    const child = spawn("/usr/bin/open", ["-a", appName, url.href], { detached: true, stdio: "ignore" })
+    child.unref()
+    return ""
+  }
+  await shell.openExternal(url.href)
+  return ""
+})
+
+ipcMain.handle("hangar:open-path", async (_event, path) => {
+  if (typeof path !== "string" || path.trim() === "") return "Invalid path"
+  return shell.openPath(expandHome(path))
+})
+
+ipcMain.handle("hangar:reveal-path", (_event, path) => {
+  if (typeof path === "string" && path.trim() !== "") shell.showItemInFolder(expandHome(path))
 })
 
 app.whenReady().then(async () => {

@@ -1,6 +1,7 @@
-import { useMemo } from "react"
+import { useEffect, useMemo } from "react"
 import { ConfirmDialog } from "./components/ConfirmDialog"
 import { ProjectDialog } from "./components/ProjectDialog"
+import { SettingsDialog } from "./components/SettingsDialog"
 import { Sidebar } from "./components/Sidebar"
 import { StatusBar } from "./components/StatusBar"
 import { TabBar } from "./components/TabBar"
@@ -11,6 +12,18 @@ export function App() {
   const sessions = useStore((s) => s.sessions)
   const activeId = useStore((s) => s.activeId)
   const terminalIds = useStore((s) => s.terminalIds)
+  const openSettings = useStore((s) => s.openSettings)
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === ",") {
+        event.preventDefault()
+        openSettings()
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [openSettings])
 
   // A pane exists for every session that already has a terminal, plus the
   // active one — mounting it is what creates its terminal on first open.
@@ -36,6 +49,7 @@ export function App() {
       </main>
       <StatusBar />
       <ProjectDialog />
+      <SettingsDialog />
       <ConfirmDialog />
     </div>
   )
