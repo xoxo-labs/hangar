@@ -1,0 +1,16 @@
+{
+  "name": "hangar",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@10.8.0",
+  "scripts": {
+    "dev": "concurrently -k -n server,web,desktop -c blue,magenta,yellow \"node apps/server/src/cli.ts serve\" \"pnpm --filter @hangar/web dev\" \"HANGAR_NO_SPAWN=1 pnpm --filter @hangar/desktop dev\"",
+    "dev:headless": "concurrently -k -n server,web -c blue,magenta \"node apps/server/src/cli.ts serve\" \"pnpm --filter @hangar/web dev\"",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.4"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@hangar/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs",
+  "scripts": {
+    "dev": "electron ."
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "electron": "^43.3.0"
+  }
+}
