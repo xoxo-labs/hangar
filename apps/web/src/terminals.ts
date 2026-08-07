@@ -4,8 +4,15 @@ import { Terminal } from "@xterm/xterm"
 import { useStore } from "./store"
 import { send } from "./ws"
 
-/** Must match `--bg-terminal` in styles.css. */
-export const TERMINAL_BACKGROUND = "#141416"
+/*
+ * xterm wants concrete colours, not CSS variables, so the two tokens the
+ * terminal shares with the app chrome are mirrored here: they must stay equal
+ * to `--color-surface-1` and `--color-surface-12` in styles.css (Radix mauve
+ * dark, steps 1 and 12). The pane's padding is painted by CSS and the rest by
+ * xterm, so a mismatch shows up as a seam.
+ */
+export const TERMINAL_BACKGROUND = "#121113"
+const TERMINAL_FOREGROUND = "#eeeef0"
 
 type Entry = {
   term: Terminal
@@ -34,8 +41,8 @@ function ensure(id: SessionId): Entry {
     allowProposedApi: true,
     theme: {
       background: TERMINAL_BACKGROUND,
-      foreground: "#e6e6e8",
-      cursor: "#e6e6e8",
+      foreground: TERMINAL_FOREGROUND,
+      cursor: TERMINAL_FOREGROUND,
       cursorAccent: TERMINAL_BACKGROUND,
       selectionBackground: "#3a4a63",
     },

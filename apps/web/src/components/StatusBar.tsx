@@ -18,7 +18,7 @@ export function StatusBar() {
         {LABELS[status]}
       </span>
       {lastError !== null && <span className="statusbar-error">{lastError}</span>}
-      <span className="statusbar-spacer" />
+      <span className="flex-1" />
       <span className="statusbar-port">127.0.0.1:{port}</span>
     </footer>
   )

@@ -1,23 +1,205 @@
+/*
+ * Tailwind v4, minus preflight: this file already carries the app's whole reset
+ * (four rules, below) and preflight would change how the app looks — it sets
+ * `line-height: 1.5` on html and zeroes margin/padding on every element, which
+ * moves every sidebar row. Importing the layers by hand is the documented way
+ * to opt out. The component classes in this file stay *unlayered* on purpose:
+ * unlayered CSS outranks every @layer, so a utility in JSX can never quietly
+ * beat `.dialog` or `.icon-button`.
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/*
+ * Radix dark scales — the only source of colour in this app. `.dark` on <html>
+ * is what switches them on; there is no light theme (yet).
+ */
+@import "@radix-ui/colors/mauve-dark.css";
+@import "@radix-ui/colors/mauve-dark-alpha.css";
+@import "@radix-ui/colors/blue-dark.css";
+@import "@radix-ui/colors/blue-dark-alpha.css";
+@import "@radix-ui/colors/grass-dark.css";
+@import "@radix-ui/colors/grass-dark-alpha.css";
+@import "@radix-ui/colors/red-dark.css";
+@import "@radix-ui/colors/red-dark-alpha.css";
+@import "@radix-ui/colors/amber-dark.css";
+@import "@radix-ui/colors/amber-dark-alpha.css";
+@import "@radix-ui/colors/violet-dark.css";
+
+/*
+ * The semantic layer. Rules address roles (`surface`, `accent`, `danger`,
+ * `warning`, `success`), never hues, so re-hueing the app means editing these
+ * lines and nothing else. Step numbers are Radix's: 1-2 page background,
+ * 3-5 component background, 6-8 borders, 9-10 solid fills, 11-12 text. The
+ * `-a` steps are the same colours as alpha, for tinting over an unknown
+ * backdrop. `static` keeps every step in the output even before the UI uses it,
+ * so `bg-surface-6` works the day someone types it.
+ */
+@theme static {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Chrome and text — Radix mauve (the neutral closest to this app's faintly
+     violet grays; slate and gray both read cooler against them). */
+  --color-surface-1: var(--mauve-1);
+  --color-surface-2: var(--mauve-2);
+  --color-surface-3: var(--mauve-3);
+  --color-surface-4: var(--mauve-4);
+  --color-surface-5: var(--mauve-5);
+  --color-surface-6: var(--mauve-6);
+  --color-surface-7: var(--mauve-7);
+  --color-surface-8: var(--mauve-8);
+  --color-surface-9: var(--mauve-9);
+  --color-surface-10: var(--mauve-10);
+  --color-surface-11: var(--mauve-11);
+  --color-surface-12: var(--mauve-12);
+  --color-surface-a1: var(--mauve-a1);
+  --color-surface-a2: var(--mauve-a2);
+  --color-surface-a3: var(--mauve-a3);
+  --color-surface-a4: var(--mauve-a4);
+  --color-surface-a5: var(--mauve-a5);
+  --color-surface-a6: var(--mauve-a6);
+  --color-surface-a7: var(--mauve-a7);
+  --color-surface-a8: var(--mauve-a8);
+  --color-surface-a9: var(--mauve-a9);
+  --color-surface-a10: var(--mauve-a10);
+  --color-surface-a11: var(--mauve-a11);
+  --color-surface-a12: var(--mauve-a12);
+
+  /* Accent — Radix blue. */
+  --color-accent-1: var(--blue-1);
+  --color-accent-2: var(--blue-2);
+  --color-accent-3: var(--blue-3);
+  --color-accent-4: var(--blue-4);
+  --color-accent-5: var(--blue-5);
+  --color-accent-6: var(--blue-6);
+  --color-accent-7: var(--blue-7);
+  --color-accent-8: var(--blue-8);
+  --color-accent-9: var(--blue-9);
+  --color-accent-10: var(--blue-10);
+  --color-accent-11: var(--blue-11);
+  --color-accent-12: var(--blue-12);
+  --color-accent-a1: var(--blue-a1);
+  --color-accent-a2: var(--blue-a2);
+  --color-accent-a3: var(--blue-a3);
+  --color-accent-a4: var(--blue-a4);
+  --color-accent-a5: var(--blue-a5);
+  --color-accent-a6: var(--blue-a6);
+  --color-accent-a7: var(--blue-a7);
+  --color-accent-a8: var(--blue-a8);
+  --color-accent-a9: var(--blue-a9);
+  --color-accent-a10: var(--blue-a10);
+  --color-accent-a11: var(--blue-a11);
+  --color-accent-a12: var(--blue-a12);
+
+  /* Danger — Radix red: failed processes, remove, stop-and-mean-it. */
+  --color-danger-1: var(--red-1);
+  --color-danger-2: var(--red-2);
+  --color-danger-3: var(--red-3);
+  --color-danger-4: var(--red-4);
+  --color-danger-5: var(--red-5);
+  --color-danger-6: var(--red-6);
+  --color-danger-7: var(--red-7);
+  --color-danger-8: var(--red-8);
+  --color-danger-9: var(--red-9);
+  --color-danger-10: var(--red-10);
+  --color-danger-11: var(--red-11);
+  --color-danger-12: var(--red-12);
+  --color-danger-a1: var(--red-a1);
+  --color-danger-a2: var(--red-a2);
+  --color-danger-a3: var(--red-a3);
+  --color-danger-a4: var(--red-a4);
+  --color-danger-a5: var(--red-a5);
+  --color-danger-a6: var(--red-a6);
+  --color-danger-a7: var(--red-a7);
+  --color-danger-a8: var(--red-a8);
+  --color-danger-a9: var(--red-a9);
+  --color-danger-a10: var(--red-a10);
+  --color-danger-a11: var(--red-a11);
+  --color-danger-a12: var(--red-a12);
+
+  /* Warning — Radix amber: an armed button, a connection still negotiating. */
+  --color-warning-1: var(--amber-1);
+  --color-warning-2: var(--amber-2);
+  --color-warning-3: var(--amber-3);
+  --color-warning-4: var(--amber-4);
+  --color-warning-5: var(--amber-5);
+  --color-warning-6: var(--amber-6);
+  --color-warning-7: var(--amber-7);
+  --color-warning-8: var(--amber-8);
+  --color-warning-9: var(--amber-9);
+  --color-warning-10: var(--amber-10);
+  --color-warning-11: var(--amber-11);
+  --color-warning-12: var(--amber-12);
+  --color-warning-a1: var(--amber-a1);
+  --color-warning-a2: var(--amber-a2);
+  --color-warning-a3: var(--amber-a3);
+  --color-warning-a4: var(--amber-a4);
+  --color-warning-a5: var(--amber-a5);
+  --color-warning-a6: var(--amber-a6);
+  --color-warning-a7: var(--amber-a7);
+  --color-warning-a8: var(--amber-a8);
+  --color-warning-a9: var(--amber-a9);
+  --color-warning-a10: var(--amber-a10);
+  --color-warning-a11: var(--amber-a11);
+  --color-warning-a12: var(--amber-a12);
+
+  /* Success — Radix grass: a process that is up. */
+  --color-success-1: var(--grass-1);
+  --color-success-2: var(--grass-2);
+  --color-success-3: var(--grass-3);
+  --color-success-4: var(--grass-4);
+  --color-success-5: var(--grass-5);
+  --color-success-6: var(--grass-6);
+  --color-success-7: var(--grass-7);
+  --color-success-8: var(--grass-8);
+  --color-success-9: var(--grass-9);
+  --color-success-10: var(--grass-10);
+  --color-success-11: var(--grass-11);
+  --color-success-12: var(--grass-12);
+  --color-success-a1: var(--grass-a1);
+  --color-success-a2: var(--grass-a2);
+  --color-success-a3: var(--grass-a3);
+  --color-success-a4: var(--grass-a4);
+  --color-success-a5: var(--grass-a5);
+  --color-success-a6: var(--grass-a6);
+  --color-success-a7: var(--grass-a7);
+  --color-success-a8: var(--grass-a8);
+  --color-success-a9: var(--grass-a9);
+  --color-success-a10: var(--grass-a10);
+  --color-success-a11: var(--grass-a11);
+  --color-success-a12: var(--grass-a12);
+
+  /* The tail of the brand mark's gradient — the app's only violet. */
+  --color-brand-10: var(--violet-10);
+}
+
 :root {
-  --bg-sidebar: #1d1d20;
-  --bg-chrome: #202024;
-  --bg-terminal: #141416;
-  --border: #2c2c31;
-  --border-soft: #26262b;
-  --text: #e6e6e8;
-  --text-muted: #8b8b93;
-  --text-faint: #6a6a72;
-  --hover: #ffffff10;
-  --active: #ffffff18;
-  --accent: #4c8dff;
-  --green: #3fb950;
-  --red: #f85149;
-  --amber: #e3b341;
-  --gray: #55555d;
-  --gray-done: #7a7a83;
+  /*
+   * Pre-Tailwind names, kept as aliases so nothing outside this file breaks
+   * mid-transition. New rules should reach for the semantic tokens instead.
+   */
+  --bg-sidebar: var(--color-surface-2);
+  --bg-chrome: var(--color-surface-3);
+  --bg-terminal: var(--color-surface-1);
+  --border: var(--color-surface-5);
+  --border-soft: var(--color-surface-4);
+  --text: var(--color-surface-12);
+  --text-muted: var(--color-surface-10);
+  --text-faint: var(--color-surface-9);
+  --hover: var(--color-surface-a3);
+  --active: var(--color-surface-a4);
+  --accent: var(--color-accent-9);
+  --green: var(--color-success-10);
+  --red: var(--color-danger-10);
+  --amber: var(--color-warning-9);
+  --gray: var(--color-surface-8);
+  --gray-done: var(--color-surface-10);
+
   --radius: 6px;
-  --font: ui-sans-serif, system-ui, -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --font: var(--font-sans);
+  --mono: var(--font-mono);
 
   color-scheme: dark;
 }
@@ -34,9 +216,9 @@ body,
 
 body {
   margin: 0;
-  background: var(--bg-terminal);
-  color: var(--text);
-  font-family: var(--font);
+  background: var(--color-surface-1);
+  color: var(--color-surface-12);
+  font-family: var(--font-sans);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
@@ -52,9 +234,9 @@ button {
 }
 
 code {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: 11px;
-  background: #ffffff12;
+  background: var(--color-surface-a3);
   border-radius: 4px;
   padding: 1px 4px;
 }
@@ -74,8 +256,8 @@ code {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--bg-sidebar);
-  border-right: 1px solid var(--border);
+  background: var(--color-surface-2);
+  border-right: 1px solid var(--color-surface-5);
   user-select: none;
 }
 
@@ -86,7 +268,7 @@ code {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  background: var(--bg-terminal);
+  background: var(--color-surface-1);
 }
 
 .statusbar {
@@ -114,8 +296,8 @@ code {
   width: 14px;
   height: 14px;
   border-radius: 4px;
-  background: linear-gradient(150deg, var(--accent), #8a5cff);
-  box-shadow: 0 0 0 1px #ffffff1a inset;
+  background: linear-gradient(150deg, var(--color-accent-9), var(--color-brand-10));
+  box-shadow: 0 0 0 1px var(--color-surface-a4) inset;
 }
 
 .projects {
@@ -127,7 +309,7 @@ code {
 
 .empty {
   margin: 12px 6px;
-  color: var(--text-muted);
+  color: var(--color-surface-10);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -145,11 +327,11 @@ code {
 }
 
 .row:hover {
-  background: var(--hover);
+  background: var(--color-surface-a3);
 }
 
 .row.selected {
-  background: var(--active);
+  background: var(--color-surface-a4);
 }
 
 .row-main {
@@ -179,7 +361,7 @@ code {
 }
 
 .row-sub {
-  color: var(--text-faint);
+  color: var(--color-surface-9);
   font-size: 10.5px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -187,7 +369,7 @@ code {
 }
 
 .chevron {
-  color: var(--text-faint);
+  color: var(--color-surface-9);
   font-size: 8px;
   width: 8px;
   transition: transform 120ms ease;
@@ -233,22 +415,22 @@ code {
   width: 24px;
   height: 24px;
   border-radius: 5px;
-  color: var(--text-muted);
+  color: var(--color-surface-10);
   font-size: 13px;
   line-height: 1;
 }
 
 .icon-button:hover {
-  background: var(--active);
-  color: var(--text);
+  background: var(--color-surface-a4);
+  color: var(--color-surface-12);
 }
 
 /* Armed: one more click and it fires. Tint only — the box never resizes. */
 .icon-button.armed,
 .icon-button.armed:hover {
-  background: #d2992238;
-  box-shadow: 0 0 0 1px #d2992288 inset;
-  color: var(--amber);
+  background: var(--color-warning-a4);
+  box-shadow: 0 0 0 1px var(--color-warning-a7) inset;
+  color: var(--color-warning-9);
 }
 
 .icon-button:disabled {
@@ -265,12 +447,12 @@ code {
 
 .process-row .row-main {
   padding: 4px 6px;
-  color: var(--text-muted);
+  color: var(--color-surface-10);
 }
 
 .process-row:hover .row-main,
 .process-row.selected .row-main {
-  color: var(--text);
+  color: var(--color-surface-12);
 }
 
 /* ---------- status dots ---------- */
@@ -280,7 +462,7 @@ code {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--gray);
+  background: var(--color-surface-8);
 }
 
 .dot-small {
@@ -289,21 +471,21 @@ code {
 }
 
 .dot-running {
-  background: var(--green);
-  box-shadow: 0 0 6px #3fb95066;
+  background: var(--color-success-10);
+  box-shadow: 0 0 6px var(--color-success-a6);
 }
 
 .dot-idle {
-  background: var(--gray);
+  background: var(--color-surface-8);
 }
 
 .dot-done {
-  background: var(--gray-done);
+  background: var(--color-surface-10);
 }
 
 .dot-failed {
-  background: var(--red);
-  box-shadow: 0 0 6px #f8514966;
+  background: var(--color-danger-10);
+  box-shadow: 0 0 6px var(--color-danger-a6);
 }
 
 /* ---------- tabs ---------- */
@@ -315,8 +497,8 @@ code {
   flex: none;
   height: 34px;
   padding: 4px 6px 0;
-  background: var(--bg-chrome);
-  border-bottom: 1px solid var(--border);
+  background: var(--color-surface-3);
+  border-bottom: 1px solid var(--color-surface-5);
   overflow-x: auto;
   scrollbar-width: none;
   user-select: none;
@@ -334,17 +516,17 @@ code {
   max-width: 220px;
   padding: 0 4px 0 8px;
   border-radius: var(--radius) var(--radius) 0 0;
-  color: var(--text-muted);
+  color: var(--color-surface-10);
 }
 
 .tab:hover {
-  background: var(--hover);
+  background: var(--color-surface-a3);
 }
 
 .tab.active {
-  background: var(--bg-terminal);
-  color: var(--text);
-  box-shadow: 0 1px 0 var(--bg-terminal);
+  background: var(--color-surface-1);
+  color: var(--color-surface-12);
+  box-shadow: 0 1px 0 var(--color-surface-1);
 }
 
 .tab-main {
@@ -369,7 +551,7 @@ code {
   width: 16px;
   height: 16px;
   border-radius: 4px;
-  color: var(--text-faint);
+  color: var(--color-surface-9);
   font-size: 13px;
   line-height: 1;
   opacity: 0;
@@ -381,8 +563,8 @@ code {
 }
 
 .tab-close:hover {
-  background: var(--active);
-  color: var(--text);
+  background: var(--color-surface-a4);
+  color: var(--color-surface-12);
 }
 
 /* ---------- terminals ---------- */
@@ -411,7 +593,7 @@ code {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  color: var(--text-faint);
+  color: var(--color-surface-9);
 }
 
 .placeholder p {
@@ -420,7 +602,7 @@ code {
 }
 
 .placeholder-hint {
-  color: #4e4e56;
+  color: var(--color-surface-7);
 }
 
 .placeholder-mark {
@@ -428,7 +610,7 @@ code {
   height: 34px;
   margin-bottom: 10px;
   border-radius: 10px;
-  background: linear-gradient(150deg, var(--accent), #8a5cff);
+  background: linear-gradient(150deg, var(--color-accent-9), var(--color-brand-10));
   opacity: 0.28;
 }
 
@@ -440,9 +622,9 @@ code {
   gap: 10px;
   height: 24px;
   padding: 0 10px;
-  background: var(--bg-chrome);
-  border-top: 1px solid var(--border-soft);
-  color: var(--text-faint);
+  background: var(--color-surface-3);
+  border-top: 1px solid var(--color-surface-4);
+  color: var(--color-surface-9);
   font-size: 11px;
   user-select: none;
 }
@@ -457,16 +639,16 @@ code {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--gray);
+  background: var(--color-surface-8);
 }
 
 .conn-connected .conn-dot {
-  background: var(--green);
+  background: var(--color-success-10);
 }
 
 .conn-connecting .conn-dot,
 .conn-reconnecting .conn-dot {
-  background: #d29922;
+  background: var(--color-warning-9);
   animation: pulse 1.2s ease-in-out infinite;
 }
 
@@ -477,18 +659,14 @@ code {
 }
 
 .statusbar-error {
-  color: var(--red);
+  color: var(--color-danger-10);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.statusbar-spacer {
-  flex: 1;
-}
-
 .statusbar-port {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
 }
 
 /* ---------- new project affordance ---------- */
@@ -498,17 +676,17 @@ code {
   width: 100%;
   margin-top: 2px;
   padding: 6px;
-  border: 1px dashed var(--border);
+  border: 1px dashed var(--color-surface-5);
   border-radius: var(--radius);
-  color: var(--text-faint);
+  color: var(--color-surface-9);
   font-size: 11.5px;
   text-align: center;
 }
 
 .new-project:hover {
-  background: var(--hover);
-  border-color: var(--gray);
-  color: var(--text);
+  background: var(--color-surface-a3);
+  border-color: var(--color-surface-8);
+  color: var(--color-surface-12);
 }
 
 /* ---------- project dialog ---------- */
@@ -520,7 +698,8 @@ code {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: #0b0b0daa;
+  /* The darkest surface, thinned — Radix has no near-black alpha step. */
+  background: color-mix(in srgb, var(--color-surface-1) 67%, transparent);
 }
 
 .dialog {
@@ -528,8 +707,8 @@ code {
   flex-direction: column;
   width: min(560px, 100%);
   max-height: 100%;
-  background: var(--bg-chrome);
-  border: 1px solid var(--border);
+  background: var(--color-surface-3);
+  border: 1px solid var(--color-surface-5);
   border-radius: 10px;
   box-shadow: 0 18px 48px #00000070;
   user-select: none;
@@ -537,7 +716,7 @@ code {
 
 .dialog-header {
   padding: 14px 16px 10px;
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--color-surface-4);
 }
 
 .dialog-header h2 {
@@ -564,13 +743,13 @@ code {
 }
 
 .field-label {
-  color: var(--text-muted);
+  color: var(--color-surface-10);
   font-size: 11px;
   letter-spacing: 0.02em;
 }
 
 .field-hint {
-  color: var(--text-faint);
+  color: var(--color-surface-9);
   font-size: 10.5px;
 }
 
@@ -578,32 +757,32 @@ code {
   width: 100%;
   min-width: 0;
   padding: 6px 8px;
-  background: var(--bg-terminal);
-  border: 1px solid var(--border);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-surface-5);
   border-radius: 5px;
-  color: var(--text);
+  color: var(--color-surface-12);
   font: inherit;
   font-size: 12px;
 }
 
 .input.mono {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: 11.5px;
 }
 
 .input::placeholder {
-  color: #4e4e56;
+  color: var(--color-surface-7);
 }
 
 .input:focus {
   outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px #4c8dff30;
+  border-color: var(--color-accent-9);
+  box-shadow: 0 0 0 2px var(--color-accent-a3);
 }
 
 .input:read-only {
-  background: #ffffff08;
-  color: var(--text-muted);
+  background: var(--color-surface-a2);
+  color: var(--color-surface-10);
 }
 
 .proc-grid {
@@ -615,19 +794,19 @@ code {
 }
 
 .proc-head {
-  color: var(--text-faint);
+  color: var(--color-surface-9);
   font-size: 10px;
   letter-spacing: 0.03em;
 }
 
 .text-button {
   padding: 3px 0;
-  color: var(--text-muted);
+  color: var(--color-surface-10);
   font-size: 11.5px;
 }
 
 .text-button:hover {
-  color: var(--accent);
+  color: var(--color-accent-9);
 }
 
 .dialog-footer {
@@ -635,15 +814,11 @@ code {
   align-items: center;
   gap: 8px;
   padding: 11px 16px;
-  border-top: 1px solid var(--border-soft);
-}
-
-.dialog-spacer {
-  flex: 1;
+  border-top: 1px solid var(--color-surface-4);
 }
 
 .dialog-problem {
-  color: var(--text-faint);
+  color: var(--color-surface-9);
   font-size: 10.5px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -652,54 +827,54 @@ code {
 
 .button {
   padding: 5px 11px;
-  background: #ffffff0e;
-  border: 1px solid var(--border);
+  background: var(--color-surface-a3);
+  border: 1px solid var(--color-surface-5);
   border-radius: 5px;
-  color: var(--text);
+  color: var(--color-surface-12);
   font-size: 12px;
 }
 
 .button:hover {
-  background: var(--active);
+  background: var(--color-surface-a4);
 }
 
 .button:disabled {
   opacity: 0.35;
   cursor: default;
-  background: #ffffff0e;
+  background: var(--color-surface-a3);
 }
 
 .button.primary {
-  background: var(--accent);
+  background: var(--color-accent-9);
   border-color: transparent;
   color: #fff;
   font-weight: 550;
 }
 
 .button.primary:hover {
-  background: #689eff;
+  background: var(--color-accent-10);
 }
 
 .button.primary:disabled {
-  background: var(--accent);
+  background: var(--color-accent-9);
 }
 
 .button.danger {
   background: none;
   border-color: transparent;
-  color: var(--red);
+  color: var(--color-danger-10);
 }
 
 .button.danger:hover {
-  background: #f8514920;
+  background: var(--color-danger-a3);
 }
 
 .button.danger.confirming {
-  background: var(--red);
+  background: var(--color-danger-10);
   color: #fff;
 }
 
 .button.danger:disabled {
   background: none;
-  color: var(--red);
+  color: var(--color-danger-10);
 }
