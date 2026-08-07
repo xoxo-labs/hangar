@@ -300,14 +300,15 @@ const RESULT_TONE: Record<SessionHistoryEntry["reason"], string> = {
 }
 
 function HistoryRow({ entry }: { entry: SessionHistoryEntry }) {
-  return <div className="grid grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-[7px] px-[4px] py-[6px]">
+  const openHistoryRun = useStore((state) => state.openHistoryRun)
+  return <button type="button" className="grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-[7px] rounded-[5px] px-[4px] py-[6px] text-left hover:bg-surface-a3" onClick={() => openHistoryRun(entry.runId)} title="Open historical run">
     <span className={cx("text-center text-[13px]", RESULT_TONE[entry.reason])}>{entry.reason === "completed" ? "✓" : entry.reason === "failed" ? "×" : "■"}</span>
-    <div className="flex min-w-0 flex-col">
+    <span className="flex min-w-0 flex-col">
       <strong className="text-[10.5px] font-medium">{formatDate(entry.startedAt)}</strong>
       <small className="text-[9.5px] text-surface-8">{formatDuration(entry.durationMs)} · {entry.reason}{entry.exitCode === null ? "" : ` (${entry.exitCode})`} · {formatBytes(entry.totalOutputBytes)} output</small>
-    </div>
+    </span>
     <span className="text-[9.5px] text-surface-8">{formatCpu(entry.peakCpuPercent)} · {formatBytes(entry.peakMemoryBytes)}</span>
-  </div>
+  </button>
 }
 
 function useNow(running: boolean): number {

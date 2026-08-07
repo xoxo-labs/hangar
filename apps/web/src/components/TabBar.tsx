@@ -7,7 +7,13 @@ import { Dot } from "./Dot"
 export function TabBar() {
   const sessions = useStore((s) => s.sessions)
   const activeId = useStore((s) => s.activeId)
+  const activeHistory = useStore((s) => s.activeHistory)
+  const history = useStore((s) => s.history)
+  const historyTabs = useStore((s) => s.historyTabs)
   const setActive = useStore((s) => s.setActive)
+  const openHistory = useStore((s) => s.openHistory)
+  const openHistoryRun = useStore((s) => s.openHistoryRun)
+  const closeHistoryRun = useStore((s) => s.closeHistoryRun)
   const requestConfirm = useStore((s) => s.requestConfirm)
   const openSettings = useStore((s) => s.openSettings)
 
@@ -61,6 +67,42 @@ export function TabBar() {
               </button>
             </div>
           )
+        })}
+        <div
+          className={cx(
+            "group flex max-w-[180px] flex-none items-center rounded-t-[6px] px-[9px] electron:[-webkit-app-region:no-drag]",
+            activeHistory === "overview"
+              ? "bg-surface-1 text-surface-12 shadow-[0_1px_0_var(--color-surface-1)]"
+              : "text-surface-10 hover:bg-surface-a3",
+          )}
+          role="tab"
+          aria-selected={activeHistory === "overview"}
+        >
+          <button type="button" className="flex h-full min-w-0 items-center gap-[7px] text-inherit" onClick={openHistory}>
+            <span className="text-[13px] text-surface-9" aria-hidden="true">◷</span>
+            <span className="truncate text-[12px]">History</span>
+            {history.length > 0 && <span className="rounded-full bg-surface-a4 px-[5px] text-[9px] tabular-nums text-surface-9">{history.length}</span>}
+          </button>
+        </div>
+        {historyTabs.map((runId) => {
+          const entry = history.find((item) => item.runId === runId)
+          if (!entry) return null
+          const active = activeHistory === runId
+          return <div
+            key={runId}
+            className={cx(
+              "group flex max-w-[220px] flex-none items-center gap-[2px] rounded-t-[6px] pr-[4px] pl-[8px] electron:[-webkit-app-region:no-drag]",
+              active ? "bg-surface-1 text-surface-12 shadow-[0_1px_0_var(--color-surface-1)]" : "text-surface-10 hover:bg-surface-a3",
+            )}
+            role="tab"
+            aria-selected={active}
+          >
+            <button type="button" className="flex h-full min-w-0 items-center gap-[7px] text-inherit" onClick={() => openHistoryRun(runId)} title={`${entry.id} · ${new Date(entry.startedAt).toLocaleString()}`}>
+              <span className="text-[11px] text-surface-8" aria-hidden="true">◷</span>
+              <span className="truncate text-[12px]">{entry.process} · {new Date(entry.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+            </button>
+            <button type="button" className={cx("grid size-[16px] place-items-center rounded-[4px] text-[13px] leading-none text-surface-9 hover:bg-surface-a4 hover:text-surface-12", active ? "opacity-100" : "opacity-0 group-hover:opacity-100")} title="Close historical run" onClick={() => closeHistoryRun(runId)}>×</button>
+          </div>
         })}
       </div>
       <button

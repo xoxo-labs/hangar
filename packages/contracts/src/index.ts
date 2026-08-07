@@ -120,6 +120,15 @@ export type SessionInfo = {
   logPath?: string
 }
 
+export type SessionMetricSample = {
+  sampledAt: number
+  cpuPercent: number
+  memoryBytes: number
+  processCount: number
+  outputBytes: number
+  outputBytesPerSecond: number
+}
+
 export type SessionHistoryEntry = {
   runId: string
   id: SessionId
@@ -134,6 +143,8 @@ export type SessionHistoryEntry = {
   peakCpuPercent: number
   peakMemoryBytes: number
   totalOutputBytes: number
+  /** Downsampled resource timeline retained for historical inspection. */
+  metricSamples?: SessionMetricSample[]
   logPath?: string
 }
 

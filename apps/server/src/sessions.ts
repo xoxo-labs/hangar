@@ -13,6 +13,7 @@ import {
   type SessionId,
   type SessionInfo,
   type SessionMetrics,
+  type SessionMetricSample,
 } from "@hangar/contracts"
 import { appendHistory } from "./history.ts"
 import { expandHome } from "./registry.ts"
@@ -21,6 +22,10 @@ import { expandHome } from "./registry.ts"
 const MAX_BUFFER_CHARS = 512 * 1024
 const KILL_GRACE_MS = 1500
 const METRICS_INTERVAL_MS = 2_000
+/** Historical charts need much less resolution than the live inspector. */
+const HISTORY_METRIC_INTERVAL_MS = 10_000
+/** Compact older samples instead of letting a long-running process grow without bound. */
+const MAX_HISTORY_METRIC_SAMPLES = 1_200
 const RESTART_DIVIDER = "\r\n\x1b[2m— restarted —\x1b[0m\r\n"
 /** Inherit the full environment except vars that would confuse dev servers. */
 const ENV_BLOCKLIST = new Set(["PORT", "ELECTRON_RUN_AS_NODE", "HANGAR_PORT"])
@@ -105,6 +110,9 @@ type Session = {
   outputBytesAtLastSample: number
   stopRequested: boolean
   historyEnabled: boolean
+  historyMetrics: SessionMetricSample[]
+  historyMetricIntervalMs: number
+  lastHistoryMetricAt: number
   buffer: string
   killTimer: NodeJS.Timeout | null
   logPath: string | undefined
@@ -269,6 +277,9 @@ export class SessionManager {
         outputBytesAtLastSample: 0,
         stopRequested: false,
         historyEnabled: settings.sessionHistory.enabled,
+        historyMetrics: [],
+        historyMetricIntervalMs: HISTORY_METRIC_INTERVAL_MS,
+        lastHistoryMetricAt: 0,
         // Reuse the old buffer so a restart keeps prior scrollback context.
         buffer: existing ? existing.buffer + RESTART_DIVIDER : "",
         killTimer: null,
@@ -309,6 +320,7 @@ export class SessionManager {
             peakCpuPercent: session.metrics.peakCpuPercent,
             peakMemoryBytes: session.metrics.peakMemoryBytes,
             totalOutputBytes: session.metrics.outputBytes,
+            ...(session.historyMetrics.length > 0 ? { metricSamples: session.historyMetrics } : {}),
             ...(session.logPath ? { logPath: session.logPath } : {}),
           }, this.getSettings())
         }
@@ -437,6 +449,24 @@ export class SessionManager {
           sampledAt: Date.now(),
           peakCpuPercent: Math.max(session.metrics.peakCpuPercent, cpuPercent),
           peakMemoryBytes: Math.max(session.metrics.peakMemoryBytes, memoryBytes),
+        }
+        if (
+          session.historyEnabled &&
+          session.metrics.sampledAt - session.lastHistoryMetricAt >= session.historyMetricIntervalMs
+        ) {
+          session.lastHistoryMetricAt = session.metrics.sampledAt
+          session.historyMetrics.push({
+            sampledAt: session.metrics.sampledAt,
+            cpuPercent: session.metrics.cpuPercent,
+            memoryBytes: session.metrics.memoryBytes,
+            processCount: session.metrics.processCount,
+            outputBytes: session.metrics.outputBytes,
+            outputBytesPerSecond: session.metrics.outputBytesPerSecond,
+          })
+          if (session.historyMetrics.length >= MAX_HISTORY_METRIC_SAMPLES) {
+            session.historyMetrics = session.historyMetrics.filter((_, index) => index % 2 === 0)
+            session.historyMetricIntervalMs *= 2
+          }
         }
         this.broadcast({ type: "metrics", id: session.id, runId: session.runId, metrics: session.metrics })
       }

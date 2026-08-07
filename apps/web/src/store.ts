@@ -54,8 +54,12 @@ type Store = {
   history: SessionHistoryEntry[]
   /** Recent live samples, kept in memory for session sparklines. */
   metricHistory: Record<SessionId, SessionMetricPoint[]>
-  /** Session whose terminal is visible, or null when nothing is open. */
+  /** Live session whose terminal is visible. Null while browsing history. */
   activeId: SessionId | null
+  /** History overview or archived run currently visible. */
+  activeHistory: "overview" | string | null
+  /** Archived runs opened as tabs, in tab order. */
+  historyTabs: string[]
   /** Sessions that already own an xterm instance (panes are rendered for these). */
   terminalIds: SessionId[]
   /** Session whose details drawer is open. */
@@ -79,6 +83,9 @@ type Store = {
   updateMetrics: (id: SessionId, runId: string, metrics: SessionMetrics) => void
   setStatus: (status: ConnectionStatus) => void
   setActive: (id: SessionId | null) => void
+  openHistory: () => void
+  openHistoryRun: (runId: string) => void
+  closeHistoryRun: (runId: string) => void
   openInspector: (id: SessionId) => void
   toggleInspector: (id: SessionId) => void
   closeInspector: () => void
@@ -102,6 +109,8 @@ export const useStore = create<Store>((set) => ({
   history: [],
   metricHistory: {},
   activeId: null,
+  activeHistory: null,
+  historyTabs: [],
   terminalIds: [],
   inspectingId: null,
   collapsed: {},
@@ -141,7 +150,15 @@ export const useStore = create<Store>((set) => ({
       const metricHistory = Object.fromEntries(
         Object.entries(state.metricHistory).filter(([id]) => ordered.some((session) => session.id === id)),
       )
-      return { projects, sessions: ordered, history, metricHistory, activeId, settings }
+      const validRuns = new Set(history.map((entry) => entry.runId))
+      const historyTabs = state.historyTabs.filter((runId) => validRuns.has(runId))
+      const activeHistory = focus
+        ? null
+        : state.activeHistory !== null && state.activeHistory !== "overview" && !validRuns.has(state.activeHistory)
+          ? "overview"
+          : state.activeHistory
+      const nextActiveId = activeHistory === null ? activeId : null
+      return { projects, sessions: ordered, history, historyTabs, metricHistory, activeId: nextActiveId, activeHistory, settings }
     }),
 
   updateMetrics: (id, runId, metrics) =>
@@ -166,7 +183,22 @@ export const useStore = create<Store>((set) => ({
 
   setStatus: (status) => set({ status }),
 
-  setActive: (activeId) => set({ activeId }),
+  setActive: (activeId) => set({ activeId, activeHistory: null }),
+
+  openHistory: () => set({ activeId: null, activeHistory: "overview" }),
+
+  openHistoryRun: (runId) =>
+    set((state) => ({
+      activeId: null,
+      activeHistory: runId,
+      historyTabs: state.historyTabs.includes(runId) ? state.historyTabs : [...state.historyTabs, runId],
+    })),
+
+  closeHistoryRun: (runId) =>
+    set((state) => ({
+      historyTabs: state.historyTabs.filter((id) => id !== runId),
+      ...(state.activeHistory === runId ? { activeHistory: "overview" as const } : {}),
+    })),
 
   openInspector: (inspectingId) => set({ inspectingId }),
 
