@@ -15,7 +15,7 @@ import {
   type SessionMetrics,
   type SessionMetricSample,
 } from "@hangar/contracts"
-import { appendHistory } from "./history.ts"
+import { appendHistory, ensureReplayDirectory, historyReplayPath } from "./history.ts"
 import { expandHome } from "./registry.ts"
 
 /** Keep at most this much scrollback per session for late-joining clients. */
@@ -26,6 +26,7 @@ const METRICS_INTERVAL_MS = 2_000
 const HISTORY_METRIC_INTERVAL_MS = METRICS_INTERVAL_MS
 /** Compact older samples instead of letting a long-running process grow without bound. */
 const MAX_HISTORY_METRIC_SAMPLES = 1_200
+const MAX_HISTORY_REPLAY_BYTES = 10 * 1024 * 1024
 const RESTART_DIVIDER = "\r\n\x1b[2m— restarted —\x1b[0m\r\n"
 /** Inherit the full environment except vars that would confuse dev servers. */
 const ENV_BLOCKLIST = new Set(["PORT", "ELECTRON_RUN_AS_NODE", "HANGAR_PORT"])
@@ -94,6 +95,32 @@ function writeSessionLog(session: Session, data: string): void {
   session.logStream.write(output)
 }
 
+function createHistoryReplay(runId: string, enabled: boolean): WriteStream | null {
+  if (!enabled) return null
+  try {
+    ensureReplayDirectory()
+    const stream = createWriteStream(historyReplayPath(runId), { flags: "w", mode: 0o600 })
+    stream.on("error", () => {})
+    return stream
+  } catch {
+    return null
+  }
+}
+
+function writeHistoryReplay(session: Session, data: string): void {
+  if (!session.replayStream) return
+  const line = JSON.stringify({ timestamp: Date.now(), data }) + "\n"
+  const bytes = Buffer.byteLength(line)
+  if (session.replayBytes + bytes > MAX_HISTORY_REPLAY_BYTES) {
+    session.replayTruncated = true
+    session.replayStream.end()
+    session.replayStream = null
+    return
+  }
+  session.replayBytes += bytes
+  session.replayStream.write(line)
+}
+
 type Session = {
   id: SessionId
   runId: string
@@ -113,6 +140,10 @@ type Session = {
   historyMetrics: SessionMetricSample[]
   historyMetricIntervalMs: number
   lastHistoryMetricAt: number
+  replayCaptured: boolean
+  replayStream: WriteStream | null
+  replayBytes: number
+  replayTruncated: boolean
   buffer: string
   killTimer: NodeJS.Timeout | null
   logPath: string | undefined
@@ -251,9 +282,11 @@ export class SessionManager {
       const settings = this.getSettings()
       const logging = createSessionLog(project.name, proc.name, settings)
       const startedAt = Date.now()
+      const runId = randomUUID()
+      const replayStream = createHistoryReplay(runId, settings.sessionHistory.enabled)
       const session: Session = {
         id,
-        runId: randomUUID(),
+        runId,
         project: project.name,
         process: proc.name,
         cmd: displayedCommand,
@@ -280,6 +313,10 @@ export class SessionManager {
         historyMetrics: [],
         historyMetricIntervalMs: HISTORY_METRIC_INTERVAL_MS,
         lastHistoryMetricAt: 0,
+        replayCaptured: replayStream !== null,
+        replayStream,
+        replayBytes: 0,
+        replayTruncated: false,
         // Reuse the old buffer so a restart keeps prior scrollback context.
         buffer: existing ? existing.buffer + RESTART_DIVIDER : "",
         killTimer: null,
@@ -294,6 +331,7 @@ export class SessionManager {
         session.buffer = (session.buffer + data).slice(-MAX_BUFFER_CHARS)
         session.metrics.outputBytes += Buffer.byteLength(data)
         writeSessionLog(session, data)
+        writeHistoryReplay(session, data)
         this.broadcast({ type: "output", id, data })
       })
       pty.onExit(({ exitCode }) => {
@@ -305,6 +343,8 @@ export class SessionManager {
         session.pty = null
         session.logStream?.end()
         session.logStream = null
+        session.replayStream?.end()
+        session.replayStream = null
         if (session.historyEnabled) {
           appendHistory({
             runId: session.runId,
@@ -321,6 +361,8 @@ export class SessionManager {
             peakMemoryBytes: session.metrics.peakMemoryBytes,
             totalOutputBytes: session.metrics.outputBytes,
             ...(session.historyMetrics.length > 0 ? { metricSamples: session.historyMetrics } : {}),
+            ...(session.replayCaptured ? { hasReplay: true } : {}),
+            ...(session.replayTruncated ? { replayTruncated: true } : {}),
             ...(session.logPath ? { logPath: session.logPath } : {}),
           }, this.getSettings())
         }

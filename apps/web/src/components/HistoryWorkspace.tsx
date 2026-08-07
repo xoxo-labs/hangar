@@ -1,7 +1,10 @@
-import type { SessionHistoryEntry } from "@hangar/contracts"
-import { useMemo, useState, type PointerEvent as ReactPointerEvent } from "react"
+import type { HistoryOutputEvent, SessionHistoryEntry } from "@hangar/contracts"
+import { FitAddon } from "@xterm/addon-fit"
+import { Terminal } from "@xterm/xterm"
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import * as actions from "../actions"
-import { useStore } from "../store"
+import { type HistoryReplay, useStore } from "../store"
+import { currentTerminalTheme } from "../terminals"
 import { cx } from "../ui/cx"
 
 const RESULT = {
@@ -104,9 +107,17 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
   const openHistory = useStore((state) => state.openHistory)
   const showNotice = useStore((state) => state.showNotice)
   const samples = entry.metricSamples ?? []
+  const replay = useStore((state) => state.historyReplays[entry.runId])
   const [sampleIndex, setSampleIndex] = useState(Math.max(0, samples.length - 1))
   const sample = samples[sampleIndex]
+  const replayCutoff = samples.length > 1 && sampleIndex < samples.length - 1
+    ? sample?.sampledAt ?? entry.endedAt
+    : entry.endedAt
   const result = RESULT[entry.reason]
+
+  useEffect(() => {
+    if (entry.hasReplay) actions.loadHistoryReplay(entry.runId)
+  }, [entry.hasReplay, entry.runId])
   const revealLog = () => {
     if (entry.logPath && window.hangarDesktop) void window.hangarDesktop.revealPath(entry.logPath)
     else if (entry.logPath) void navigator.clipboard.writeText(entry.logPath).then(() => showNotice("Log path copied"))
@@ -165,6 +176,8 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
             </>}
       </section>
 
+      <ArchivedOutput entry={entry} replay={replay} cutoff={replayCutoff} />
+
       <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(260px,1fr)] gap-[12px]">
         <section className="rounded-lg border border-surface-5 bg-surface-2 p-[16px]">
           <h3 className="mb-[12px] text-[10px] font-semibold tracking-[0.07em] text-surface-9 uppercase">Run details</h3>
@@ -177,7 +190,7 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
           </dl>
         </section>
         <section className="rounded-lg border border-surface-5 bg-surface-2 p-[16px]">
-          <h3 className="mb-[12px] text-[10px] font-semibold tracking-[0.07em] text-surface-9 uppercase">Captured output</h3>
+          <h3 className="mb-[12px] text-[10px] font-semibold tracking-[0.07em] text-surface-9 uppercase">External log file</h3>
           {entry.logPath ? <>
             <p className="mb-[12px] line-clamp-2 break-all font-mono text-[9.5px] leading-[1.5] text-surface-9">{entry.logPath}</p>
             <button type="button" className="rounded-md border border-surface-6 bg-surface-a3 px-[9px] py-[6px] text-[10.5px] text-surface-11 hover:bg-surface-a4" onClick={revealLog}>{window.hangarDesktop ? "Reveal log in Finder" : "Copy log path"}</button>
@@ -186,6 +199,76 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
       </div>
     </div>
   </div>
+}
+
+function ArchivedOutput({ entry, replay, cutoff }: { entry: SessionHistoryEntry; replay: HistoryReplay | undefined; cutoff: number }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const terminalRef = useRef<Terminal | null>(null)
+  const terminalSettings = useStore((state) => state.settings.terminal)
+  const visibleEvents = useMemo(
+    () => replay?.events.filter((event) => event.timestamp <= cutoff) ?? [],
+    [cutoff, replay?.events],
+  )
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || !entry.hasReplay) return
+    const terminal = new Terminal({
+      fontSize: terminalSettings.fontSize,
+      fontFamily: terminalSettings.fontFamily,
+      scrollback: 10_000,
+      cursorBlink: false,
+      cursorStyle: "bar",
+      disableStdin: true,
+      theme: currentTerminalTheme(),
+    })
+    const fit = new FitAddon()
+    terminal.loadAddon(fit)
+    terminal.open(container)
+    terminalRef.current = terminal
+    const observer = new ResizeObserver(() => {
+      try { fit.fit() } catch {}
+    })
+    observer.observe(container)
+    requestAnimationFrame(() => {
+      try { fit.fit() } catch {}
+    })
+    return () => {
+      observer.disconnect()
+      terminalRef.current = null
+      terminal.dispose()
+    }
+  }, [entry.hasReplay, replay?.loading, terminalSettings.fontFamily, terminalSettings.fontSize])
+
+  useEffect(() => {
+    const terminal = terminalRef.current
+    if (!terminal || replay?.loading) return
+    const timer = setTimeout(() => {
+      terminal.write("\x1bc" + visibleEvents.map((event: HistoryOutputEvent) => event.data).join(""), () => terminal.scrollToBottom())
+    }, 35)
+    return () => clearTimeout(timer)
+  }, [replay?.loading, visibleEvents])
+
+  const outputTime = Math.max(0, cutoff - entry.startedAt)
+  return <section className="mb-[12px] overflow-hidden rounded-lg border border-surface-5 bg-surface-2">
+    <header className="flex min-h-[42px] items-center justify-between border-b border-surface-5 px-[13px]">
+      <div className="flex items-center gap-[8px]">
+        <span className="size-[6px] rounded-full bg-surface-8" />
+        <h3 className="m-0 text-[10px] font-semibold tracking-[0.06em] text-surface-10 uppercase">Terminal output</h3>
+        <span className="rounded bg-surface-a3 px-[5px] py-[2px] text-[8.5px] text-surface-8">read only</span>
+      </div>
+      {entry.hasReplay && <time className="font-mono text-[9.5px] tabular-nums text-surface-8">through +{formatDuration(outputTime)}</time>}
+    </header>
+    {!entry.hasReplay
+      ? <div className="grid h-[230px] place-items-center bg-surface-1 text-center text-[10.5px] leading-[1.5] text-surface-8"><span>This run predates output capture.<br />New historical runs save timestamped ANSI output.</span></div>
+      : replay?.loading || replay === undefined
+        ? <div className="grid h-[230px] place-items-center bg-surface-1 text-[10.5px] text-surface-8">Loading captured output…</div>
+        : <>
+          <div ref={containerRef} className="terminal-pane h-[300px] bg-surface-1 px-[8px] py-[6px]" />
+          {replay.truncated && <p className="m-0 border-t border-warning-6 bg-warning-a2 px-[10px] py-[6px] text-[9.5px] text-warning-11">Replay reached the 10 MB history limit; later output was not captured.</p>}
+          {replay.events.length === 0 && <p className="m-0 border-t border-surface-5 px-[10px] py-[6px] text-[9.5px] text-surface-8">This run produced no terminal output.</p>}
+        </>}
+  </section>
 }
 
 function Timeline({ label, value, values, index, onSelect, tone }: { label: string; value: string; values: number[]; index: number; onSelect: (index: number) => void; tone: "accent" | "success" | "warning" }) {

@@ -83,6 +83,9 @@ function handle(msg: ServerMsg): void {
     case "output":
       writeOutput(msg.id, msg.data)
       return
+    case "historyReplay":
+      store.setHistoryReplay(msg.runId, msg.events, msg.truncated)
+      return
     case "exit":
       noteExit(msg.id, msg.exitCode)
       // A "stop & close" confirmed from the tab finishes here, once the

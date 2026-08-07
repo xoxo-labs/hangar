@@ -35,7 +35,7 @@ const TERMINAL_THEMES = {
 } as const
 
 /** The html class is settled before any terminal exists, so it is the truth. */
-function currentTerminalTheme() {
+export function currentTerminalTheme() {
   return TERMINAL_THEMES[document.documentElement.classList.contains("dark") ? "dark" : "light"]
 }
 

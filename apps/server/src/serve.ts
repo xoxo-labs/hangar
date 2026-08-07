@@ -11,7 +11,7 @@ import {
   saveRegistry,
   validateProject,
 } from "./registry.ts"
-import { loadHistory } from "./history.ts"
+import { loadHistory, loadHistoryReplay } from "./history.ts"
 import { SessionManager } from "./sessions.ts"
 import { loadSettings, saveSettings } from "./settings.ts"
 
@@ -143,7 +143,7 @@ export function serve(port: number): void {
         return
       }
       try {
-        handle(msg)
+        handle(msg, socket)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         socket.send(JSON.stringify({ type: "error", message } satisfies ServerMsg))
@@ -153,7 +153,7 @@ export function serve(port: number): void {
     socket.on("error", () => clients.delete(socket))
   })
 
-  const handle = (msg: ClientMsg): void => {
+  const handle = (msg: ClientMsg, socket: WebSocket): void => {
     switch (msg.type) {
       case "start": {
         const project = findProject(loadRegistry(), msg.project)
@@ -210,6 +210,11 @@ export function serve(port: number): void {
         saveSettings(msg.settings)
         broadcastState()
         return
+      case "getHistoryReplay": {
+        const replay = loadHistoryReplay(msg.runId, loadSettings())
+        socket.send(JSON.stringify({ type: "historyReplay", runId: msg.runId, ...replay } satisfies ServerMsg))
+        return
+      }
       case "removeProject": {
         const registry = loadRegistry()
         if (!findProject(registry, msg.project)) {

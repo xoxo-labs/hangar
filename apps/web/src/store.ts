@@ -2,6 +2,7 @@ import {
   DEFAULT_PORT,
   DEFAULT_SETTINGS,
   type AppSettings,
+  type HistoryOutputEvent,
   type Project,
   type SessionHistoryEntry,
   type SessionId,
@@ -11,6 +12,12 @@ import {
 import { create } from "zustand"
 
 export type ConnectionStatus = "connecting" | "connected" | "reconnecting"
+
+export type HistoryReplay = {
+  loading: boolean
+  events: HistoryOutputEvent[]
+  truncated: boolean
+}
 
 export type SessionMetricPoint = {
   sampledAt: number
@@ -60,6 +67,8 @@ type Store = {
   activeHistory: "overview" | string | null
   /** Archived runs opened as tabs, in tab order. */
   historyTabs: string[]
+  /** Timestamped ANSI output loaded lazily for historical tabs. */
+  historyReplays: Record<string, HistoryReplay>
   /** Sessions that already own an xterm instance (panes are rendered for these). */
   terminalIds: SessionId[]
   /** Session whose details drawer is open. */
@@ -86,6 +95,8 @@ type Store = {
   openHistory: () => void
   openHistoryRun: (runId: string) => void
   closeHistoryRun: (runId: string) => void
+  beginHistoryReplay: (runId: string) => void
+  setHistoryReplay: (runId: string, events: HistoryOutputEvent[], truncated: boolean) => void
   openInspector: (id: SessionId) => void
   toggleInspector: (id: SessionId) => void
   closeInspector: () => void
@@ -111,6 +122,7 @@ export const useStore = create<Store>((set) => ({
   activeId: null,
   activeHistory: null,
   historyTabs: [],
+  historyReplays: {},
   terminalIds: [],
   inspectingId: null,
   collapsed: {},
@@ -152,13 +164,16 @@ export const useStore = create<Store>((set) => ({
       )
       const validRuns = new Set(history.map((entry) => entry.runId))
       const historyTabs = state.historyTabs.filter((runId) => validRuns.has(runId))
+      const historyReplays = Object.fromEntries(
+        Object.entries(state.historyReplays).filter(([runId]) => validRuns.has(runId)),
+      )
       const activeHistory = focus
         ? null
         : state.activeHistory !== null && state.activeHistory !== "overview" && !validRuns.has(state.activeHistory)
           ? "overview"
           : state.activeHistory
       const nextActiveId = activeHistory === null ? activeId : null
-      return { projects, sessions: ordered, history, historyTabs, metricHistory, activeId: nextActiveId, activeHistory, settings }
+      return { projects, sessions: ordered, history, historyTabs, historyReplays, metricHistory, activeId: nextActiveId, activeHistory, settings }
     }),
 
   updateMetrics: (id, runId, metrics) =>
@@ -198,6 +213,22 @@ export const useStore = create<Store>((set) => ({
     set((state) => ({
       historyTabs: state.historyTabs.filter((id) => id !== runId),
       ...(state.activeHistory === runId ? { activeHistory: "overview" as const } : {}),
+    })),
+
+  beginHistoryReplay: (runId) =>
+    set((state) => ({
+      historyReplays: {
+        ...state.historyReplays,
+        [runId]: { loading: true, events: [], truncated: false },
+      },
+    })),
+
+  setHistoryReplay: (runId, events, truncated) =>
+    set((state) => ({
+      historyReplays: {
+        ...state.historyReplays,
+        [runId]: { loading: false, events, truncated },
+      },
     })),
 
   openInspector: (inspectingId) => set({ inspectingId }),

@@ -197,7 +197,7 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
               checked={history.enabled}
               onChange={(next) => patchHistory({ enabled: next })}
               title="Keep run history on this Mac"
-              hint="Saves timing, exit status, and resource peaks. It never saves terminal output."
+              hint="Saves timing, resources, and up to 10 MB of timestamped terminal output per run."
             />
             <div className={cx("mt-3 flex max-w-[180px] flex-col gap-3", !history.enabled && "opacity-55")}>
               <Field label="Retention">

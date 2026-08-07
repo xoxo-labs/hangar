@@ -129,6 +129,13 @@ export type SessionMetricSample = {
   outputBytesPerSecond: number
 }
 
+export type HistoryOutputEvent = {
+  /** Absolute timestamp, shared with resource samples for synchronized replay. */
+  timestamp: number
+  /** Raw terminal output, including ANSI control sequences. */
+  data: string
+}
+
 export type SessionHistoryEntry = {
   runId: string
   id: SessionId
@@ -145,6 +152,9 @@ export type SessionHistoryEntry = {
   totalOutputBytes: number
   /** Downsampled resource timeline retained for historical inspection. */
   metricSamples?: SessionMetricSample[]
+  /** A timestamped ANSI replay was captured in Hangar's private history store. */
+  hasReplay?: boolean
+  replayTruncated?: boolean
   logPath?: string
 }
 
@@ -165,6 +175,8 @@ export type ClientMsg =
   /** Persist the project order used by the sidebar. */
   | { type: "reorderProjects"; projects: string[] }
   | { type: "updateSettings"; settings: AppSettings }
+  /** Load timestamped output for one retained historical run. */
+  | { type: "getHistoryReplay"; runId: string }
 
 /** Messages the server broadcasts to every connected UI. */
 export type ServerMsg =
@@ -176,6 +188,7 @@ export type ServerMsg =
   | { type: "snapshot"; id: SessionId; data: string }
   | { type: "output"; id: SessionId; data: string }
   | { type: "exit"; id: SessionId; exitCode: number | null }
+  | { type: "historyReplay"; runId: string; events: HistoryOutputEvent[]; truncated: boolean }
   | { type: "error"; message: string }
 
 export function sessionId(project: string, process: string): SessionId {

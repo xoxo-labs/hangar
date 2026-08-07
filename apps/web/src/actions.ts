@@ -1,4 +1,5 @@
 import type { AppSettings, Project, SessionInfo } from "@hangar/contracts"
+import { useStore } from "./store"
 import { send } from "./ws"
 
 export function start(project: string, process?: string): void {
@@ -36,4 +37,11 @@ export function reorderProjects(projects: string[]): void {
 
 export function updateSettings(settings: AppSettings): void {
   send({ type: "updateSettings", settings })
+}
+
+export function loadHistoryReplay(runId: string): void {
+  const existing = useStore.getState().historyReplays[runId]
+  if (existing?.loading || existing?.events.length) return
+  useStore.getState().beginHistoryReplay(runId)
+  send({ type: "getHistoryReplay", runId })
 }
