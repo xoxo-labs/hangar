@@ -54,7 +54,7 @@ function ToggleRow({
       />
       <span className="flex flex-col gap-0.5">
         <strong className="text-base font-book">{title}</strong>
-        <small className="text-sm text-surface-9">{hint}</small>
+        <small className="text-xs text-surface-9">{hint}</small>
       </span>
     </label>
   )
