@@ -151,9 +151,9 @@ function notifyMetricSelection(entry: Entry): void {
   const selection = entry.term.getSelectionPosition()
   let range: MetricSelection | null = null
   if (selection && entry.metricMarkers.size > 0) {
-    // xterm selection coordinates are 1-based; marker lines are 0-based.
-    const firstLine = Math.min(selection.start.y, selection.end.y) - 1
-    const lastLine = Math.max(selection.start.y, selection.end.y) - 1
+    // Selection and marker coordinates both refer to absolute buffer lines.
+    const firstLine = Math.min(selection.start.y, selection.end.y)
+    const lastLine = Math.max(selection.start.y, selection.end.y)
     const startSampledAt = nearestMetricAtLine(entry, firstLine)
     const endSampledAt = nearestMetricAtLine(entry, lastLine)
     if (startSampledAt !== null && endSampledAt !== null) {

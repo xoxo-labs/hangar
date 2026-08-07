@@ -5,6 +5,7 @@ import { describe, hasHighCpu, toneOf } from "../status"
 import { type SessionMetricPoint, useStore } from "../store"
 import { scrollToMetricPosition, subscribeToMetricSelection } from "../terminals"
 import { cx } from "../ui/cx"
+import { IconButton } from "../ui/IconButton"
 import { Dot } from "./Dot"
 
 const NO_METRIC_HISTORY: SessionMetricPoint[] = []
@@ -144,6 +145,7 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
 function ResourceSection({ sessionId, metrics, history }: { sessionId: string; metrics: SessionMetrics; history: SessionMetricPoint[] }) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [selectedRange, setSelectedRange] = useState<[number, number] | null>(null)
+  const [layout, setLayout] = useState<"grid" | "rows">("grid")
   const showNotice = useStore((state) => state.showNotice)
   const hovered = hoveredIndex === null ? undefined : history[hoveredIndex]
 
@@ -164,12 +166,22 @@ function ResourceSection({ sessionId, metrics, history }: { sessionId: string; m
     }
   }
 
-  const shared = { hoveredIndex, selectedRange, onHover: setHoveredIndex, onSelect: selectSample }
+  const shared = { hoveredIndex, selectedRange, compact: layout === "rows", onHover: setHoveredIndex, onSelect: selectSample }
   return <section className={SECTION} onPointerLeave={() => setHoveredIndex(null)}>
-    <h3 className={SECTION_TITLE} title="Hover to compare all metrics; click to jump to that point in the terminal">
-      Resources · {hovered ? formatTime(hovered.sampledAt) : "last 15 minutes"}
-    </h3>
-    <div className="grid grid-cols-2 gap-[7px]">
+    <div className="mb-[10px] flex items-center justify-between gap-2">
+      <h3 className="m-0 text-[10px] font-semibold uppercase tracking-[.07em] text-surface-9" title="Hover to compare all metrics; click to jump to that point in the terminal">
+        Resources · {hovered ? formatTime(hovered.sampledAt) : "last 15 minutes"}
+      </h3>
+      <IconButton
+        className="size-[22px] rounded-[4px] text-[13px] text-surface-8"
+        title={layout === "grid" ? "Switch to compact rows" : "Switch to card grid"}
+        aria-label={layout === "grid" ? "Switch to compact rows" : "Switch to card grid"}
+        onClick={() => setLayout((current) => current === "grid" ? "rows" : "grid")}
+      >
+        {layout === "grid" ? "⊞" : "☰"}
+      </IconButton>
+    </div>
+    <div className={cx("grid gap-[7px]", layout === "grid" ? "grid-cols-2" : "grid-cols-1 gap-[4px]")}>
       <Metric label="CPU" value={formatCpu(metrics.cpuPercent)} hoverValue={hovered && formatCpu(hovered.cpuPercent)} peak={`peak ${formatCpu(metrics.peakCpuPercent)}`} values={history.map((point) => point.cpuPercent)} tone="accent" {...shared} />
       <Metric label="Memory" value={formatBytes(metrics.memoryBytes)} hoverValue={hovered && formatBytes(hovered.memoryBytes)} peak={`peak ${formatBytes(metrics.peakMemoryBytes)}`} values={history.map((point) => point.memoryBytes)} tone="success" {...shared} />
       <Metric label="Processes" value={String(metrics.processCount)} hoverValue={hovered && String(hovered.processCount ?? metrics.processCount)} values={history.map((point) => point.processCount ?? metrics.processCount)} tone="accent" {...shared} />
@@ -187,11 +199,19 @@ type MetricProps = {
   tone: "accent" | "success" | "warning"
   hoveredIndex: number | null
   selectedRange: [number, number] | null
+  compact: boolean
   onHover: (index: number) => void
   onSelect: (index: number) => void
 }
 
-function Metric({ label, value, hoverValue, peak, values, tone, hoveredIndex, selectedRange, onHover, onSelect }: MetricProps) {
+function Metric({ label, value, hoverValue, peak, values, tone, hoveredIndex, selectedRange, compact, onHover, onSelect }: MetricProps) {
+  if (compact) return <div className="grid h-[42px] grid-cols-[48px_62px_minmax(60px,1fr)_auto] items-center gap-[6px] rounded-[5px] border border-surface-5 bg-surface-a2 px-[8px]">
+    <span className="text-[9.5px] text-surface-9">{label}</span>
+    <strong className="text-[12px] font-[550] tabular-nums text-surface-12">{hoverValue ?? value}</strong>
+    <Sparkline compact values={values} tone={tone} hoveredIndex={hoveredIndex} selectedRange={selectedRange} onHover={onHover} onSelect={onSelect} />
+    <small className="max-w-[82px] truncate text-right text-[8.5px] text-surface-8" title={peak}>{peak}</small>
+  </div>
+
   return <div className="flex min-h-[100px] flex-col rounded-[6px] border border-surface-5 bg-surface-a2 p-[9px]">
     <span className="text-[9.5px] text-surface-9">{label}</span>
     <strong className="mt-[4px] text-[16px] font-[550] text-surface-12">{hoverValue ?? value}</strong>
@@ -207,15 +227,16 @@ const SPARKLINE_TONE = {
   warning: "text-warning-10",
 } as const
 
-function Sparkline({ values, tone, hoveredIndex, selectedRange, onHover, onSelect }: {
+function Sparkline({ values, tone, hoveredIndex, selectedRange, compact = false, onHover, onSelect }: {
   values: number[]
   tone: "accent" | "success" | "warning"
   hoveredIndex: number | null
   selectedRange: [number, number] | null
+  compact?: boolean
   onHover: (index: number) => void
   onSelect: (index: number) => void
 }) {
-  if (values.length < 2) return <span className="my-[10px] text-[9px] text-surface-7">collecting…</span>
+  if (values.length < 2) return <span className={cx("text-[9px] text-surface-7", compact ? "m-0" : "my-[10px]")}>collecting…</span>
   const maximum = Math.max(1, ...values)
   const points = values.map((value, index) => {
     const x = index / (values.length - 1) * 100
@@ -233,7 +254,7 @@ function Sparkline({ values, tone, hoveredIndex, selectedRange, onHover, onSelec
     return Math.round(ratio * (values.length - 1))
   }
   return <svg
-    className={cx("mt-[5px] mb-[3px] h-[28px] w-full cursor-crosshair overflow-visible", SPARKLINE_TONE[tone])}
+    className={cx("w-full cursor-crosshair overflow-visible", compact ? "m-0 h-[22px]" : "mt-[5px] mb-[3px] h-[28px]", SPARKLINE_TONE[tone])}
     viewBox="0 0 100 28"
     preserveAspectRatio="none"
     role="button"
