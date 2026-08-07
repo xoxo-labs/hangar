@@ -17,6 +17,10 @@ type Store = {
   status: ConnectionStatus
   port: number
   lastError: string | null
+  /** Whether the add/edit project dialog is up. */
+  editorOpen: boolean
+  /** Project the dialog is editing; null while it is creating a new one. */
+  editingProject: string | null
 
   applyState: (projects: Project[], sessions: SessionInfo[]) => void
   setStatus: (status: ConnectionStatus) => void
@@ -25,6 +29,9 @@ type Store = {
   noteTerminal: (id: SessionId) => void
   dropTerminal: (id: SessionId) => void
   setError: (message: string | null) => void
+  /** Opens the dialog: with a name to edit that project, without one to create. */
+  openEditor: (project?: string) => void
+  closeEditor: () => void
 }
 
 export const useStore = create<Store>((set) => ({
@@ -36,6 +43,8 @@ export const useStore = create<Store>((set) => ({
   status: "connecting",
   port: readPort(),
   lastError: null,
+  editorOpen: false,
+  editingProject: null,
 
   applyState: (projects, sessions) =>
     set((state) => {
@@ -79,6 +88,10 @@ export const useStore = create<Store>((set) => ({
     set((state) => ({ terminalIds: state.terminalIds.filter((t) => t !== id) })),
 
   setError: (lastError) => set({ lastError }),
+
+  openEditor: (project) => set({ editorOpen: true, editingProject: project ?? null }),
+
+  closeEditor: () => set({ editorOpen: false, editingProject: null }),
 }))
 
 /** `?port=` on the page URL wins over the contract's default port. */

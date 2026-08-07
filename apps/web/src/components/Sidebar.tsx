@@ -8,6 +8,7 @@ import { Dot } from "./Dot"
 export function Sidebar() {
   const projects = useStore((s) => s.projects)
   const sessions = useStore((s) => s.sessions)
+  const openEditor = useStore((s) => s.openEditor)
 
   const byId = useMemo(() => new Map(sessions.map((s) => [s.id, s])), [sessions])
 
@@ -23,13 +24,17 @@ export function Sidebar() {
           <p className="empty">
             No projects registered yet.
             <br />
-            Run <code>hangar add</code> to register one.
+            Add one below, or run <code>hangar add</code>.
           </p>
         ) : (
           projects.map((project) => (
             <ProjectRow key={project.name} project={project} byId={byId} />
           ))
         )}
+
+        <button type="button" className="new-project" onClick={() => openEditor()}>
+          + New project
+        </button>
       </nav>
     </aside>
   )
@@ -38,6 +43,7 @@ export function Sidebar() {
 function ProjectRow({ project, byId }: { project: Project; byId: Map<string, SessionInfo> }) {
   const collapsed = useStore((s) => s.collapsed[project.name] ?? false)
   const toggleCollapsed = useStore((s) => s.toggleCollapsed)
+  const openEditor = useStore((s) => s.openEditor)
 
   const running = project.processes.some(
     (p) => byId.get(sessionId(project.name, p.name))?.status === "running",
@@ -65,6 +71,14 @@ function ProjectRow({ project, byId }: { project: Project; byId: Map<string, Ses
         </button>
 
         <div className="row-actions">
+          <button
+            type="button"
+            className="icon-button"
+            title={`Edit ${project.name}`}
+            onClick={() => openEditor(project.name)}
+          >
+            ✎
+          </button>
           <button
             type="button"
             className="icon-button"

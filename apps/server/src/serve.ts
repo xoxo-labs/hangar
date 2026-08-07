@@ -2,7 +2,7 @@ import { createServer } from "node:http"
 import { mkdirSync, watch } from "node:fs"
 import { WebSocketServer, WebSocket } from "ws"
 import type { ClientMsg, Project, ServerMsg } from "@hangar/contracts"
-import { findProject, hangarHome, loadRegistry } from "./registry.ts"
+import { findProject, hangarHome, loadRegistry, saveRegistry, validateProject } from "./registry.ts"
 import { SessionManager } from "./sessions.ts"
 
 export function serve(port: number): void {
@@ -87,6 +87,32 @@ export function serve(port: number): void {
       case "dismiss":
         manager.dismiss(msg.id)
         return
+      case "upsertProject": {
+        const errors = validateProject(msg.project)
+        if (errors.length > 0) throw new Error(errors.join("; "))
+        const registry = loadRegistry()
+        registry.projects = registry.projects.filter((p) => p.name !== msg.project.name)
+        registry.projects.push(msg.project)
+        registry.projects.sort((a, b) => a.name.localeCompare(b.name))
+        saveRegistry(registry)
+        broadcastState()
+        return
+      }
+      case "removeProject": {
+        const registry = loadRegistry()
+        if (!findProject(registry, msg.project)) {
+          throw new Error(`no project named ${JSON.stringify(msg.project)}`)
+        }
+        const sessions = manager.list().filter((s) => s.project === msg.project)
+        if (sessions.some((s) => s.status === "running")) {
+          throw new Error(`stop ${msg.project}'s processes before removing it`)
+        }
+        registry.projects = registry.projects.filter((p) => p.name !== msg.project)
+        saveRegistry(registry)
+        for (const session of sessions) manager.dismiss(session.id)
+        broadcastState()
+        return
+      }
     }
   }
 

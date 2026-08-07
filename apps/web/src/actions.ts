@@ -1,4 +1,4 @@
-import type { SessionInfo } from "@hangar/contracts"
+import type { Project, SessionInfo } from "@hangar/contracts"
 import { send } from "./ws"
 
 export function start(project: string, process?: string): void {
@@ -13,4 +13,14 @@ export function stop(project: string, process?: string): void {
 export function close(session: SessionInfo): void {
   if (session.status === "running") stop(session.project, session.process)
   else send({ type: "dismiss", id: session.id })
+}
+
+/** Creates the project, or replaces the registry entry with the same name. */
+export function upsertProject(project: Project): void {
+  send({ type: "upsertProject", project })
+}
+
+/** The server refuses this while the project still has running sessions. */
+export function removeProject(project: string): void {
+  send({ type: "removeProject", project })
 }

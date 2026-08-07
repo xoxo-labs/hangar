@@ -50,6 +50,10 @@ export type ClientMsg =
   | { type: "resize"; id: SessionId; cols: number; rows: number }
   /** Remove an exited session (clears its buffer and drops it from state). */
   | { type: "dismiss"; id: SessionId }
+  /** Create a project, or replace the one with the same name. */
+  | { type: "upsertProject"; project: Project }
+  /** Remove a project from the registry. Refused while it has running sessions. */
+  | { type: "removeProject"; project: string }
 
 /** Messages the server broadcasts to every connected UI. */
 export type ServerMsg =
