@@ -1,7 +1,9 @@
 import { sessionId } from "@hangar/contracts"
-import { useEffect, useRef } from "react"
+import { useEffect } from "react"
 import * as actions from "../actions"
 import { markCloseOnExit, useStore } from "../store"
+import { Button } from "../ui/Button"
+import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/Dialog"
 
 const COPY = {
   stop: {
@@ -28,11 +30,9 @@ const COPY = {
 export function ConfirmDialog() {
   const confirming = useStore((s) => s.confirming)
   const closeConfirm = useStore((s) => s.closeConfirm)
-  const confirmButton = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!confirming) return
-    confirmButton.current?.focus()
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") closeConfirm()
     }
@@ -59,33 +59,30 @@ export function ConfirmDialog() {
     closeConfirm()
   }
 
+  const title = `${copy.title} ${confirming.process ?? "all processes"}?`
+
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && closeConfirm()}>
-      <div className="dialog slim" role="alertdialog" aria-modal="true">
-        <header className="dialog-header">
-          <h2>
-            {copy.title} {confirming.process ?? "all processes"}?
-          </h2>
-        </header>
-        <div className="dialog-body">
-          <p className="confirm-text">
+    <Overlay onDismiss={closeConfirm}>
+      <Dialog label={title} role="alertdialog" className="w-[380px]">
+        <DialogHeader title={title} />
+        <DialogBody>
+          <p className="m-0 text-[13px] leading-[1.5] text-surface-11 [&_code]:text-surface-12">
             <code>{target}</code> {copy.body}
           </p>
-        </div>
-        <footer className="dialog-footer">
-          <button type="button" className="button" onClick={closeConfirm}>
-            Cancel
-          </button>
-          <button
-            ref={confirmButton}
-            type="button"
-            className={`button ${copy.danger ? "danger" : "primary"}`}
+        </DialogBody>
+        <DialogFooter>
+          <Button onClick={closeConfirm}>Cancel</Button>
+          {/* Keyed so a new confirm target remounts the button and re-fires autoFocus. */}
+          <Button
+            key={`${confirming.action}:${confirming.project}:${confirming.process ?? ""}`}
+            autoFocus
+            variant={copy.danger ? "danger" : "primary"}
             onClick={run}
           >
             {copy.button}
-          </button>
-        </footer>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </Dialog>
+    </Overlay>
   )
 }

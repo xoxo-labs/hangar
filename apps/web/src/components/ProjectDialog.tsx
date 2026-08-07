@@ -1,7 +1,25 @@
 import type { Project, ProjectProcess } from "@hangar/contracts"
-import { type KeyboardEvent, type MouseEvent, useEffect, useMemo, useRef, useState } from "react"
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
 import * as actions from "../actions"
 import { useStore } from "../store"
+import { Button } from "../ui/Button"
+import { cx } from "../ui/cx"
+import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/Dialog"
+import { Field, TextInput } from "../ui/Field"
+import { IconButton } from "../ui/IconButton"
+
+/* Ports of the retired `.field` / `.text-button` rules. The `Field` primitive
+ * covers the plain label-wrapped case; these two fields need a `<div>` (a
+ * button and a `htmlFor` label can't live inside a wrapping `<label>`). */
+const FIELD = "flex flex-col items-start gap-[5px]"
+const FIELD_LABEL = "text-[11px] tracking-[0.02em] text-surface-10"
+const FIELD_HINT = "text-[10.5px] text-surface-9"
+/* `enabled:hover:` because the old rules leaned on source order to let
+ * :disabled beat :hover, and utility order is not something to lean on. */
+const TEXT_BUTTON =
+  "py-[3px] text-[11.5px] text-surface-10 enabled:hover:text-accent-9 disabled:cursor-default disabled:text-surface-7"
+const PROC_HEAD = "text-[10px] tracking-[0.03em] text-surface-9"
+const ELLIPSIS = "overflow-hidden text-ellipsis whitespace-nowrap"
 
 /** A process being edited. `id` only keeps React keys stable across row removals. */
 type Row = { id: number; name: string; cmd: string; cwd: string; shell: boolean }
@@ -28,10 +46,10 @@ export function ProjectDialog() {
 
   // Remounting per open keeps the form state fresh without an explicit reset.
   if (!open) return null
-  return <Dialog key={editing ?? "__new__"} editing={editing} />
+  return <Editor key={editing ?? "__new__"} editing={editing} />
 }
 
-function Dialog({ editing }: { editing: string | null }) {
+function Editor({ editing }: { editing: string | null }) {
   const closeEditor = useStore((s) => s.closeEditor)
   const existing = useStore((s) => s.projects.find((p) => p.name === editing))
   const running = useStore((s) =>
@@ -57,9 +75,7 @@ function Dialog({ editing }: { editing: string | null }) {
   const [inspecting, setInspecting] = useState(false)
   const [browsing, setBrowsing] = useState(false)
 
-  const firstField = useRef<HTMLInputElement>(null)
   const nameEdited = useRef(false)
-  useEffect(() => firstField.current?.focus(), [])
 
   useEffect(() => {
     const candidate = path.trim()
@@ -134,11 +150,6 @@ function Dialog({ editing }: { editing: string | null }) {
     }
   }
 
-  // mousedown (not click) so a drag that ends on the backdrop keeps the dialog up.
-  const onBackdrop = (event: MouseEvent): void => {
-    if (event.target === event.currentTarget) closeEditor()
-  }
-
   const patchRow = (id: number, patch: Partial<Row>): void =>
     setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)))
 
@@ -172,24 +183,22 @@ function Dialog({ editing }: { editing: string | null }) {
   }
 
   return (
-    <div className="overlay" onMouseDown={onBackdrop}>
-      <div
-        className="dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label={editing === null ? "New project" : `Edit ${editing}`}
-        onKeyDown={onKeyDown}
-      >
-        <header className="dialog-header">
-          <h2>{editing === null ? "New project" : "Edit project"}</h2>
-        </header>
+    // mousedown (not click) so a drag that ends on the backdrop keeps the dialog up.
+    <Overlay onDismiss={closeEditor}>
+      <Dialog label={editing === null ? "New project" : `Edit ${editing}`} onKeyDown={onKeyDown}>
+        <DialogHeader title={editing === null ? "New project" : "Edit project"} />
 
-        <div className="dialog-body">
-          <label className="field">
-            <span className="field-label">Name</span>
-            <input
-              ref={editing === null ? firstField : null}
-              className="input"
+        <DialogBody>
+          <Field
+            label="Name"
+            hint={
+              editing === null
+                ? "No spaces or slashes."
+                : "The name identifies the project and can't change."
+            }
+          >
+            <TextInput
+              autoFocus={editing === null}
               value={name}
               readOnly={editing !== null}
               spellCheck={false}
@@ -200,18 +209,15 @@ function Dialog({ editing }: { editing: string | null }) {
                 setName(e.target.value)
               }}
             />
-            <span className="field-hint">
-              {editing === null ? "No spaces or slashes." : "The name identifies the project and can't change."}
-            </span>
-          </label>
+          </Field>
 
-          <div className="field">
-            <label className="field-label" htmlFor="project-path">Path</label>
-            <div className="path-row">
-              <input
+          <div className={FIELD}>
+            <label className={FIELD_LABEL} htmlFor="project-path">Path</label>
+            <div className="flex w-full gap-1.5">
+              <TextInput
+                mono
                 id="project-path"
-                ref={editing === null ? null : firstField}
-                className="input mono"
+                autoFocus={editing !== null}
                 value={path}
                 spellCheck={false}
                 autoComplete="off"
@@ -219,36 +225,41 @@ function Dialog({ editing }: { editing: string | null }) {
                 onChange={(e) => setPath(e.target.value)}
               />
               {window.hangarDesktop && (
-                <button
-                  type="button"
-                  className="button browse-button"
+                <Button
+                  className="flex-none whitespace-nowrap"
                   disabled={browsing}
                   onClick={() => void browse()}
                 >
                   {browsing ? "Opening…" : "Choose…"}
-                </button>
+                </Button>
               )}
             </div>
-            <span className="field-hint">
+            <span className={FIELD_HINT}>
               {inspecting ? "Looking for package.json…" : <><code>~</code> expands to your home directory.</>}
             </span>
           </div>
 
           {projectInfo?.package && projectInfo.package.scripts.length > 0 && (
-            <div className="field package-scripts">
-              <span className="field-label">
+            <div className={cx(FIELD, "w-full")}>
+              <span className={FIELD_LABEL}>
                 package.json scripts · {projectInfo.package.manager}
               </span>
-              <div className="package-script-list">
+              <div className="max-h-[150px] w-full overflow-y-auto rounded-[5px] border border-surface-5 bg-surface-1">
                 {projectInfo.package.scripts.map((script) => {
                   const added = rows.some((row) => row.name.trim() === script.name)
                   return (
-                    <div className="package-script" key={script.name} title={script.value}>
-                      <code>{script.name}</code>
-                      <span>{script.value}</span>
+                    <div
+                      className="grid min-h-[28px] grid-cols-[minmax(70px,0.7fr)_minmax(120px,2fr)_42px] items-center gap-2 border-b border-surface-4 px-[7px] py-[3px] last:border-b-0"
+                      key={script.name}
+                      title={script.value}
+                    >
+                      <code className={cx(ELLIPSIS, "text-[11px] text-surface-12")}>{script.name}</code>
+                      <span className={cx(ELLIPSIS, "font-mono text-[10px] text-surface-9")}>
+                        {script.value}
+                      </span>
                       <button
                         type="button"
-                        className="text-button"
+                        className={cx(TEXT_BUTTON, "justify-self-end")}
                         disabled={added}
                         onClick={() => addPackageScript(script)}
                       >
@@ -258,16 +269,16 @@ function Dialog({ editing }: { editing: string | null }) {
                   )
                 })}
               </div>
-              <span className="field-hint">Add any scripts you want, then edit them or add custom commands below.</span>
+              <span className={FIELD_HINT}>Add any scripts you want, then edit them or add custom commands below.</span>
             </div>
           )}
 
-          <div className="field">
-            <span className="field-label">Processes</span>
-            <div className="proc-grid">
-              <span className="proc-head">name</span>
-              <span className="proc-head">command</span>
-              <span className="proc-head">cwd (optional)</span>
+          <div className={FIELD}>
+            <span className={FIELD_LABEL}>Processes</span>
+            <div className="grid w-full grid-cols-[1.1fr_2fr_1.2fr_24px] items-center gap-1">
+              <span className={PROC_HEAD}>name</span>
+              <span className={PROC_HEAD}>command</span>
+              <span className={PROC_HEAD}>cwd (optional)</span>
               <span />
               {rows.map((row) => (
                 <ProcRow
@@ -279,19 +290,19 @@ function Dialog({ editing }: { editing: string | null }) {
                 />
               ))}
             </div>
-            <span className="field-hint">
+            <span className={FIELD_HINT}>
               A cwd is relative to the project path and defaults to its root.
             </span>
             <button
               type="button"
-              className="text-button"
+              className={TEXT_BUTTON}
               onClick={() => setRows((current) => [...current, emptyRow()])}
             >
               + Add process
             </button>
             <button
               type="button"
-              className="text-button"
+              className={TEXT_BUTTON}
               onClick={() =>
                 setRows((current) => [
                   ...current,
@@ -302,9 +313,9 @@ function Dialog({ editing }: { editing: string | null }) {
               + Add empty terminal
             </button>
           </div>
-        </div>
+        </DialogBody>
 
-        <footer className="dialog-footer">
+        <DialogFooter>
           {editing !== null && (
             // The span carries the tooltip: browsers swallow hover on a disabled button.
             <span
@@ -314,34 +325,33 @@ function Dialog({ editing }: { editing: string | null }) {
                   : "Remove this project from the registry"
               }
             >
-              <button
-                type="button"
-                className={`button danger${confirmingRemove ? " confirming" : ""}`}
+              <Button
+                variant="danger"
+                className={cx(confirmingRemove && "enabled:bg-danger-10 enabled:text-white")}
                 disabled={running}
                 onClick={remove}
                 onBlur={() => setConfirmingRemove(false)}
               >
                 {confirmingRemove ? "Really remove?" : "Remove project"}
-              </button>
+              </Button>
             </span>
           )}
           <span className="flex-1" />
-          {problem !== null && <span className="dialog-problem">{problem}</span>}
-          <button type="button" className="button" onClick={closeEditor}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="button primary"
+          {problem !== null && (
+            <span className={cx(ELLIPSIS, "text-[10.5px] text-surface-9")}>{problem}</span>
+          )}
+          <Button onClick={closeEditor}>Cancel</Button>
+          <Button
+            variant="primary"
             disabled={!valid}
             title={valid ? "Save (⌘↵)" : (problem ?? undefined)}
             onClick={save}
           >
             Save
-          </button>
-        </footer>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </Dialog>
+    </Overlay>
   )
 }
 
@@ -358,8 +368,7 @@ function ProcRow({
 }) {
   return (
     <>
-      <input
-        className="input"
+      <TextInput
         value={row.name}
         spellCheck={false}
         autoComplete="off"
@@ -367,12 +376,18 @@ function ProcRow({
         onChange={(e) => onChange({ name: e.target.value })}
       />
       {row.shell ? (
-        <div className="shell-command" title="Starts your interactive login shell">
+        <div
+          className={cx(
+            ELLIPSIS,
+            "w-full min-w-0 rounded-[5px] border border-surface-5 bg-surface-a2 px-2 py-[6px] font-mono text-[11px] italic text-surface-9",
+          )}
+          title="Starts your interactive login shell"
+        >
           Interactive shell
         </div>
       ) : (
-        <input
-          className="input mono"
+        <TextInput
+          mono
           value={row.cmd}
           spellCheck={false}
           autoComplete="off"
@@ -380,23 +395,21 @@ function ProcRow({
           onChange={(e) => onChange({ cmd: e.target.value })}
         />
       )}
-      <input
-        className="input mono"
+      <TextInput
+        mono
         value={row.cwd}
         spellCheck={false}
         autoComplete="off"
         placeholder="apps/web"
         onChange={(e) => onChange({ cwd: e.target.value })}
       />
-      <button
-        type="button"
-        className="icon-button"
+      <IconButton
         title={canRemove ? "Remove this process" : "A project needs at least one process"}
         disabled={!canRemove}
         onClick={onRemove}
       >
         ×
-      </button>
+      </IconButton>
     </>
   )
 }

@@ -16,6 +16,7 @@ export type SessionMetricPoint = {
   sampledAt: number
   cpuPercent: number
   memoryBytes: number
+  processCount: number
   outputBytesPerSecond: number
 }
 
@@ -152,6 +153,7 @@ export const useStore = create<Store>((set) => ({
         sampledAt: metrics.sampledAt,
         cpuPercent: metrics.cpuPercent,
         memoryBytes: metrics.memoryBytes,
+        processCount: metrics.processCount,
         outputBytesPerSecond: metrics.outputBytesPerSecond,
       }
       return {

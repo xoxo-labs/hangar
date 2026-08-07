@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client"
 import "@xterm/xterm/css/xterm.css"
 import "./styles.css"
 import { App } from "./App"
+import { initTheme } from "./theme"
 import { connect } from "./ws"
 
 // Inside the Electron window the OS traffic lights float over the top-left
@@ -15,6 +16,7 @@ if (navigator.userAgent.includes("Electron")) {
 const root = document.getElementById("root")
 if (!root) throw new Error("missing #root")
 
+initTheme()
 connect()
 
 createRoot(root).render(

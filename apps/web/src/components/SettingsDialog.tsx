@@ -1,7 +1,11 @@
-import { DEFAULT_SETTINGS, type AppSettings, type BrowserChoice } from "@hangar/contracts"
-import { type KeyboardEvent, type MouseEvent, useState } from "react"
+import { DEFAULT_SETTINGS, type AppSettings, type BrowserChoice, type ThemeSetting } from "@hangar/contracts"
+import { type KeyboardEvent, type ReactNode, useState } from "react"
 import * as actions from "../actions"
 import { useStore } from "../store"
+import { Button } from "../ui/Button"
+import { cx } from "../ui/cx"
+import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/Dialog"
+import { Field, Select, TextInput } from "../ui/Field"
 
 const FONT_OPTIONS = [
   { label: "Default (SF Mono / Menlo)", value: DEFAULT_SETTINGS.terminal.fontFamily },
@@ -14,20 +18,69 @@ const FONT_OPTIONS = [
 
 const FONT_SIZES = [10, 11, 12, 13, 14, 15, 16, 18, 20] as const
 
+/* `select.input:hover:not(:disabled)` — the one bit of the old select styling the
+   shared Select primitive does not carry, kept here so the border still lifts. */
+const SELECT_HOVER = "enabled:hover:border-surface-7"
+
+/** Old `.settings-section` + `.settings-section-title`. */
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="w-full">
+      <div className="mb-[9px] text-[11px] font-semibold tracking-[0.03em] text-surface-10 uppercase">{title}</div>
+      {children}
+    </div>
+  )
+}
+
+/** Old `.toggle-row` and its `input` / `span` / `strong` / `small` descendants. */
+function ToggleRow({
+  checked,
+  onChange,
+  title,
+  hint,
+}: {
+  checked: boolean
+  onChange: (next: boolean) => void
+  title: string
+  hint: string
+}) {
+  return (
+    <label className="flex w-full items-start gap-[9px] rounded-[6px] border border-surface-5 bg-surface-a2 p-[9px]">
+      <input
+        type="checkbox"
+        className="mt-0.5 accent-accent-9"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className="flex flex-col gap-0.5">
+        <strong className="text-[12px] font-[550]">{title}</strong>
+        <small className="text-[10.5px] text-surface-9">{hint}</small>
+      </span>
+    </label>
+  )
+}
+
 export function SettingsDialog() {
   const open = useStore((s) => s.settingsOpen)
   const settings = useStore((s) => s.settings)
   if (!open) return null
-  return <Dialog initial={settings} />
+  return <SettingsForm initial={settings} />
 }
 
-function Dialog({ initial }: { initial: AppSettings }) {
+function SettingsForm({ initial }: { initial: AppSettings }) {
   const close = useStore((s) => s.closeSettings)
   const [settings, setSettings] = useState(() => structuredClone(initial))
+  const appearance = settings.appearance
   const links = settings.links
   const terminal = settings.terminal
   const log = settings.terminalLogging
   const history = settings.sessionHistory
+
+  const patchAppearance = (next: Partial<AppSettings["appearance"]>) =>
+    setSettings((current) => ({
+      ...current,
+      appearance: { ...current.appearance, ...next },
+    }))
 
   const patchLinks = (next: Partial<AppSettings["links"]>) =>
     setSettings((current) => ({
@@ -69,38 +122,47 @@ function Dialog({ initial }: { initial: AppSettings }) {
   }
 
   return (
-    <div className="overlay" onMouseDown={(event: MouseEvent) => event.target === event.currentTarget && close()}>
-      <div className="dialog settings-dialog" role="dialog" aria-modal="true" aria-label="Settings" onKeyDown={onKeyDown}>
-        <header className="dialog-header"><h2>Settings</h2></header>
-        <div className="dialog-body">
-          <div className="settings-section">
-            <div className="settings-section-title">Links</div>
-            <label className="field browser-field">
-              <span className="field-label">Open detected ports with</span>
-              <select className="input" value={links.browser} onChange={(e) => patchLinks({ browser: e.target.value as BrowserChoice })}>
+    <Overlay onDismiss={close}>
+      <Dialog label="Settings" className="w-[min(620px,100%)]" onKeyDown={onKeyDown}>
+        <DialogHeader title="Settings" />
+        <DialogBody>
+          <Section title="Appearance">
+            <Field label="Theme">
+              <Select
+                className={SELECT_HOVER}
+                value={appearance.theme}
+                onChange={(e) => patchAppearance({ theme: e.target.value as ThemeSetting })}
+              >
+                <option value="system">Match system</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </Select>
+            </Field>
+          </Section>
+          <Section title="Links">
+            <Field label="Open detected ports with" className="max-w-[260px]">
+              <Select
+                className={SELECT_HOVER}
+                value={links.browser}
+                onChange={(e) => patchLinks({ browser: e.target.value as BrowserChoice })}
+              >
                 <option value="system">System default</option>
                 {window.hangarDesktop && <><option value="safari">Safari</option><option value="chrome">Google Chrome</option><option value="arc">Arc</option><option value="firefox">Firefox</option><option value="brave">Brave</option><option value="edge">Microsoft Edge</option></>}
-              </select>
-            </label>
-          </div>
-          <div className="settings-section">
-            <div className="settings-section-title">Terminal behavior</div>
-            <label className="toggle-row">
-              <input
-                type="checkbox"
-                checked={terminal.copyOnSelect}
-                onChange={(e) => patchTerminal({ copyOnSelect: e.target.checked })}
-              />
-              <span>
-                <strong>Copy on select</strong>
-                <small>Automatically copies selected terminal text to the clipboard.</small>
-              </span>
-            </label>
-            <div className="terminal-settings-columns">
-              <label className="field">
-                <span className="field-label">Font family</span>
-                <select
-                  className="input mono"
+              </Select>
+            </Field>
+          </Section>
+          <Section title="Terminal behavior">
+            <ToggleRow
+              checked={terminal.copyOnSelect}
+              onChange={(next) => patchTerminal({ copyOnSelect: next })}
+              title="Copy on select"
+              hint="Automatically copies selected terminal text to the clipboard."
+            />
+            <div className="mt-3 grid grid-cols-[minmax(0,2fr)_110px] gap-2.5">
+              <Field label="Font family">
+                <Select
+                  mono
+                  className={SELECT_HOVER}
                   value={terminal.fontFamily}
                   onChange={(e) => patchTerminal({ fontFamily: e.target.value })}
                 >
@@ -110,12 +172,11 @@ function Dialog({ initial }: { initial: AppSettings }) {
                   {FONT_OPTIONS.map((option) => (
                     <option key={option.label} value={option.value}>{option.label}</option>
                   ))}
-                </select>
-              </label>
-              <label className="field">
-                <span className="field-label">Font size (px)</span>
-                <select
-                  className="input"
+                </Select>
+              </Field>
+              <Field label="Font size (px)">
+                <Select
+                  className={SELECT_HOVER}
                   value={terminal.fontSize}
                   onChange={(e) => patchTerminal({ fontSize: Number(e.target.value) })}
                 >
@@ -127,70 +188,65 @@ function Dialog({ initial }: { initial: AppSettings }) {
                       {size === DEFAULT_SETTINGS.terminal.fontSize ? `Default (${size} px)` : `${size} px`}
                     </option>
                   ))}
-                </select>
-              </label>
+                </Select>
+              </Field>
             </div>
-          </div>
-          <div className="settings-section">
-            <div className="settings-section-title">Session history</div>
-            <label className="toggle-row">
-              <input type="checkbox" checked={history.enabled} onChange={(e) => patchHistory({ enabled: e.target.checked })} />
-              <span>
-                <strong>Keep run history on this Mac</strong>
-                <small>Saves timing, exit status, and resource peaks. It never saves terminal output.</small>
-              </span>
-            </label>
-            <div className={`settings-fields compact${history.enabled ? "" : " disabled"}`}>
-              <label className="field">
-                <span className="field-label">Retention</span>
-                <select className="input" disabled={!history.enabled} value={history.retentionDays ?? "forever"} onChange={(e) => patchHistory({ retentionDays: e.target.value === "forever" ? null : Number(e.target.value) as 7 | 30 | 90 })}>
+          </Section>
+          <Section title="Session history">
+            <ToggleRow
+              checked={history.enabled}
+              onChange={(next) => patchHistory({ enabled: next })}
+              title="Keep run history on this Mac"
+              hint="Saves timing, exit status, and resource peaks. It never saves terminal output."
+            />
+            <div className={cx("mt-3 flex max-w-[180px] flex-col gap-3", !history.enabled && "opacity-55")}>
+              <Field label="Retention">
+                <Select className={SELECT_HOVER} disabled={!history.enabled} value={history.retentionDays ?? "forever"} onChange={(e) => patchHistory({ retentionDays: e.target.value === "forever" ? null : Number(e.target.value) as 7 | 30 | 90 })}>
                   <option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option><option value="forever">Forever</option>
-                </select>
-              </label>
+                </Select>
+              </Field>
             </div>
-          </div>
-          <div className="settings-section">
-            <div className="settings-section-title">Terminal logs</div>
-            <label className="toggle-row">
-              <input type="checkbox" checked={log.enabled} onChange={(e) => patch({ enabled: e.target.checked })} />
-              <span>
-                <strong>Save terminal output to disk</strong>
-                <small>Applies to sessions started after saving.</small>
-              </span>
-            </label>
-            <div className={`settings-fields${log.enabled ? "" : " disabled"}`}>
-              <label className="field">
-                <span className="field-label">Logs directory</span>
-                <div className="path-row">
-                  <input className="input mono" value={log.directory} disabled={!log.enabled} onChange={(e) => patch({ directory: e.target.value })} />
-                  {window.hangarDesktop && <button type="button" className="button" disabled={!log.enabled} onClick={() => void browse()}>Choose…</button>}
-                  {window.hangarDesktop && <button type="button" className="button" disabled={!log.enabled} onClick={() => void window.hangarDesktop?.openPath(log.directory)}>Open</button>}
+          </Section>
+          <Section title="Terminal logs">
+            <ToggleRow
+              checked={log.enabled}
+              onChange={(next) => patch({ enabled: next })}
+              title="Save terminal output to disk"
+              hint="Applies to sessions started after saving."
+            />
+            <div className={cx("mt-3 flex flex-col gap-3", !log.enabled && "opacity-55")}>
+              <Field label="Logs directory">
+                <div className="flex w-full gap-1.5">
+                  <TextInput mono value={log.directory} disabled={!log.enabled} onChange={(e) => patch({ directory: e.target.value })} />
+                  {window.hangarDesktop && <Button disabled={!log.enabled} onClick={() => void browse()}>Choose…</Button>}
+                  {window.hangarDesktop && <Button disabled={!log.enabled} onClick={() => void window.hangarDesktop?.openPath(log.directory)}>Open</Button>}
                 </div>
-              </label>
-              <div className="settings-columns">
-                <label className="field">
-                  <span className="field-label">Retention</span>
-                  <select className="input" disabled={!log.enabled} value={log.retentionDays ?? "forever"} onChange={(e) => patch({ retentionDays: e.target.value === "forever" ? null : Number(e.target.value) as 7 | 30 })}>
+              </Field>
+              <div className="grid grid-cols-[1fr_1.25fr_1fr] gap-2.5">
+                <Field label="Retention">
+                  <Select className={SELECT_HOVER} disabled={!log.enabled} value={log.retentionDays ?? "forever"} onChange={(e) => patch({ retentionDays: e.target.value === "forever" ? null : Number(e.target.value) as 7 | 30 })}>
                     <option value={7}>7 days</option><option value={30}>30 days</option><option value="forever">Forever</option>
-                  </select>
-                </label>
-                <label className="field">
-                  <span className="field-label">Maximum file size (MB)</span>
-                  <input className="input" type="number" min={1} max={1000} disabled={!log.enabled} value={log.maxFileSizeMb} onChange={(e) => patch({ maxFileSizeMb: Math.max(1, Number(e.target.value)) })} />
-                </label>
-                <label className="field">
-                  <span className="field-label">Format</span>
-                  <select className="input" disabled={!log.enabled} value={log.format} onChange={(e) => patch({ format: e.target.value as "plain" | "ansi" })}>
+                  </Select>
+                </Field>
+                <Field label="Maximum file size (MB)">
+                  <TextInput type="number" min={1} max={1000} disabled={!log.enabled} value={log.maxFileSizeMb} onChange={(e) => patch({ maxFileSizeMb: Math.max(1, Number(e.target.value)) })} />
+                </Field>
+                <Field label="Format">
+                  <Select className={SELECT_HOVER} disabled={!log.enabled} value={log.format} onChange={(e) => patch({ format: e.target.value as "plain" | "ansi" })}>
                     <option value="plain">Plain text</option><option value="ansi">Raw ANSI</option>
-                  </select>
-                </label>
+                  </Select>
+                </Field>
               </div>
-              <p className="settings-warning">Logs can contain tokens, private URLs, and other secrets.</p>
+              <p className="m-0 text-[10.5px] text-warning-9">Logs can contain tokens, private URLs, and other secrets.</p>
             </div>
-          </div>
-        </div>
-        <footer className="dialog-footer"><span className="flex-1" /><button className="button" onClick={close}>Cancel</button><button className="button primary" onClick={save}>Save</button></footer>
-      </div>
-    </div>
+          </Section>
+        </DialogBody>
+        <DialogFooter>
+          <span className="flex-1" />
+          <Button onClick={close}>Cancel</Button>
+          <Button variant="primary" onClick={save}>Save</Button>
+        </DialogFooter>
+      </Dialog>
+    </Overlay>
   )
 }

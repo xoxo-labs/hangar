@@ -3,7 +3,23 @@ import { type DragEvent, useMemo, useState } from "react"
 import * as actions from "../actions"
 import { describe, toneOf } from "../status"
 import { useStore } from "../store"
+import { cx } from "../ui/cx"
+import { IconButton } from "../ui/IconButton"
 import { Dot } from "./Dot"
+
+/*
+ * The `!` on padding/color/border/font utilities below dates from when the
+ * `button { … }` reset in styles.css was unlayered and outranked utilities.
+ * The reset now lives in `@layer base`, so plain utilities already win; the
+ * suffixes are harmless belt-and-braces, not load-bearing. The `!` on the
+ * `electron:` padding overrides is different and stays: it guarantees they
+ * beat the base `px-`/`py-` utilities regardless of variant sort order.
+ */
+const ROW = "flex items-center gap-1 rounded-md pr-1"
+const ROW_MAIN = "flex min-w-0 flex-1 items-center gap-[7px] px-1.5! py-[5px]! text-left"
+const ROW_LABEL = "flex min-w-0 flex-col"
+const ROW_ACTIONS =
+  "flex flex-none justify-end gap-[3px] opacity-[0.45] transition-opacity duration-[120ms] ease-[ease] group-hover:opacity-100 group-focus-within:opacity-100"
 
 export function Sidebar() {
   const projects = useStore((s) => s.projects)
@@ -15,21 +31,25 @@ export function Sidebar() {
   const byId = useMemo(() => new Map(sessions.map((s) => [s.id, s])), [sessions])
 
   return (
-    <aside className="sidebar">
-      <header className="brand">
-        <span className="brand-copy">
-          <h1>hangar</h1>
-          <span className="brand-subtitle">project workspace</span>
+    <aside className="row-start-1 col-start-1 flex min-h-0 flex-col border-r border-surface-5 bg-surface-2 select-none">
+      <header className="flex min-h-[48px] flex-none items-center gap-[9px] border-b border-surface-5 bg-surface-3 px-3.5 py-[7px] electron:h-[48px] electron:py-0! electron:pr-3.5! electron:pl-[92px]! electron:[-webkit-app-region:drag]">
+        <span className="flex min-w-0 flex-col leading-[1.1]">
+          <h1 className="m-0 text-[13.5px] font-[650] tracking-[0.015em]">hangar</h1>
+          <span className="mt-0.5 text-[8.5px] font-[550] tracking-[0.075em] whitespace-nowrap text-surface-8 uppercase">
+            project workspace
+          </span>
         </span>
       </header>
 
-      <nav className="projects">
-        <div className="projects-heading">
+      <nav className="min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-3">
+        <div className="flex items-center justify-between px-1.5 pt-[7px] pb-2 text-[9.5px] font-semibold tracking-[0.09em] text-surface-9 uppercase">
           <span>Projects</span>
-          <span className="projects-count">{projects.length}</span>
+          <span className="min-w-[17px] rounded-lg bg-surface-a3 px-[5px] py-px text-center text-[9px] tracking-[0]">
+            {projects.length}
+          </span>
         </div>
         {projects.length === 0 ? (
-          <p className="empty">
+          <p className="mx-1.5 my-3 text-[12px] leading-[1.6] text-surface-10">
             No projects registered yet.
             <br />
             Add one below, or run <code>hangar add</code>.
@@ -69,7 +89,11 @@ export function Sidebar() {
           ))
         )}
 
-        <button type="button" className="new-project" onClick={() => openEditor()}>
+        <button
+          type="button"
+          className="mt-0.5 block w-full rounded-md border! border-dashed! border-surface-5! p-1.5! text-center text-[11.5px]! text-surface-9! hover:border-surface-8! hover:bg-surface-a3! hover:text-surface-12!"
+          onClick={() => openEditor()}
+        >
           + New project
         </button>
       </nav>
@@ -114,7 +138,14 @@ function ProjectRow({
 
   return (
     <section
-      className={`project${dragging ? " dragging" : ""}${dropSide ? ` drop-${dropSide}` : ""}`}
+      className={cx(
+        "relative mb-1.5",
+        dragging && "opacity-[0.45]",
+        dropSide === "before" &&
+          "before:pointer-events-none before:absolute before:-top-1 before:right-1 before:left-1 before:z-[2] before:h-0.5 before:rounded-[2px] before:bg-accent-9 before:content-['']",
+        dropSide === "after" &&
+          "after:pointer-events-none after:absolute after:-bottom-1 after:right-1 after:left-1 after:z-[2] after:h-0.5 after:rounded-[2px] after:bg-accent-9 after:content-['']",
+      )}
       onDragOver={dragOver}
       onDrop={(event) => {
         event.preventDefault()
@@ -123,7 +154,7 @@ function ProjectRow({
       }}
     >
       <div
-        className="row project-row"
+        className={cx(ROW, "group cursor-grab bg-surface-a2 hover:bg-surface-a3 active:cursor-grabbing")}
         draggable
         title="Drag to reorder project"
         onDragStart={(event) => {
@@ -135,63 +166,56 @@ function ProjectRow({
       >
         <button
           type="button"
-          className="row-main"
+          className={ROW_MAIN}
           onClick={() => toggleCollapsed(project.name)}
           aria-expanded={!collapsed}
         >
-          <span className={`chevron${collapsed ? "" : " open"}`} aria-hidden="true">
+          <span
+            className={cx(
+              "w-2 text-[8px] text-surface-9 transition-transform duration-[120ms] ease-[ease]",
+              !collapsed && "rotate-90",
+            )}
+            aria-hidden="true"
+          >
             ▶
           </span>
           <Dot tone={running ? "running" : "idle"} title={running ? "running" : "idle"} />
-          <span className="row-label">
-            <span className="row-name">{project.name}</span>
-            <span className="row-sub" title={project.path}>
+          <span className={ROW_LABEL}>
+            <span className="truncate text-[12.5px] font-semibold text-surface-12">{project.name}</span>
+            <span className="truncate text-[10.5px] text-surface-9" title={project.path}>
               {project.path}
             </span>
           </span>
         </button>
 
-        <div className="row-actions">
-          <button
-            type="button"
-            className="icon-button"
-            title={`Edit ${project.name}`}
-            onClick={() => openEditor(project.name)}
-          >
+        {/* 4 × 26px button + 3 × 3px gap */}
+        <div className={cx(ROW_ACTIONS, "min-w-[113px]")}>
+          <IconButton title={`Edit ${project.name}`} onClick={() => openEditor(project.name)}>
             ✎
-          </button>
-          <button
-            type="button"
-            className="icon-button"
-            title="Start all processes"
-            onClick={() => actions.start(project.name)}
-          >
+          </IconButton>
+          <IconButton title="Start all processes" onClick={() => actions.start(project.name)}>
             ▶
-          </button>
+          </IconButton>
           {running && (
-            <button
-              type="button"
-              className="icon-button"
+            <IconButton
               title="Restart all processes"
               onClick={() => requestConfirm({ action: "restart", project: project.name })}
             >
               ↻
-            </button>
+            </IconButton>
           )}
-          <button
-            type="button"
-            className="icon-button"
+          <IconButton
             title="Stop all processes"
             disabled={!running}
             onClick={() => requestConfirm({ action: "stop", project: project.name })}
           >
             ■
-          </button>
+          </IconButton>
         </div>
       </div>
 
       {!collapsed && (
-        <ul className="processes">
+        <ul className="mt-[3px] mr-0 mb-0 ml-2.5 list-none border-l border-surface-5 py-0 pr-0 pl-2">
           {project.processes.map((proc) => (
             <ProcessRow
               key={proc.name}
@@ -224,59 +248,55 @@ function ProcessRow({
 
   const id = sessionId(project, name)
   const running = session?.status === "running"
+  const selected = activeId === id
 
   return (
     <li
-      className={`row process-row${activeId === id ? " selected" : ""}`}
+      // `.row.selected` sat after `.row:hover` in styles.css, so a selected row
+      // kept surface-a4 while hovered — hence the either/or here.
+      className={cx(ROW, "group", selected ? "bg-surface-a4" : "hover:bg-surface-a3")}
       onClick={() => {
         if (session) setActive(id)
       }}
     >
       <button
         type="button"
-        className="row-main"
+        className={cx(ROW_MAIN, selected ? "text-surface-12!" : "text-surface-10! group-hover:text-surface-12!")}
         title={cmd}
         onClick={() => (session ? setActive(id) : actions.start(project, name))}
       >
         <Dot tone={toneOf(session)} small title={describe(session)} />
-        <span className="row-label">
-          <span className="row-name">{name}</span>
-          <span className="row-sub" title={cmd}>{cmd}</span>
+        <span className={ROW_LABEL}>
+          <span className="truncate text-[11.5px]">{name}</span>
+          <span className="max-w-[150px] truncate font-mono text-[9.5px] text-surface-9" title={cmd}>
+            {cmd}
+          </span>
         </span>
       </button>
 
-      <div className="row-actions">
+      {/* 2 × 26px button + 1 × 3px gap */}
+      <div className={cx(ROW_ACTIONS, "min-w-[55px]")}>
         {running ? (
           <>
-            <button
-              type="button"
-              className="icon-button"
+            <IconButton
               title={`Restart ${name}`}
               onClick={() => requestConfirm({ action: "restart", project, process: name })}
             >
               ↻
-            </button>
-            <button
-              type="button"
-              className="icon-button"
+            </IconButton>
+            <IconButton
               title={`Stop ${name}`}
               onClick={() => requestConfirm({ action: "stop", project, process: name })}
             >
               ■
-            </button>
+            </IconButton>
           </>
         ) : (
-          <button
-            type="button"
-            className="icon-button"
-            title={`Start ${name}`}
-            onClick={() => actions.start(project, name)}
-          >
+          <IconButton title={`Start ${name}`} onClick={() => actions.start(project, name)}>
             ▶
-          </button>
+          </IconButton>
         )}
       </div>
     </li>
   )
 }
-

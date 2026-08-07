@@ -27,7 +27,13 @@ export type Registry = {
 
 export type BrowserChoice = "system" | "safari" | "chrome" | "arc" | "firefox" | "brave" | "edge"
 
+export type ThemeSetting = "system" | "light" | "dark"
+
 export type AppSettings = {
+  appearance: {
+    /** "system" follows the OS light/dark preference live. */
+    theme: ThemeSetting
+  }
   links: {
     /** Browser used for detected localhost ports. */
     browser: BrowserChoice
@@ -52,6 +58,9 @@ export type AppSettings = {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  appearance: {
+    theme: "system",
+  },
   links: {
     browser: "system",
   },

@@ -1,6 +1,7 @@
 import type { ClientMsg, ServerMsg } from "@hangar/contracts"
 import { takeCloseOnExit, useStore } from "./store"
-import { applyTerminalSettings, disposeTerminal, noteExit, writeOutput, writeSnapshot } from "./terminals"
+import { applyTerminalSettings, disposeTerminal, noteExit, recordMetricPosition, writeOutput, writeSnapshot } from "./terminals"
+import { applyThemeSetting } from "./theme"
 
 const MIN_BACKOFF = 500
 const MAX_BACKOFF = 5_000
@@ -67,11 +68,13 @@ function handle(msg: ServerMsg): void {
     case "state": {
       const gone = store.sessions.filter((s) => !msg.sessions.some((next) => next.id === s.id))
       store.applyState(msg.projects, msg.sessions, msg.history, msg.settings)
+      applyThemeSetting(msg.settings.appearance.theme)
       applyTerminalSettings(msg.settings.terminal)
       for (const session of gone) disposeTerminal(session.id)
       return
     }
     case "metrics":
+      recordMetricPosition(msg.id, msg.metrics.sampledAt)
       store.updateMetrics(msg.id, msg.runId, msg.metrics)
       return
     case "snapshot":

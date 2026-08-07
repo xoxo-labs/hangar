@@ -1,18 +1,43 @@
 import { DEFAULT_SETTINGS, type AppSettings, type SessionId } from "@hangar/contracts"
 import { FitAddon } from "@xterm/addon-fit"
-import { Terminal } from "@xterm/xterm"
+import { Terminal, type IDecoration, type IMarker } from "@xterm/xterm"
 import { useStore } from "./store"
 import { send } from "./ws"
 
 /*
- * xterm wants concrete colours, not CSS variables, so the two tokens the
- * terminal shares with the app chrome are mirrored here: they must stay equal
- * to `--color-surface-1` and `--color-surface-12` in styles.css (Radix mauve
- * dark, steps 1 and 12). The pane's padding is painted by CSS and the rest by
- * xterm, so a mismatch shows up as a seam.
+ * xterm wants concrete colours, not CSS variables, so the tokens the terminal
+ * shares with the app chrome are mirrored here: background/foreground must stay
+ * equal to `--color-surface-1` and `--color-surface-12` in styles.css (Radix
+ * mauve, steps 1 and 12, per theme). The pane's padding is painted by CSS and
+ * the rest by xterm, so a mismatch shows up as a seam.
  */
-export const TERMINAL_BACKGROUND = "#121113"
-const TERMINAL_FOREGROUND = "#eeeef0"
+const TERMINAL_THEMES = {
+  dark: {
+    background: "#121113",
+    foreground: "#eeeef0",
+    cursor: "#eeeef0",
+    cursorAccent: "#121113",
+    selectionBackground: "#3a4a63",
+    scrollbarSliderBackground: "#77727e70",
+    scrollbarSliderHoverBackground: "#aaa6b080",
+    scrollbarSliderActiveBackground: "#d0cdd7a0",
+  },
+  light: {
+    background: "#fdfcfd",
+    foreground: "#211f26",
+    cursor: "#211f26",
+    cursorAccent: "#fdfcfd",
+    selectionBackground: "#c2e5ff",
+    scrollbarSliderBackground: "#10003332",
+    scrollbarSliderHoverBackground: "#08003145",
+    scrollbarSliderActiveBackground: "#05001d73",
+  },
+} as const
+
+/** The html class is settled before any terminal exists, so it is the truth. */
+function currentTerminalTheme() {
+  return TERMINAL_THEMES[document.documentElement.classList.contains("dark") ? "dark" : "light"]
+}
 
 type Entry = {
   term: Terminal
@@ -21,6 +46,10 @@ type Entry = {
   observer: ResizeObserver | null
   cols: number
   rows: number
+  metricMarkers: Map<number, IMarker>
+  metricDecoration: IDecoration | null
+  decorationTimer: ReturnType<typeof setTimeout> | null
+  metricSelectionListeners: Set<(range: MetricSelection | null) => void>
 }
 
 const entries = new Map<SessionId, Entry>()
@@ -40,16 +69,7 @@ function ensure(id: SessionId): Entry {
     scrollback: 5000,
     cursorBlink: true,
     allowProposedApi: true,
-    theme: {
-      background: TERMINAL_BACKGROUND,
-      foreground: TERMINAL_FOREGROUND,
-      cursor: TERMINAL_FOREGROUND,
-      cursorAccent: TERMINAL_BACKGROUND,
-      selectionBackground: "#3a4a63",
-      scrollbarSliderBackground: "#77727e70",
-      scrollbarSliderHoverBackground: "#aaa6b080",
-      scrollbarSliderActiveBackground: "#d0cdd7a0",
-    },
+    theme: currentTerminalTheme(),
   })
   const fit = new FitAddon()
   term.loadAddon(fit)
@@ -64,7 +84,19 @@ function ensure(id: SessionId): Entry {
       .catch(() => {})
   })
 
-  const entry: Entry = { term, fit, el: null, observer: null, cols: term.cols, rows: term.rows }
+  const entry: Entry = {
+    term,
+    fit,
+    el: null,
+    observer: null,
+    cols: term.cols,
+    rows: term.rows,
+    metricMarkers: new Map(),
+    metricDecoration: null,
+    decorationTimer: null,
+    metricSelectionListeners: new Set(),
+  }
+  term.onSelectionChange(() => notifyMetricSelection(entry))
   entries.set(id, entry)
   useStore.getState().noteTerminal(id)
   return entry
@@ -81,8 +113,97 @@ export function writeOutput(id: SessionId, data: string): void {
 export function writeSnapshot(id: SessionId, data: string): void {
   const fresh = !entries.has(id)
   const entry = ensure(id)
-  if (!fresh) entry.term.write("\x1bc")
+  if (!fresh) {
+    clearMetricPositions(entry)
+    entry.term.write("\x1bc")
+  }
   entry.term.write(data)
+}
+
+/** Associates a metrics sample with xterm's current line after pending output is parsed. */
+export function recordMetricPosition(id: SessionId, sampledAt: number): void {
+  const entry = ensure(id)
+  entry.term.write("", () => {
+    if (entries.get(id) !== entry) return
+    const marker = entry.term.registerMarker()
+    entry.metricMarkers.set(sampledAt, marker)
+    marker.onDispose(() => entry.metricMarkers.delete(sampledAt))
+
+    // Metric history only retains 450 samples; avoid holding older markers.
+    while (entry.metricMarkers.size > 450) {
+      entry.metricMarkers.values().next().value?.dispose()
+    }
+    notifyMetricSelection(entry)
+  })
+}
+
+export type MetricSelection = { startSampledAt: number; endSampledAt: number }
+
+/** Maps xterm's native line selection to the corresponding metrics time range. */
+export function subscribeToMetricSelection(id: SessionId, listener: (range: MetricSelection | null) => void): () => void {
+  const entry = ensure(id)
+  entry.metricSelectionListeners.add(listener)
+  notifyMetricSelection(entry)
+  return () => entry.metricSelectionListeners.delete(listener)
+}
+
+function notifyMetricSelection(entry: Entry): void {
+  const selection = entry.term.getSelectionPosition()
+  let range: MetricSelection | null = null
+  if (selection && entry.metricMarkers.size > 0) {
+    // xterm selection coordinates are 1-based; marker lines are 0-based.
+    const firstLine = Math.min(selection.start.y, selection.end.y) - 1
+    const lastLine = Math.max(selection.start.y, selection.end.y) - 1
+    const startSampledAt = nearestMetricAtLine(entry, firstLine)
+    const endSampledAt = nearestMetricAtLine(entry, lastLine)
+    if (startSampledAt !== null && endSampledAt !== null) {
+      range = startSampledAt <= endSampledAt
+        ? { startSampledAt, endSampledAt }
+        : { startSampledAt: endSampledAt, endSampledAt: startSampledAt }
+    }
+  }
+  for (const listener of entry.metricSelectionListeners) listener(range)
+}
+
+function nearestMetricAtLine(entry: Entry, line: number): number | null {
+  let nearest: { sampledAt: number; distance: number } | null = null
+  for (const [sampledAt, marker] of entry.metricMarkers) {
+    if (marker.isDisposed || marker.line < 0) continue
+    const distance = Math.abs(marker.line - line)
+    if (nearest === null || distance < nearest.distance) nearest = { sampledAt, distance }
+  }
+  return nearest?.sampledAt ?? null
+}
+
+/** Scrolls to a sample's output line and briefly marks it with a subtle rule. */
+export function scrollToMetricPosition(id: SessionId, sampledAt: number): boolean {
+  const entry = entries.get(id)
+  const marker = entry?.metricMarkers.get(sampledAt)
+  if (!entry || !marker || marker.isDisposed || marker.line < 0) return false
+
+  entry.term.scrollToLine(marker.line)
+  entry.metricDecoration?.dispose()
+  if (entry.decorationTimer !== null) clearTimeout(entry.decorationTimer)
+
+  const decoration = entry.term.registerDecoration({ marker, width: entry.term.cols, layer: "top" }) ?? null
+  entry.metricDecoration = decoration
+  decoration?.onRender((element) => element.classList.add("metric-line-decoration"))
+  entry.decorationTimer = setTimeout(() => {
+    decoration?.dispose()
+    if (entry.metricDecoration === decoration) entry.metricDecoration = null
+    entry.decorationTimer = null
+  }, 2_000)
+  return true
+}
+
+function clearMetricPositions(entry: Entry): void {
+  if (entry.decorationTimer !== null) clearTimeout(entry.decorationTimer)
+  entry.decorationTimer = null
+  entry.metricDecoration?.dispose()
+  entry.metricDecoration = null
+  for (const marker of entry.metricMarkers.values()) marker.dispose()
+  entry.metricMarkers.clear()
+  for (const listener of entry.metricSelectionListeners) listener(null)
 }
 
 export function noteExit(id: SessionId, exitCode: number | null): void {
@@ -135,6 +256,14 @@ export function focusTerminal(id: SessionId): void {
   entries.get(id)?.term.focus()
 }
 
+/** Repaints every live terminal when the app theme flips. */
+export function applyTerminalTheme(resolved: "light" | "dark"): void {
+  const theme = TERMINAL_THEMES[resolved]
+  for (const entry of entries.values()) {
+    entry.term.options.theme = theme
+  }
+}
+
 /** Applies appearance changes to existing terminals and recalculates their PTY size. */
 export function applyTerminalSettings(settings: AppSettings["terminal"]): void {
   const fontFamily = settings.fontFamily ?? DEFAULT_SETTINGS.terminal.fontFamily
@@ -179,13 +308,17 @@ export async function copyTerminalOutput(id: SessionId, lastLines?: number): Pro
 }
 
 export function clearTerminal(id: SessionId): void {
-  entries.get(id)?.term.clear()
+  const entry = entries.get(id)
+  if (!entry) return
+  clearMetricPositions(entry)
+  entry.term.clear()
 }
 
 export function disposeTerminal(id: SessionId): void {
   const entry = entries.get(id)
   if (!entry) return
   entry.observer?.disconnect()
+  clearMetricPositions(entry)
   entry.term.dispose()
   entries.delete(id)
   useStore.getState().dropTerminal(id)

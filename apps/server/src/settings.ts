@@ -11,6 +11,10 @@ export function loadSettings(): AppSettings {
   try {
     const parsed = JSON.parse(readFileSync(settingsPath(), "utf8")) as Partial<AppSettings>
     return {
+      appearance: {
+        ...DEFAULT_SETTINGS.appearance,
+        ...(parsed.appearance ?? {}),
+      },
       links: {
         ...DEFAULT_SETTINGS.links,
         ...(parsed.links ?? {}),
@@ -65,6 +69,9 @@ function pruneLogs(settings: AppSettings): void {
 }
 
 function validateSettings(settings: AppSettings): void {
+  if (!["system", "light", "dark"].includes(settings?.appearance?.theme)) {
+    throw new Error("invalid theme setting")
+  }
   if (!["system", "safari", "chrome", "arc", "firefox", "brave", "edge"].includes(settings?.links?.browser)) {
     throw new Error("invalid browser setting")
   }

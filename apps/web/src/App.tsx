@@ -36,11 +36,11 @@ export function App() {
   )
 
   return (
-    <div className="app">
+    <div className="grid h-full grid-cols-[280px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)]">
       <Sidebar />
-      <main className="main">
+      <main className="col-start-2 row-start-1 flex min-h-0 min-w-0 flex-col bg-surface-1">
         <TabBar />
-        <div className="stage">
+        <div className="relative min-h-0 flex-1">
           {paneIds.map((id) => (
             <TerminalPane key={id} id={id} active={id === activeId} />
           ))}
@@ -57,10 +57,13 @@ export function App() {
 
 function Placeholder() {
   return (
-    <div className="placeholder">
-      <span className="placeholder-mark" aria-hidden="true" />
-      <p>No session open</p>
-      <p className="placeholder-hint">Pick a process in the sidebar to start it.</p>
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-surface-9">
+      <span
+        className="mb-2.5 size-[34px] rounded-[10px] bg-[linear-gradient(150deg,var(--color-accent-9),var(--color-brand-10))] opacity-[0.28]"
+        aria-hidden="true"
+      />
+      <p className="m-0 text-[12px]">No session open</p>
+      <p className="m-0 text-[12px] text-surface-7">Pick a process in the sidebar to start it.</p>
     </div>
   )
 }

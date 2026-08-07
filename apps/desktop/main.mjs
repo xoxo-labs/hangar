@@ -11,7 +11,7 @@ import { spawn } from "node:child_process"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron"
 
 // When launched under a supervisor (concurrently, a dead terminal), stdout and
 // stderr can vanish before we do; an unguarded console.* then throws EPIPE and
@@ -146,7 +146,9 @@ function createWindow() {
     height: 820,
     minWidth: 900,
     minHeight: 600,
-    backgroundColor: "#111213",
+    // First-paint backdrop before the renderer settles its own theme; the two
+    // values mirror --color-surface-1 (Radix mauve step 1) per scheme.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#121113" : "#fdfcfd",
     titleBarStyle: "hiddenInset",
     // Centers the lights on the 48px title strip shared by sidebar and tabs.
     trafficLightPosition: { x: 18, y: 18 },
