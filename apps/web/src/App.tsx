@@ -66,8 +66,8 @@ function Placeholder() {
         className="mb-2.5 size-[34px] rounded-[10px] bg-[linear-gradient(150deg,var(--color-accent-9),var(--color-brand-10))] opacity-[0.28]"
         aria-hidden="true"
       />
-      <p className="m-0 text-[12px]">No session open</p>
-      <p className="m-0 text-[12px] text-surface-7">Pick a process in the sidebar to start it.</p>
+      <p className="m-0 text-base">No session open</p>
+      <p className="m-0 text-base text-surface-7">Pick a process in the sidebar to start it.</p>
     </div>
   )
 }

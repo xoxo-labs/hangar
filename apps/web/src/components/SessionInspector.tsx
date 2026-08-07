@@ -13,11 +13,11 @@ const NO_METRIC_HISTORY: SessionMetricPoint[] = []
 /** Ports of `.inspector-summary, .inspector-section` — one padded, hairline-separated block. */
 const SECTION = "border-b border-surface-4 p-[14px]"
 /** Port of `.inspector-section h3`. */
-const SECTION_TITLE = "mt-0 mb-[10px] text-[10px] font-semibold uppercase tracking-[.07em] text-surface-9"
+const SECTION_TITLE = "mt-0 mb-[10px] text-xs font-semibold uppercase tracking-caps text-surface-9"
 /** Port of `.port-list, .history-list`. */
 const STACK = "flex flex-col gap-[5px]"
 /** Port of `.inspector-empty`. */
-const EMPTY = "m-0 text-[10.5px] leading-[1.45] text-surface-8"
+const EMPTY = "m-0 text-sm leading-normal text-surface-8"
 
 export function SessionStrip({ session, onInspect }: { session: SessionInfo; onInspect: () => void }) {
   const now = useNow(session.status === "running")
@@ -30,7 +30,7 @@ export function SessionStrip({ session, onInspect }: { session: SessionInfo; onI
     void openLocalPort(port, browser).catch(() => showNotice(`Could not open port ${port}`))
   }
   return (
-    <div className="absolute bottom-0 left-[8px] z-[1] flex h-[28px] w-max items-center gap-[8px] whitespace-nowrap pr-[4px] text-left text-[10.5px] leading-[1.2] text-surface-9">
+    <div className="absolute bottom-0 left-[8px] z-[1] flex h-[28px] w-max items-center gap-[8px] whitespace-nowrap pr-[4px] text-left text-sm leading-tight text-surface-9">
       <button
         className="flex items-center gap-[8px] self-center text-inherit hover:text-surface-12 focus:outline-none"
         type="button"
@@ -46,7 +46,7 @@ export function SessionStrip({ session, onInspect }: { session: SessionInfo; onI
               CPU {formatCpu(metrics.cpuPercent)}
             </span>
           : <Dot tone={toneOf(session)} small />}
-        <strong className="text-[11px] font-[550] text-surface-11">{session.process}</strong>
+        <strong className="text-sm font-book text-surface-11">{session.process}</strong>
         <span>{formatDuration((session.endedAt ?? now) - session.startedAt)}</span>
         {metrics && <>
           <i className="mx-[1px] h-[12px] w-[1px] bg-surface-5 max-[760px]:hidden" />
@@ -55,7 +55,7 @@ export function SessionStrip({ session, onInspect }: { session: SessionInfo; onI
         </>}
       </button>
       {primaryPort !== undefined && <button
-        className="self-center rounded-[4px] px-[5px] py-[3px] font-sans text-[10.5px] leading-[inherit] tabular-nums text-accent-10 hover:text-accent-11 focus:outline-none"
+        className="self-center rounded-sm px-[5px] py-[3px] font-sans text-sm leading-[inherit] tabular-nums text-accent-10 hover:text-accent-11 focus:outline-none"
         type="button"
         onClick={() => openPort(primaryPort)}
         title={`Open localhost:${primaryPort}`}
@@ -89,11 +89,11 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
     >
       <header className="flex min-h-[58px] flex-none items-center justify-between border-b border-surface-5 px-[14px] py-[10px]">
         <div>
-          <h2 className="m-0 text-[14px] font-semibold">{session.process}</h2>
-          <span className="text-[10px] text-surface-9">{session.project}</span>
+          <h2 className="m-0 text-lg font-semibold">{session.process}</h2>
+          <span className="text-xs text-surface-9">{session.project}</span>
         </div>
         <button
-          className="grid size-[26px] place-items-center rounded-[5px] text-[20px] leading-none text-surface-9 hover:bg-surface-a4 hover:text-surface-12"
+          className="grid size-[26px] place-items-center rounded-md text-[20px] leading-none text-surface-9 hover:bg-surface-a4 hover:text-surface-12"
           type="button"
           onClick={onClose}
           aria-label="Close inspector"
@@ -103,11 +103,11 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <section className={SECTION}>
-          <div className="mb-[12px] flex items-center gap-[7px] text-[11px]">
+          <div className="mb-[12px] flex items-center gap-[7px] text-sm">
             <Dot tone={toneOf(session)} small />
-            <strong className="font-[550]">{describe(session)}</strong>
+            <strong className="font-book">{describe(session)}</strong>
           </div>
-          <dl className="m-0 grid grid-cols-[68px_minmax(0,1fr)] gap-x-[10px] gap-y-[7px] text-[10.5px]">
+          <dl className="m-0 grid grid-cols-[68px_minmax(0,1fr)] gap-x-[10px] gap-y-[7px] text-sm">
             <Detail label="Uptime" value={formatDuration((session.endedAt ?? now) - session.startedAt)} />
             <Detail label="Started" value={formatDate(session.startedAt)} />
             {session.pid !== undefined && <Detail label="PID" value={String(session.pid)} mono />}
@@ -122,7 +122,7 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
           <div className={STACK}>
             {metrics.ports.map((port) => <button
               key={port}
-              className="flex items-center justify-between rounded-[5px] border border-surface-5 bg-surface-a2 px-[8px] py-[7px] text-[10px] text-surface-9 hover:bg-surface-a4 hover:text-accent-10"
+              className="flex items-center justify-between rounded-md border border-surface-5 bg-surface-a2 px-[8px] py-[7px] text-xs text-surface-9 hover:bg-surface-a4 hover:text-accent-10"
               type="button"
               onClick={() => openPort(port)}
             >
@@ -169,11 +169,11 @@ function ResourceSection({ sessionId, metrics, history }: { sessionId: string; m
   const shared = { hoveredIndex, selectedRange, compact: layout === "rows", onHover: setHoveredIndex, onSelect: selectSample }
   return <section className={SECTION} onPointerLeave={() => setHoveredIndex(null)}>
     <div className="mb-[10px] flex items-center justify-between gap-2">
-      <h3 className="m-0 text-[10px] font-semibold uppercase tracking-[.07em] text-surface-9" title="Hover to compare all metrics; click to jump to that point in the terminal">
+      <h3 className="m-0 text-xs font-semibold uppercase tracking-caps text-surface-9" title="Hover to compare all metrics; click to jump to that point in the terminal">
         Resources · {hovered ? formatTime(hovered.sampledAt) : "last 15 minutes"}
       </h3>
       <IconButton
-        className="size-[22px] rounded-[4px] text-[13px] text-surface-8"
+        className="size-[22px] rounded-sm text-[13px] text-surface-8"
         title={layout === "grid" ? "Switch to compact rows" : "Switch to card grid"}
         aria-label={layout === "grid" ? "Switch to compact rows" : "Switch to card grid"}
         onClick={() => setLayout((current) => current === "grid" ? "rows" : "grid")}
@@ -205,18 +205,18 @@ type MetricProps = {
 }
 
 function Metric({ label, value, hoverValue, peak, values, tone, hoveredIndex, selectedRange, compact, onHover, onSelect }: MetricProps) {
-  if (compact) return <div className="grid h-[42px] grid-cols-[48px_62px_minmax(60px,1fr)_auto] items-center gap-[6px] rounded-[5px] border border-surface-5 bg-surface-a2 px-[8px]">
-    <span className="text-[9.5px] text-surface-9">{label}</span>
-    <strong className="text-[12px] font-[550] tabular-nums text-surface-12">{hoverValue ?? value}</strong>
+  if (compact) return <div className="grid h-[42px] grid-cols-[48px_62px_minmax(60px,1fr)_auto] items-center gap-[6px] rounded-md border border-surface-5 bg-surface-a2 px-[8px]">
+    <span className="text-xs text-surface-9">{label}</span>
+    <strong className="text-base font-book tabular-nums text-surface-12">{hoverValue ?? value}</strong>
     <Sparkline compact values={values} tone={tone} hoveredIndex={hoveredIndex} selectedRange={selectedRange} onHover={onHover} onSelect={onSelect} />
-    <small className="max-w-[82px] truncate text-right text-[8.5px] text-surface-8" title={peak}>{peak}</small>
+    <small className="max-w-[82px] truncate text-right text-2xs text-surface-8" title={peak}>{peak}</small>
   </div>
 
-  return <div className="flex min-h-[100px] flex-col rounded-[6px] border border-surface-5 bg-surface-a2 p-[9px]">
-    <span className="text-[9.5px] text-surface-9">{label}</span>
-    <strong className="mt-[4px] text-[16px] font-[550] text-surface-12">{hoverValue ?? value}</strong>
+  return <div className="flex min-h-[100px] flex-col rounded-md border border-surface-5 bg-surface-a2 p-[9px]">
+    <span className="text-xs text-surface-9">{label}</span>
+    <strong className="mt-[4px] text-xl font-book text-surface-12">{hoverValue ?? value}</strong>
     <Sparkline values={values} tone={tone} hoveredIndex={hoveredIndex} selectedRange={selectedRange} onHover={onHover} onSelect={onSelect} />
-    {peak && <small className="mt-auto text-[9.5px] text-surface-8">{peak}</small>}
+    {peak && <small className="mt-auto text-xs text-surface-8">{peak}</small>}
   </div>
 }
 
@@ -236,7 +236,7 @@ function Sparkline({ values, tone, hoveredIndex, selectedRange, compact = false,
   onHover: (index: number) => void
   onSelect: (index: number) => void
 }) {
-  if (values.length < 2) return <span className={cx("text-[9px] text-surface-7", compact ? "m-0" : "my-[10px]")}>collecting…</span>
+  if (values.length < 2) return <span className={cx("text-2xs text-surface-7", compact ? "m-0" : "my-[10px]")}>collecting…</span>
   const maximum = Math.max(1, ...values)
   const points = values.map((value, index) => {
     const x = index / (values.length - 1) * 100
@@ -284,7 +284,7 @@ function Detail({ label, value, mono = false }: { label: string; value: string; 
   return <>
     <dt className="text-surface-8">{label}</dt>
     <dd
-      className={cx("m-0 overflow-hidden text-ellipsis whitespace-nowrap text-surface-11", mono && "font-mono text-[10px]")}
+      className={cx("m-0 overflow-hidden text-ellipsis whitespace-nowrap text-surface-11", mono && "font-mono text-xs")}
       title={value}
     >
       {value}
@@ -301,13 +301,13 @@ const RESULT_TONE: Record<SessionHistoryEntry["reason"], string> = {
 
 function HistoryRow({ entry }: { entry: SessionHistoryEntry }) {
   const openHistoryRun = useStore((state) => state.openHistoryRun)
-  return <button type="button" className="grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-[7px] rounded-[5px] px-[4px] py-[6px] text-left hover:bg-surface-a3" onClick={() => openHistoryRun(entry.runId)} title="Open historical run">
+  return <button type="button" className="grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-[7px] rounded-md px-[4px] py-[6px] text-left hover:bg-surface-a3" onClick={() => openHistoryRun(entry.runId)} title="Open historical run">
     <span className={cx("text-center text-[13px]", RESULT_TONE[entry.reason])}>{entry.reason === "completed" ? "✓" : entry.reason === "failed" ? "×" : "■"}</span>
     <span className="flex min-w-0 flex-col">
-      <strong className="text-[10.5px] font-medium">{formatDate(entry.startedAt)}</strong>
-      <small className="text-[9.5px] text-surface-8">{formatDuration(entry.durationMs)} · {entry.reason}{entry.exitCode === null ? "" : ` (${entry.exitCode})`} · {formatBytes(entry.totalOutputBytes)} output</small>
+      <strong className="text-sm font-medium">{formatDate(entry.startedAt)}</strong>
+      <small className="text-xs text-surface-8">{formatDuration(entry.durationMs)} · {entry.reason}{entry.exitCode === null ? "" : ` (${entry.exitCode})`} · {formatBytes(entry.totalOutputBytes)} output</small>
     </span>
-    <span className="text-[9.5px] text-surface-8">{formatCpu(entry.peakCpuPercent)} · {formatBytes(entry.peakMemoryBytes)}</span>
+    <span className="text-xs text-surface-8">{formatCpu(entry.peakCpuPercent)} · {formatBytes(entry.peakMemoryBytes)}</span>
   </button>
 }
 

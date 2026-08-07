@@ -45,11 +45,11 @@ function HistoryOverview() {
         <div>
           <div className="mb-[5px] flex items-center gap-[9px]">
             <span className="text-[20px] text-surface-8" aria-hidden="true">◷</span>
-            <h2 className="m-0 text-[20px] font-[650] tracking-[-0.015em]">Session history</h2>
+            <h2 className="m-0 text-2xl font-strong tracking-[-0.015em]">Session history</h2>
           </div>
-          <p className="m-0 text-[11.5px] text-surface-9">Past runs, resource peaks and captured output on this Mac.</p>
+          <p className="m-0 text-base text-surface-9">Past runs, resource peaks and captured output on this Mac.</p>
         </div>
-        {!enabled && <button type="button" className="rounded-md border border-accent-7 bg-accent-a3 px-[10px] py-[6px] text-[11px] text-accent-11 hover:bg-accent-a4" onClick={openSettings}>Enable history</button>}
+        {!enabled && <button type="button" className="rounded-md border border-accent-7 bg-accent-a3 px-[10px] py-[6px] text-sm text-accent-11 hover:bg-accent-a4" onClick={openSettings}>Enable history</button>}
       </header>
 
       <div className="mb-[20px] grid grid-cols-3 gap-[8px]">
@@ -61,9 +61,9 @@ function HistoryOverview() {
       <div className="mb-[18px] flex items-center gap-[8px]">
         <label className="relative min-w-[220px] flex-1">
           <span className="pointer-events-none absolute top-1/2 left-[10px] -translate-y-1/2 text-[12px] text-surface-8">⌕</span>
-          <input className="h-[34px] w-full rounded-md border border-surface-6 bg-surface-2 pr-[10px] pl-[30px] text-[11.5px] text-surface-12 outline-none placeholder:text-surface-8 focus:border-accent-8" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search project, process or command…" />
+          <input className="h-[34px] w-full rounded-md border border-surface-6 bg-surface-2 pr-[10px] pl-[30px] text-base text-surface-12 outline-none placeholder:text-surface-8 focus:border-accent-8" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search project, process or command…" />
         </label>
-        <select className="h-[34px] rounded-md border border-surface-6 bg-surface-2 px-[9px] text-[11px] text-surface-11 outline-none" value={result} onChange={(event) => setResult(event.target.value as typeof result)}>
+        <select className="h-[34px] rounded-md border border-surface-6 bg-surface-2 px-[9px] text-sm text-surface-11 outline-none" value={result} onChange={(event) => setResult(event.target.value as typeof result)}>
           <option value="all">All results</option>
           <option value="completed">Completed</option>
           <option value="failed">Failed</option>
@@ -77,7 +77,7 @@ function HistoryOverview() {
 
       <div className="flex flex-col gap-[20px]">
         {groups.map(([day, entries]) => <section key={day}>
-          <h3 className="mb-[7px] px-[3px] text-[9.5px] font-semibold tracking-[0.08em] text-surface-8 uppercase">{day}</h3>
+          <h3 className="mb-[7px] px-[3px] text-xs font-semibold tracking-caps text-surface-8 uppercase">{day}</h3>
           <div className="overflow-hidden rounded-lg border border-surface-5 bg-surface-2">
             {entries.map((entry, index) => <HistoryRow key={entry.runId} entry={entry} last={index === entries.length - 1} onOpen={() => openRun(entry.runId)} />)}
           </div>
@@ -93,13 +93,13 @@ function HistoryRow({ entry, last, onOpen }: { entry: SessionHistoryEntry; last:
     <div className="flex min-w-0 items-center gap-[10px]">
       <span className={cx("grid size-[22px] flex-none place-items-center rounded-full bg-surface-a3 text-[12px]", result.tone)}>{result.icon}</span>
       <span className="flex min-w-0 flex-col">
-        <strong className="truncate text-[11.5px] font-[550] text-surface-12">{entry.project} <span className="font-normal text-surface-8">/</span> {entry.process}</strong>
-        <code className="truncate text-[9.5px] text-surface-8">{entry.cmd}</code>
+        <strong className="truncate text-base font-book text-surface-12">{entry.project} <span className="font-normal text-surface-8">/</span> {entry.process}</strong>
+        <code className="truncate text-xs text-surface-8">{entry.cmd}</code>
       </span>
     </div>
-    <span className={cx("text-[10px]", result.tone)}>{result.label}{entry.exitCode === null ? "" : ` · ${entry.exitCode}`}</span>
-    <span className="text-[10px] tabular-nums text-surface-9 dark:text-surface-10">{formatDuration(entry.durationMs)}</span>
-    <span className="text-[9.5px] tabular-nums text-surface-8 dark:text-surface-9">{formatCpu(entry.peakCpuPercent)} · {formatBytes(entry.peakMemoryBytes)}</span>
+    <span className={cx("text-xs", result.tone)}>{result.label}{entry.exitCode === null ? "" : ` · ${entry.exitCode}`}</span>
+    <span className="text-xs tabular-nums text-surface-9 dark:text-surface-10">{formatDuration(entry.durationMs)}</span>
+    <span className="text-xs tabular-nums text-surface-8 dark:text-surface-9">{formatCpu(entry.peakCpuPercent)} · {formatBytes(entry.peakMemoryBytes)}</span>
     <span className="text-[15px] text-surface-7 group-hover:text-surface-11">›</span>
   </button>
 }
@@ -126,17 +126,17 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
 
   return <div className="absolute inset-0 overflow-y-auto bg-surface-1">
     <div className="mx-auto w-full max-w-[1040px] px-[30px] py-[24px]">
-      <button type="button" className="mb-[17px] text-[10.5px] text-surface-9 hover:text-surface-12" onClick={openHistory}>‹ All history</button>
+      <button type="button" className="mb-[17px] text-sm text-surface-9 hover:text-surface-12" onClick={openHistory}>‹ All history</button>
       <header className="mb-[20px] flex items-start justify-between gap-5">
         <div className="min-w-0">
           <div className="mb-[5px] flex items-center gap-[9px]">
             <Dot tone={result.dot} />
-            <h2 className="m-0 truncate text-[19px] font-[650]">{entry.project} <span className="font-normal text-surface-8">/</span> {entry.process}</h2>
-            <span className="rounded-full border border-surface-5 bg-surface-a3 px-[7px] py-[2px] text-[8.5px] font-semibold tracking-[0.05em] text-surface-9 uppercase">Historical</span>
+            <h2 className="m-0 truncate text-xl font-strong">{entry.project} <span className="font-normal text-surface-8">/</span> {entry.process}</h2>
+            <span className="rounded-full border border-surface-5 bg-surface-a3 px-[7px] py-[2px] text-2xs font-semibold tracking-wider text-surface-9 uppercase">Historical</span>
           </div>
-          <p className="m-0 text-[10.5px] text-surface-9">{formatFullDate(entry.startedAt)} · {formatDuration(entry.durationMs)} · <span className={result.tone}>{result.label}</span></p>
+          <p className="m-0 text-sm text-surface-9">{formatFullDate(entry.startedAt)} · {formatDuration(entry.durationMs)} · <span className={result.tone}>{result.label}</span></p>
         </div>
-        <button type="button" className="rounded-md bg-accent-9 px-[11px] py-[7px] text-[11px] font-[550] text-white hover:bg-accent-10" onClick={() => actions.start(entry.project, entry.process)}>▶ Run again</button>
+        <button type="button" className="rounded-md bg-accent-9 px-[11px] py-[7px] text-sm font-book text-white hover:bg-accent-10" onClick={() => actions.start(entry.project, entry.process)}>▶ Run again</button>
       </header>
 
       <div className="mb-[12px] grid grid-cols-4 gap-[8px]">
@@ -149,13 +149,13 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
       <section className="mb-[12px] rounded-lg border border-surface-5 bg-surface-2 p-[16px]">
         <div className="mb-[14px] flex items-start justify-between gap-3">
           <div>
-            <h3 className="m-0 text-[11px] font-semibold text-surface-12">Run timeline</h3>
-            <p className="mt-[3px] mb-0 text-[9.5px] text-surface-8">Move across the timeline to rewind resource usage.</p>
+            <h3 className="m-0 text-sm font-semibold text-surface-12">Run timeline</h3>
+            <p className="mt-[3px] mb-0 text-xs text-surface-8">Move across the timeline to rewind resource usage.</p>
           </div>
-          {sample && <time className="font-mono text-[10px] tabular-nums text-accent-10">+{formatDuration(replayCutoff - entry.startedAt)}</time>}
+          {sample && <time className="font-mono text-xs tabular-nums text-accent-10">+{formatDuration(replayCutoff - entry.startedAt)}</time>}
         </div>
         {samples.length === 0
-          ? <div className="grid h-[120px] place-items-center rounded-md border border-dashed border-surface-5 text-center text-[10.5px] leading-[1.5] text-surface-8"><span>This run predates timeline capture.<br />Start a new run to record resource samples.</span></div>
+          ? <div className="grid h-[120px] place-items-center rounded-md border border-dashed border-surface-5 text-center text-sm leading-normal text-surface-8"><span>This run predates timeline capture.<br />Start a new run to record resource samples.</span></div>
           : samples.length === 1
             ? <div>
               <div className="grid grid-cols-4 gap-[8px]">
@@ -164,7 +164,7 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
                 <MetricSnapshot label="Processes" value={String(sample?.processCount ?? 0)} />
                 <MetricSnapshot label="Output rate" value={`${formatBytes(sample?.outputBytesPerSecond ?? 0)}/s`} />
               </div>
-              <p className="mt-[10px] mb-0 text-[9.5px] text-surface-8">The run ended before a second timeline sample could be recorded.</p>
+              <p className="mt-[10px] mb-0 text-xs text-surface-8">The run ended before a second timeline sample could be recorded.</p>
             </div>
             : <>
               <div className="grid grid-cols-2 gap-[8px]">
@@ -181,8 +181,8 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
 
       <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(260px,1fr)] gap-[12px]">
         <section className="rounded-lg border border-surface-5 bg-surface-2 p-[16px]">
-          <h3 className="mb-[12px] text-[10px] font-semibold tracking-[0.07em] text-surface-9 uppercase">Run details</h3>
-          <dl className="m-0 grid grid-cols-[80px_minmax(0,1fr)] gap-x-[12px] gap-y-[9px] text-[10.5px]">
+          <h3 className="mb-[12px] text-xs font-semibold tracking-caps text-surface-9 uppercase">Run details</h3>
+          <dl className="m-0 grid grid-cols-[80px_minmax(0,1fr)] gap-x-[12px] gap-y-[9px] text-sm">
             <Detail label="Command" value={entry.cmd} mono />
             <Detail label="Started" value={formatFullDate(entry.startedAt)} />
             <Detail label="Ended" value={formatFullDate(entry.endedAt)} />
@@ -191,11 +191,11 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
           </dl>
         </section>
         <section className="rounded-lg border border-surface-5 bg-surface-2 p-[16px]">
-          <h3 className="mb-[12px] text-[10px] font-semibold tracking-[0.07em] text-surface-9 uppercase">External log file</h3>
+          <h3 className="mb-[12px] text-xs font-semibold tracking-caps text-surface-9 uppercase">External log file</h3>
           {entry.logPath ? <>
-            <p className="mb-[12px] line-clamp-2 break-all font-mono text-[9.5px] leading-[1.5] text-surface-9">{entry.logPath}</p>
-            <button type="button" className="rounded-md border border-surface-6 bg-surface-a3 px-[9px] py-[6px] text-[10.5px] text-surface-11 hover:bg-surface-a4" onClick={revealLog}>{window.hangarDesktop ? "Reveal log in Finder" : "Copy log path"}</button>
-          </> : <p className="m-0 text-[10.5px] leading-[1.5] text-surface-8">Terminal logging was disabled for this run. Resource history is still available.</p>}
+            <p className="mb-[12px] line-clamp-2 break-all font-mono text-xs leading-normal text-surface-9">{entry.logPath}</p>
+            <button type="button" className="rounded-md border border-surface-6 bg-surface-a3 px-[9px] py-[6px] text-sm text-surface-11 hover:bg-surface-a4" onClick={revealLog}>{window.hangarDesktop ? "Reveal log in Finder" : "Copy log path"}</button>
+          </> : <p className="m-0 text-sm leading-normal text-surface-8">Terminal logging was disabled for this run. Resource history is still available.</p>}
         </section>
       </div>
     </div>
@@ -255,19 +255,19 @@ function ArchivedOutput({ entry, replay, cutoff }: { entry: SessionHistoryEntry;
     <header className="flex min-h-[42px] items-center justify-between border-b border-surface-5 px-[13px]">
       <div className="flex items-center gap-[8px]">
         <span className="size-[6px] rounded-full bg-surface-8" />
-        <h3 className="m-0 text-[10px] font-semibold tracking-[0.06em] text-surface-10 uppercase">Terminal output</h3>
-        <span className="rounded bg-surface-a3 px-[5px] py-[2px] text-[8.5px] text-surface-8">read only</span>
+        <h3 className="m-0 text-xs font-semibold tracking-caps text-surface-10 uppercase">Terminal output</h3>
+        <span className="rounded-sm bg-surface-a3 px-[5px] py-[2px] text-2xs text-surface-8">read only</span>
       </div>
-      {entry.hasReplay && <time className="font-mono text-[9.5px] tabular-nums text-surface-8">through +{formatDuration(outputTime)}</time>}
+      {entry.hasReplay && <time className="font-mono text-xs tabular-nums text-surface-8">through +{formatDuration(outputTime)}</time>}
     </header>
     {!entry.hasReplay
-      ? <div className="grid h-[230px] place-items-center bg-surface-1 text-center text-[10.5px] leading-[1.5] text-surface-8"><span>This run predates output capture.<br />New historical runs save timestamped ANSI output.</span></div>
+      ? <div className="grid h-[230px] place-items-center bg-surface-1 text-center text-sm leading-normal text-surface-8"><span>This run predates output capture.<br />New historical runs save timestamped ANSI output.</span></div>
       : replay?.loading || replay === undefined
-        ? <div className="grid h-[230px] place-items-center bg-surface-1 text-[10.5px] text-surface-8">Loading captured output…</div>
+        ? <div className="grid h-[230px] place-items-center bg-surface-1 text-sm text-surface-8">Loading captured output…</div>
         : <>
           <div ref={containerRef} className="terminal-pane h-[300px] bg-surface-1 px-[8px] py-[6px]" />
-          {replay.truncated && <p className="m-0 border-t border-warning-6 bg-warning-a2 px-[10px] py-[6px] text-[9.5px] text-warning-11">Replay reached the 10 MB history limit; later output was not captured.</p>}
-          {replay.events.length === 0 && <p className="m-0 border-t border-surface-5 px-[10px] py-[6px] text-[9.5px] text-surface-8">This run produced no terminal output.</p>}
+          {replay.truncated && <p className="m-0 border-t border-warning-6 bg-warning-a2 px-[10px] py-[6px] text-xs text-warning-11">Replay reached the 10 MB history limit; later output was not captured.</p>}
+          {replay.events.length === 0 && <p className="m-0 border-t border-surface-5 px-[10px] py-[6px] text-xs text-surface-8">This run produced no terminal output.</p>}
         </>}
   </section>
 }
@@ -281,7 +281,7 @@ function Timeline({ label, value, values, index, onSelect, tone }: { label: stri
     onSelect(Math.round(Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width)) * (values.length - 1)))
   }
   return <div className="rounded-md border border-surface-5 bg-surface-a2 p-[10px]">
-    <div className="flex items-baseline justify-between gap-2"><span className="text-[9.5px] text-surface-8">{label}</span><strong className="text-[13px] font-[550] tabular-nums">{value}</strong></div>
+    <div className="flex items-baseline justify-between gap-2"><span className="text-xs text-surface-8">{label}</span><strong className="text-md font-book tabular-nums">{value}</strong></div>
     <svg className={cx("mt-[7px] h-[36px] w-full cursor-ew-resize", tone === "accent" ? "text-accent-10" : tone === "success" ? "text-success-10" : "text-warning-10")} viewBox="0 0 100 36" preserveAspectRatio="none" onPointerMove={pointAt} onPointerDown={pointAt}>
       <polyline points={points} className="pointer-events-none fill-none stroke-current [stroke-width:1.5] [vector-effect:non-scaling-stroke]" />
       <line x1={x} x2={x} y1="0" y2="36" className="pointer-events-none stroke-surface-11 opacity-50 [stroke-width:1] [vector-effect:non-scaling-stroke]" />
@@ -291,24 +291,24 @@ function Timeline({ label, value, values, index, onSelect, tone }: { label: stri
 
 function MetricSnapshot({ label, value }: { label: string; value: string }) {
   return <div className="rounded-md border border-surface-5 bg-surface-a2 px-[10px] py-[12px]">
-    <span className="block text-[9px] text-surface-8">{label}</span>
-    <strong className="mt-[4px] block text-[13px] font-[550] tabular-nums">{value}</strong>
+    <span className="block text-2xs text-surface-8">{label}</span>
+    <strong className="mt-[4px] block text-md font-book tabular-nums">{value}</strong>
   </div>
 }
 
 function Stat({ label, value, danger = false }: { label: string; value: string; danger?: boolean }) {
   return <div className="rounded-lg border border-surface-5 bg-surface-2 px-[13px] py-[11px]">
-    <span className="block text-[9px] font-semibold tracking-[0.06em] text-surface-8 uppercase">{label}</span>
-    <strong className={cx("mt-[4px] block text-[17px] font-[600] tabular-nums", danger ? "text-danger-10" : "text-surface-12")}>{value}</strong>
+    <span className="block text-2xs font-semibold tracking-caps text-surface-8 uppercase">{label}</span>
+    <strong className={cx("mt-[4px] block text-xl font-semibold tabular-nums", danger ? "text-danger-10" : "text-surface-12")}>{value}</strong>
   </div>
 }
 
 function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return <><dt className="text-surface-8">{label}</dt><dd className={cx("m-0 truncate text-surface-11", mono && "font-mono text-[9.5px]")} title={value}>{value}</dd></>
+  return <><dt className="text-surface-8">{label}</dt><dd className={cx("m-0 truncate text-surface-11", mono && "font-mono text-xs")} title={value}>{value}</dd></>
 }
 
 function Empty({ title, detail }: { title: string; detail: string }) {
-  return <div className="grid min-h-[220px] place-items-center rounded-lg border border-dashed border-surface-5 text-center"><div><span className="text-[25px] text-surface-7">◷</span><h3 className="mt-[8px] mb-[4px] text-[12px] font-[550]">{title}</h3><p className="m-0 max-w-[360px] text-[10.5px] leading-[1.5] text-surface-8">{detail}</p></div></div>
+  return <div className="grid min-h-[220px] place-items-center rounded-lg border border-dashed border-surface-5 text-center"><div><span className="text-[25px] text-surface-7">◷</span><h3 className="mt-[8px] mb-[4px] text-base font-book">{title}</h3><p className="m-0 max-w-[360px] text-sm leading-normal text-surface-8">{detail}</p></div></div>
 }
 
 function groupByDay(entries: SessionHistoryEntry[]): Array<[string, SessionHistoryEntry[]]> {

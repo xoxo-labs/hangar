@@ -12,13 +12,13 @@ import { IconButton } from "../ui/IconButton"
  * covers the plain label-wrapped case; these two fields need a `<div>` (a
  * button and a `htmlFor` label can't live inside a wrapping `<label>`). */
 const FIELD = "flex flex-col items-start gap-[5px]"
-const FIELD_LABEL = "text-[11px] tracking-[0.02em] text-surface-10"
-const FIELD_HINT = "text-[10.5px] text-surface-9"
+const FIELD_LABEL = "text-sm tracking-label text-surface-10"
+const FIELD_HINT = "text-sm text-surface-9"
 /* `enabled:hover:` because the old rules leaned on source order to let
  * :disabled beat :hover, and utility order is not something to lean on. */
 const TEXT_BUTTON =
-  "py-[3px] text-[11.5px] text-surface-10 enabled:hover:text-accent-9 disabled:cursor-default disabled:text-surface-7"
-const PROC_HEAD = "text-[10px] tracking-[0.03em] text-surface-9"
+  "py-[3px] text-base text-surface-10 enabled:hover:text-accent-9 disabled:cursor-default disabled:text-surface-7"
+const PROC_HEAD = "text-xs tracking-label text-surface-9"
 const ELLIPSIS = "overflow-hidden text-ellipsis whitespace-nowrap"
 
 /** A process being edited. `id` only keeps React keys stable across row removals. */
@@ -244,7 +244,7 @@ function Editor({ editing }: { editing: string | null }) {
               <span className={FIELD_LABEL}>
                 package.json scripts · {projectInfo.package.manager}
               </span>
-              <div className="max-h-[150px] w-full overflow-y-auto rounded-[5px] border border-surface-5 bg-surface-1">
+              <div className="max-h-[150px] w-full overflow-y-auto rounded-md border border-surface-5 bg-surface-1">
                 {projectInfo.package.scripts.map((script) => {
                   const added = rows.some((row) => row.name.trim() === script.name)
                   return (
@@ -253,8 +253,8 @@ function Editor({ editing }: { editing: string | null }) {
                       key={script.name}
                       title={script.value}
                     >
-                      <code className={cx(ELLIPSIS, "text-[11px] text-surface-12")}>{script.name}</code>
-                      <span className={cx(ELLIPSIS, "font-mono text-[10px] text-surface-9")}>
+                      <code className={cx(ELLIPSIS, "text-sm text-surface-12")}>{script.name}</code>
+                      <span className={cx(ELLIPSIS, "font-mono text-xs text-surface-9")}>
                         {script.value}
                       </span>
                       <button
@@ -338,7 +338,7 @@ function Editor({ editing }: { editing: string | null }) {
           )}
           <span className="flex-1" />
           {problem !== null && (
-            <span className={cx(ELLIPSIS, "text-[10.5px] text-surface-9")}>{problem}</span>
+            <span className={cx(ELLIPSIS, "text-sm text-surface-9")}>{problem}</span>
           )}
           <Button onClick={closeEditor}>Cancel</Button>
           <Button
@@ -379,7 +379,7 @@ function ProcRow({
         <div
           className={cx(
             ELLIPSIS,
-            "w-full min-w-0 rounded-[5px] border border-surface-5 bg-surface-a2 px-2 py-[6px] font-mono text-[11px] italic text-surface-9",
+            "w-full min-w-0 rounded-md border border-surface-5 bg-surface-a2 px-2 py-[6px] font-mono text-sm italic text-surface-9",
           )}
           title="Starts your interactive login shell"
         >

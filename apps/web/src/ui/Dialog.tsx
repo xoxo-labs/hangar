@@ -38,7 +38,7 @@ export function Dialog({ label, className, ...rest }: DialogProps) {
 export function DialogHeader({ title }: { title: string }) {
   return (
     <header className="border-b border-surface-4 px-4 pt-3.5 pb-2.5">
-      <h2 className="m-0 text-[13px] font-semibold tracking-[0.02em]">{title}</h2>
+      <h2 className="m-0 text-md font-semibold tracking-label">{title}</h2>
     </header>
   )
 }

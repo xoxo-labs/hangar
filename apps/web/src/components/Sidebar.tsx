@@ -36,23 +36,23 @@ export function Sidebar() {
   return (
     <aside className="row-start-1 col-start-1 flex min-h-0 flex-col border-r border-surface-5 bg-surface-2 select-none">
       <header className="flex min-h-[48px] flex-none items-center gap-[9px] border-b border-surface-5 bg-surface-3 px-3.5 py-[7px] electron:h-[48px] electron:py-0! electron:pr-3.5! electron:pl-[92px]! electron:[-webkit-app-region:drag]">
-        <span className="flex min-w-0 flex-col leading-[1.1]">
-          <h1 className="m-0 text-[13.5px] font-[650] tracking-[0.015em]">hangar</h1>
-          <span className="mt-0.5 text-[8.5px] font-[550] tracking-[0.075em] whitespace-nowrap text-surface-8 uppercase">
+        <span className="flex min-w-0 flex-col leading-none">
+          <h1 className="m-0 text-md font-strong tracking-label">hangar</h1>
+          <span className="mt-0.5 text-2xs font-book tracking-caps whitespace-nowrap text-surface-8 uppercase">
             project workspace
           </span>
         </span>
       </header>
 
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-3">
-        <div className="flex items-center justify-between px-1.5 pt-[7px] pb-2 text-[9.5px] font-semibold tracking-[0.09em] text-surface-9 uppercase">
+        <div className="flex items-center justify-between px-1.5 pt-[7px] pb-2 text-xs font-semibold tracking-caps text-surface-9 uppercase">
           <span>Projects</span>
-          <span className="min-w-[17px] rounded-lg bg-surface-a3 px-[5px] py-px text-center text-[9px] tracking-[0]">
+          <span className="min-w-[17px] rounded-lg bg-surface-a3 px-[5px] py-px text-center text-2xs tracking-[0]">
             {projects.length}
           </span>
         </div>
         {projects.length === 0 ? (
-          <p className="mx-1.5 my-3 text-[12px] leading-[1.6] text-surface-10">
+          <p className="mx-1.5 my-3 text-base leading-relaxed text-surface-10">
             No projects registered yet.
             <br />
             Add one below, or run <code>hangar add</code>.
@@ -94,7 +94,7 @@ export function Sidebar() {
 
         <button
           type="button"
-          className="mt-0.5 block w-full rounded-md border! border-dashed! border-surface-5! p-1.5! text-center text-[11.5px]! text-surface-9! hover:border-surface-8! hover:bg-surface-a3! hover:text-surface-12!"
+          className="mt-0.5 block w-full rounded-md border! border-dashed! border-surface-5! p-1.5! text-center text-base! text-surface-9! hover:border-surface-8! hover:bg-surface-a3! hover:text-surface-12!"
           onClick={() => openEditor()}
         >
           + New project
@@ -104,14 +104,14 @@ export function Sidebar() {
         <button
           type="button"
           className={cx(
-            "flex w-full items-center gap-[8px] rounded-md px-[9px]! py-[7px]! text-left text-[11.5px]!",
+            "flex w-full items-center gap-[8px] rounded-md px-[9px]! py-[7px]! text-left text-base!",
             activeHistory !== null ? "bg-surface-a4 text-surface-12!" : "text-surface-9! hover:bg-surface-a3! hover:text-surface-12!",
           )}
           onClick={openHistory}
         >
           <span className="text-[14px]" aria-hidden="true">◷</span>
           <span className="flex-1">History</span>
-          {historyCount > 0 && <span className="rounded-full bg-surface-a4 px-[6px] py-px text-[9px] tabular-nums text-surface-9">{historyCount}</span>}
+          {historyCount > 0 && <span className="rounded-full bg-surface-a4 px-[6px] py-px text-2xs tabular-nums text-surface-9">{historyCount}</span>}
         </button>
       </div>
     </aside>
@@ -159,9 +159,9 @@ function ProjectRow({
         "relative mb-1.5",
         dragging && "opacity-[0.45]",
         dropSide === "before" &&
-          "before:pointer-events-none before:absolute before:-top-1 before:right-1 before:left-1 before:z-[2] before:h-0.5 before:rounded-[2px] before:bg-accent-9 before:content-['']",
+          "before:pointer-events-none before:absolute before:-top-1 before:right-1 before:left-1 before:z-[2] before:h-0.5 before:rounded-xs before:bg-accent-9 before:content-['']",
         dropSide === "after" &&
-          "after:pointer-events-none after:absolute after:-bottom-1 after:right-1 after:left-1 after:z-[2] after:h-0.5 after:rounded-[2px] after:bg-accent-9 after:content-['']",
+          "after:pointer-events-none after:absolute after:-bottom-1 after:right-1 after:left-1 after:z-[2] after:h-0.5 after:rounded-xs after:bg-accent-9 after:content-['']",
       )}
       onDragOver={dragOver}
       onDrop={(event) => {
@@ -198,8 +198,8 @@ function ProjectRow({
           </span>
           <Dot tone={running ? "running" : "idle"} title={running ? "running" : "idle"} />
           <span className={ROW_LABEL}>
-            <span className="truncate text-[12.5px] font-semibold text-surface-12">{project.name}</span>
-            <span className="truncate text-[10.5px] text-surface-9 dark:text-surface-11" title={project.path}>
+            <span className="truncate text-md font-semibold text-surface-12">{project.name}</span>
+            <span className="truncate text-sm text-surface-9 dark:text-surface-11" title={project.path}>
               {project.path}
             </span>
           </span>
@@ -284,8 +284,8 @@ function ProcessRow({
       >
         <Dot tone={toneOf(session)} small title={describe(session)} />
         <span className={ROW_LABEL}>
-          <span className="truncate text-[11.5px]">{name}</span>
-          <span className="max-w-[150px] truncate font-mono text-[9.5px] text-surface-9 dark:text-surface-11" title={cmd}>
+          <span className="truncate text-base">{name}</span>
+          <span className="max-w-[150px] truncate font-mono text-xs text-surface-9 dark:text-surface-11" title={cmd}>
             {cmd}
           </span>
         </span>

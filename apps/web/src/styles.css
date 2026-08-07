@@ -214,6 +214,37 @@
 
   /* The tail of the brand mark's gradient — the app's only violet. */
   --color-brand-10: var(--violet-10);
+
+  /* ── Type scale ────────────────────────────────────────────────────────
+     Reset first: the default scale's `--text-*--line-height` pairs would
+     otherwise ride along on every utility below. Nothing in this app used a
+     named text-size utility before this block existed, so nothing breaks.
+
+     Deliberately denser than Tailwind's defaults: this is a dense desktop
+     app, so every step is shifted down (`text-base` is 12px, not 16px;
+     `text-xs` is 10px, not 12px). That contradicts the usual Tailwind priors
+     on purpose — do not "fix" it back to the stock ramp. */
+  --text-*: initial;
+  --text-2xs:  9px;   /* micro badges, counts, uppercase chips             */
+  --text-xs:  10px;   /* secondary meta, hints, mono paths, section heads  */
+  --text-sm:  11px;   /* field labels, buttons, small headings             */
+  --text-base:12px;   /* body: list rows, tab labels, dialog copy          */
+  --text-md:  13px;   /* dialog titles, icon glyphs                        */
+  --text-lg:  14px;   /* emphasis numerals                                 */
+  --text-xl:  17px;   /* stat readouts                                     */
+  --text-2xl: 20px;   /* page headings                                     */
+
+  /* ── Weights (variable-font steps; SF Pro / system-ui render these) ──── */
+  --font-weight-book:   550;  /* font-book   — semi-emphasis */
+  --font-weight-strong: 650;  /* font-strong — display headings */
+
+  /* ── Letter-spacing ─────────────────────────────────────────────────── */
+  --tracking-caps:  0.07em;   /* every uppercase micro-label */
+  --tracking-label: 0.02em;   /* sentence-case labels and titles */
+
+  /* ── Shadows ────────────────────────────────────────────────────────── */
+  --shadow-hairline: 0 1px 0 var(--color-surface-1);
+  --shadow-glow:     0 0 6px currentcolor;  /* pair with shadow-{success,warning,danger}-a6 */
 }
 
 /*

@@ -26,7 +26,7 @@ const SELECT_HOVER = "enabled:hover:border-surface-7"
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="w-full">
-      <div className="mb-[9px] text-[11px] font-semibold tracking-[0.03em] text-surface-10 uppercase">{title}</div>
+      <div className="mb-[9px] text-sm font-semibold tracking-label text-surface-10 uppercase">{title}</div>
       {children}
     </div>
   )
@@ -45,7 +45,7 @@ function ToggleRow({
   hint: string
 }) {
   return (
-    <label className="flex w-full items-start gap-[9px] rounded-[6px] border border-surface-5 bg-surface-a2 p-[9px]">
+    <label className="flex w-full items-start gap-[9px] rounded-md border border-surface-5 bg-surface-a2 p-[9px]">
       <input
         type="checkbox"
         className="mt-0.5 accent-accent-9"
@@ -53,8 +53,8 @@ function ToggleRow({
         onChange={(e) => onChange(e.target.checked)}
       />
       <span className="flex flex-col gap-0.5">
-        <strong className="text-[12px] font-[550]">{title}</strong>
-        <small className="text-[10.5px] text-surface-9">{hint}</small>
+        <strong className="text-base font-book">{title}</strong>
+        <small className="text-sm text-surface-9">{hint}</small>
       </span>
     </label>
   )
@@ -237,7 +237,7 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
                   </Select>
                 </Field>
               </div>
-              <p className="m-0 text-[10.5px] text-warning-9">Logs can contain tokens, private URLs, and other secrets.</p>
+              <p className="m-0 text-sm text-warning-9">Logs can contain tokens, private URLs, and other secrets.</p>
             </div>
           </Section>
         </DialogBody>

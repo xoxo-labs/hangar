@@ -10,7 +10,7 @@ const VARIANTS = {
   default:
     "border border-surface-5 bg-surface-a3 text-surface-12 enabled:hover:bg-surface-a4 disabled:opacity-35",
   primary:
-    "border border-transparent bg-accent-9 font-[550] text-white enabled:hover:bg-accent-10 disabled:opacity-35",
+    "border border-transparent bg-accent-9 font-book text-white enabled:hover:bg-accent-10 disabled:opacity-35",
   danger:
     "border border-transparent bg-transparent text-danger-10 enabled:hover:bg-danger-a3 disabled:opacity-35",
 } as const
@@ -23,7 +23,7 @@ export function Button({ variant = "default", className, type = "button", ...res
   return (
     <button
       type={type}
-      className={cx("rounded-[5px] px-[11px] py-[5px] text-[12px] disabled:cursor-default", VARIANTS[variant], className)}
+      className={cx("rounded-md px-[11px] py-[5px] text-base disabled:cursor-default", VARIANTS[variant], className)}
       {...rest}
     />
   )

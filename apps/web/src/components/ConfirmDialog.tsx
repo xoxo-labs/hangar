@@ -66,7 +66,7 @@ export function ConfirmDialog() {
       <Dialog label={title} role="alertdialog" className="w-[380px]">
         <DialogHeader title={title} />
         <DialogBody>
-          <p className="m-0 text-[13px] leading-[1.5] text-surface-11 [&_code]:text-surface-12">
+          <p className="m-0 text-md leading-normal text-surface-11 [&_code]:text-surface-12">
             <code>{target}</code> {copy.body}
           </p>
         </DialogBody>

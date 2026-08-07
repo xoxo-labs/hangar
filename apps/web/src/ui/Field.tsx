@@ -11,19 +11,19 @@ import { cx } from "./cx"
 export function Field({ label, hint, className, children }: { label: string; hint?: string; className?: string; children: ReactNode }) {
   return (
     <label className={cx("flex flex-col items-start gap-[5px]", className)}>
-      <span className="text-[11px] tracking-[0.02em] text-surface-10">{label}</span>
+      <span className="text-sm tracking-label text-surface-10">{label}</span>
       {children}
-      {hint !== undefined && <span className="text-[10.5px] text-surface-9">{hint}</span>}
+      {hint !== undefined && <span className="text-sm text-surface-9">{hint}</span>}
     </label>
   )
 }
 
 const INPUT =
-  "w-full min-w-0 rounded-[5px] border border-surface-5 bg-surface-1 px-2 py-[6px] text-surface-12 " +
+  "w-full min-w-0 rounded-md border border-surface-5 bg-surface-1 px-2 py-[6px] text-surface-12 " +
   "placeholder:text-surface-7 read-only:bg-surface-a2 read-only:text-surface-10 " +
   "focus:border-accent-9 focus:shadow-[0_0_0_2px_var(--color-accent-a3)] focus:outline-none"
 
-const FONT = { sans: "text-[12px] [font-family:inherit]", mono: "font-mono text-[11.5px]" }
+const FONT = { sans: "text-base [font-family:inherit]", mono: "font-mono text-base" }
 
 type TextInputProps = InputHTMLAttributes<HTMLInputElement> & { mono?: boolean }
 
