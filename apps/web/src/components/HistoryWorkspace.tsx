@@ -6,11 +6,12 @@ import * as actions from "../actions"
 import { type HistoryReplay, useStore } from "../store"
 import { currentTerminalTheme } from "../terminals"
 import { cx } from "../ui/cx"
+import { Dot } from "./Dot"
 
 const RESULT = {
-  completed: { icon: "✓", label: "Completed", tone: "text-success-10", dot: "bg-success-9" },
-  failed: { icon: "×", label: "Failed", tone: "text-danger-10", dot: "bg-danger-9" },
-  stopped: { icon: "■", label: "Stopped", tone: "text-surface-9", dot: "bg-surface-8" },
+  completed: { icon: "✓", label: "Completed", tone: "text-success-10", dot: "done" },
+  failed: { icon: "×", label: "Failed", tone: "text-danger-10", dot: "failed" },
+  stopped: { icon: "■", label: "Stopped", tone: "text-surface-9 dark:text-surface-10", dot: "idle" },
 } as const
 
 export function HistoryWorkspace({ runId }: { runId: string | null }) {
@@ -97,8 +98,8 @@ function HistoryRow({ entry, last, onOpen }: { entry: SessionHistoryEntry; last:
       </span>
     </div>
     <span className={cx("text-[10px]", result.tone)}>{result.label}{entry.exitCode === null ? "" : ` · ${entry.exitCode}`}</span>
-    <span className="text-[10px] tabular-nums text-surface-9">{formatDuration(entry.durationMs)}</span>
-    <span className="text-[9.5px] tabular-nums text-surface-8">{formatCpu(entry.peakCpuPercent)} · {formatBytes(entry.peakMemoryBytes)}</span>
+    <span className="text-[10px] tabular-nums text-surface-9 dark:text-surface-10">{formatDuration(entry.durationMs)}</span>
+    <span className="text-[9.5px] tabular-nums text-surface-8 dark:text-surface-9">{formatCpu(entry.peakCpuPercent)} · {formatBytes(entry.peakMemoryBytes)}</span>
     <span className="text-[15px] text-surface-7 group-hover:text-surface-11">›</span>
   </button>
 }
@@ -129,7 +130,7 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
       <header className="mb-[20px] flex items-start justify-between gap-5">
         <div className="min-w-0">
           <div className="mb-[5px] flex items-center gap-[9px]">
-            <span className={cx("size-[7px] rounded-full", result.dot)} />
+            <Dot tone={result.dot} />
             <h2 className="m-0 truncate text-[19px] font-[650]">{entry.project} <span className="font-normal text-surface-8">/</span> {entry.process}</h2>
             <span className="rounded-full border border-surface-5 bg-surface-a3 px-[7px] py-[2px] text-[8.5px] font-semibold tracking-[0.05em] text-surface-9 uppercase">Historical</span>
           </div>
@@ -151,7 +152,7 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
             <h3 className="m-0 text-[11px] font-semibold text-surface-12">Run timeline</h3>
             <p className="mt-[3px] mb-0 text-[9.5px] text-surface-8">Move across the timeline to rewind resource usage.</p>
           </div>
-          {sample && <time className="font-mono text-[10px] tabular-nums text-accent-10">+{formatDuration(sample.sampledAt - entry.startedAt)}</time>}
+          {sample && <time className="font-mono text-[10px] tabular-nums text-accent-10">+{formatDuration(replayCutoff - entry.startedAt)}</time>}
         </div>
         {samples.length === 0
           ? <div className="grid h-[120px] place-items-center rounded-md border border-dashed border-surface-5 text-center text-[10.5px] leading-[1.5] text-surface-8"><span>This run predates timeline capture.<br />Start a new run to record resource samples.</span></div>
@@ -272,7 +273,7 @@ function ArchivedOutput({ entry, replay, cutoff }: { entry: SessionHistoryEntry;
 }
 
 function Timeline({ label, value, values, index, onSelect, tone }: { label: string; value: string; values: number[]; index: number; onSelect: (index: number) => void; tone: "accent" | "success" | "warning" }) {
-  const maximum = Math.max(1, ...values)
+  const maximum = Math.max(1, ...values) * 1.1
   const points = values.map((item, itemIndex) => `${itemIndex / (values.length - 1) * 100},${34 - item / maximum * 30}`).join(" ")
   const x = index / (values.length - 1) * 100
   const pointAt = (event: ReactPointerEvent<SVGSVGElement>) => {

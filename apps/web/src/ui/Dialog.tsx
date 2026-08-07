@@ -27,7 +27,7 @@ export function Dialog({ label, className, ...rest }: DialogProps) {
       aria-modal="true"
       aria-label={label}
       className={cx(
-        "flex max-h-full w-[min(560px,100%)] flex-col rounded-[10px] border border-surface-5 bg-surface-3 shadow-[0_18px_48px_#00000070] select-none",
+        "flex max-h-[calc(100vh-48px)] w-[min(560px,100%)] flex-col rounded-[10px] border border-surface-5 bg-surface-3 shadow-[0_18px_48px_#00000070] select-none",
         className,
       )}
       {...rest}

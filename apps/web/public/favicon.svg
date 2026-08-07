@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <title>hangar</title>
+  <rect width="32" height="32" rx="7" fill="#17181c" />
+  <g fill="none" stroke="#e9eaee" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 22.5V15a8 8 0 0 1 16 0v7.5" />
+    <path d="M7 25.5h18" />
+  </g>
+</svg>

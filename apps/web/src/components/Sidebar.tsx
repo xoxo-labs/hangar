@@ -199,7 +199,7 @@ function ProjectRow({
           <Dot tone={running ? "running" : "idle"} title={running ? "running" : "idle"} />
           <span className={ROW_LABEL}>
             <span className="truncate text-[12.5px] font-semibold text-surface-12">{project.name}</span>
-            <span className="truncate text-[10.5px] text-surface-9" title={project.path}>
+            <span className="truncate text-[10.5px] text-surface-9 dark:text-surface-11" title={project.path}>
               {project.path}
             </span>
           </span>
@@ -285,7 +285,7 @@ function ProcessRow({
         <Dot tone={toneOf(session)} small title={describe(session)} />
         <span className={ROW_LABEL}>
           <span className="truncate text-[11.5px]">{name}</span>
-          <span className="max-w-[150px] truncate font-mono text-[9.5px] text-surface-9" title={cmd}>
+          <span className="max-w-[150px] truncate font-mono text-[9.5px] text-surface-9 dark:text-surface-11" title={cmd}>
             {cmd}
           </span>
         </span>

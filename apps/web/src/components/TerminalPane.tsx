@@ -89,6 +89,8 @@ export function TerminalPane({ id, active }: { id: SessionId; active: boolean })
     <div
       className={PANE}
       style={{ display: active ? "block" : "none" }}
+      inert={!active}
+      aria-hidden={!active || undefined}
       onContextMenu={(event) => {
         event.preventDefault()
         setMenuOpen(true)
