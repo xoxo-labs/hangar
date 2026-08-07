@@ -13,7 +13,9 @@ import { IconButton } from "../ui/IconButton"
  * button and a `htmlFor` label can't live inside a wrapping `<label>`). */
 const FIELD = "flex flex-col items-start gap-[5px]"
 const FIELD_LABEL = "text-sm tracking-label text-surface-10"
-const FIELD_HINT = "text-sm text-surface-9"
+/* One step below FIELD_LABEL on the ramp: at the same size the two only
+ * differed by a 1.12:1 colour delta, which read as one voice. */
+const FIELD_HINT = "text-xs text-surface-9"
 /* `enabled:hover:` because the old rules leaned on source order to let
  * :disabled beat :hover, and utility order is not something to lean on. */
 const TEXT_BUTTON =

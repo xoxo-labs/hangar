@@ -16,7 +16,10 @@ import { Dot } from "./Dot"
  * beat the base `px-`/`py-` utilities regardless of variant sort order.
  */
 const ROW = "flex items-center gap-1 rounded-md pr-1"
-const ROW_MAIN = "flex min-w-0 flex-1 items-center gap-[7px] px-1.5! py-[5px]! text-left"
+/* py is 4px, not 5: the token ramp made both label lines 1px taller, so the
+ * pre-token row height (37px head / 34px process) only survives with 1px less
+ * padding above and below. */
+const ROW_MAIN = "flex min-w-0 flex-1 items-center gap-[7px] px-1.5! py-1! text-left"
 const ROW_LABEL = "flex min-w-0 flex-col"
 const ROW_ACTIONS =
   "flex flex-none justify-end gap-[3px] opacity-[0.45] transition-opacity duration-[120ms] ease-[ease] group-hover:opacity-100 group-focus-within:opacity-100"
@@ -285,7 +288,9 @@ function ProcessRow({
         <Dot tone={toneOf(session)} small title={describe(session)} />
         <span className={ROW_LABEL}>
           <span className="truncate text-base">{name}</span>
-          <span className="max-w-[150px] truncate font-mono text-xs text-surface-9 dark:text-surface-11" title={cmd}>
+          {/* 156px is all the row has to give (181px button − 12px padding −
+              dot − 7px gap); the old 150px cap clipped "node scripts/…" by 1px. */}
+          <span className="max-w-[156px] truncate font-mono text-xs text-surface-9 dark:text-surface-11" title={cmd}>
             {cmd}
           </span>
         </span>

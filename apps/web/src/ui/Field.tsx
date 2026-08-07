@@ -13,7 +13,8 @@ export function Field({ label, hint, className, children }: { label: string; hin
     <label className={cx("flex flex-col items-start gap-[5px]", className)}>
       <span className="text-sm tracking-label text-surface-10">{label}</span>
       {children}
-      {hint !== undefined && <span className="text-sm text-surface-9">{hint}</span>}
+      {/* A step below the label so the two read as different voices. */}
+      {hint !== undefined && <span className="text-xs text-surface-9">{hint}</span>}
     </label>
   )
 }
