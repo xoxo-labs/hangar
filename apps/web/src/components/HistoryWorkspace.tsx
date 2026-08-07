@@ -142,17 +142,27 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
           </div>
           {sample && <time className="font-mono text-[10px] tabular-nums text-accent-10">+{formatDuration(sample.sampledAt - entry.startedAt)}</time>}
         </div>
-        {samples.length < 2
-          ? <div className="grid h-[120px] place-items-center rounded-md border border-dashed border-surface-5 text-[10.5px] text-surface-8">No resource timeline was captured for this run.</div>
-          : <>
-            <div className="grid grid-cols-2 gap-[8px]">
-              <Timeline label="CPU" value={formatCpu(sample?.cpuPercent ?? 0)} values={samples.map((item) => item.cpuPercent)} index={sampleIndex} onSelect={setSampleIndex} tone="accent" />
-              <Timeline label="Memory" value={formatBytes(sample?.memoryBytes ?? 0)} values={samples.map((item) => item.memoryBytes)} index={sampleIndex} onSelect={setSampleIndex} tone="success" />
-              <Timeline label="Processes" value={String(sample?.processCount ?? 0)} values={samples.map((item) => item.processCount)} index={sampleIndex} onSelect={setSampleIndex} tone="accent" />
-              <Timeline label="Output rate" value={`${formatBytes(sample?.outputBytesPerSecond ?? 0)}/s`} values={samples.map((item) => item.outputBytesPerSecond)} index={sampleIndex} onSelect={setSampleIndex} tone="warning" />
+        {samples.length === 0
+          ? <div className="grid h-[120px] place-items-center rounded-md border border-dashed border-surface-5 text-center text-[10.5px] leading-[1.5] text-surface-8"><span>This run predates timeline capture.<br />Start a new run to record resource samples.</span></div>
+          : samples.length === 1
+            ? <div>
+              <div className="grid grid-cols-4 gap-[8px]">
+                <MetricSnapshot label="CPU" value={formatCpu(sample?.cpuPercent ?? 0)} />
+                <MetricSnapshot label="Memory" value={formatBytes(sample?.memoryBytes ?? 0)} />
+                <MetricSnapshot label="Processes" value={String(sample?.processCount ?? 0)} />
+                <MetricSnapshot label="Output rate" value={`${formatBytes(sample?.outputBytesPerSecond ?? 0)}/s`} />
+              </div>
+              <p className="mt-[10px] mb-0 text-[9.5px] text-surface-8">The run ended before a second timeline sample could be recorded.</p>
             </div>
-            <input aria-label="Rewind run timeline" className="mt-[12px] h-[3px] w-full cursor-ew-resize accent-accent-9" type="range" min={0} max={samples.length - 1} value={sampleIndex} onChange={(event) => setSampleIndex(Number(event.target.value))} />
-          </>}
+            : <>
+              <div className="grid grid-cols-2 gap-[8px]">
+                <Timeline label="CPU" value={formatCpu(sample?.cpuPercent ?? 0)} values={samples.map((item) => item.cpuPercent)} index={sampleIndex} onSelect={setSampleIndex} tone="accent" />
+                <Timeline label="Memory" value={formatBytes(sample?.memoryBytes ?? 0)} values={samples.map((item) => item.memoryBytes)} index={sampleIndex} onSelect={setSampleIndex} tone="success" />
+                <Timeline label="Processes" value={String(sample?.processCount ?? 0)} values={samples.map((item) => item.processCount)} index={sampleIndex} onSelect={setSampleIndex} tone="accent" />
+                <Timeline label="Output rate" value={`${formatBytes(sample?.outputBytesPerSecond ?? 0)}/s`} values={samples.map((item) => item.outputBytesPerSecond)} index={sampleIndex} onSelect={setSampleIndex} tone="warning" />
+              </div>
+              <input aria-label="Rewind run timeline" className="mt-[12px] h-[3px] w-full cursor-ew-resize accent-accent-9" type="range" min={0} max={samples.length - 1} value={sampleIndex} onChange={(event) => setSampleIndex(Number(event.target.value))} />
+            </>}
       </section>
 
       <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(260px,1fr)] gap-[12px]">
@@ -192,6 +202,13 @@ function Timeline({ label, value, values, index, onSelect, tone }: { label: stri
       <polyline points={points} className="pointer-events-none fill-none stroke-current [stroke-width:1.5] [vector-effect:non-scaling-stroke]" />
       <line x1={x} x2={x} y1="0" y2="36" className="pointer-events-none stroke-surface-11 opacity-50 [stroke-width:1] [vector-effect:non-scaling-stroke]" />
     </svg>
+  </div>
+}
+
+function MetricSnapshot({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-md border border-surface-5 bg-surface-a2 px-[10px] py-[12px]">
+    <span className="block text-[9px] text-surface-8">{label}</span>
+    <strong className="mt-[4px] block text-[13px] font-[550] tabular-nums">{value}</strong>
   </div>
 }
 

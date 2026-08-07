@@ -23,7 +23,7 @@ const MAX_BUFFER_CHARS = 512 * 1024
 const KILL_GRACE_MS = 1500
 const METRICS_INTERVAL_MS = 2_000
 /** Historical charts need much less resolution than the live inspector. */
-const HISTORY_METRIC_INTERVAL_MS = 10_000
+const HISTORY_METRIC_INTERVAL_MS = METRICS_INTERVAL_MS
 /** Compact older samples instead of letting a long-running process grow without bound. */
 const MAX_HISTORY_METRIC_SAMPLES = 1_200
 const RESTART_DIVIDER = "\r\n\x1b[2m— restarted —\x1b[0m\r\n"
