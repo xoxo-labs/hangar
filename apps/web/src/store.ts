@@ -5,10 +5,26 @@ export type ConnectionStatus = "connecting" | "connected" | "reconnecting"
 
 /** A destructive action waiting for the user's OK in the confirm dialog. */
 export type ConfirmRequest = {
-  action: "stop" | "restart"
+  /** "stop-close" also closes the session's tab once the exit lands. */
+  action: "stop" | "restart" | "stop-close"
   project: string
   /** Undefined targets every process of the project. */
   process?: string
+}
+
+/**
+ * Sessions whose tab should close as soon as their exit arrives — the server
+ * refuses to dismiss a running session, so the client finishes the job.
+ */
+const closeOnExit = new Set<SessionId>()
+
+export function markCloseOnExit(id: SessionId): void {
+  closeOnExit.add(id)
+}
+
+/** True (once) if this exit should be followed by a dismiss. */
+export function takeCloseOnExit(id: SessionId): boolean {
+  return closeOnExit.delete(id)
 }
 
 type Store = {

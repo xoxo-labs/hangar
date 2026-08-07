@@ -1,5 +1,5 @@
 import type { ClientMsg, ServerMsg } from "@hangar/contracts"
-import { useStore } from "./store"
+import { takeCloseOnExit, useStore } from "./store"
 import { disposeTerminal, noteExit, writeOutput, writeSnapshot } from "./terminals"
 
 const MIN_BACKOFF = 500
@@ -78,6 +78,9 @@ function handle(msg: ServerMsg): void {
       return
     case "exit":
       noteExit(msg.id, msg.exitCode)
+      // A "stop & close" confirmed from the tab finishes here, once the
+      // session is actually dead and the server will accept the dismiss.
+      if (takeCloseOnExit(msg.id)) send({ type: "dismiss", id: msg.id })
       return
     case "error":
       store.setError(msg.message)

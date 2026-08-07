@@ -1,6 +1,7 @@
+import { sessionId } from "@hangar/contracts"
 import { useEffect, useRef } from "react"
 import * as actions from "../actions"
-import { useStore } from "../store"
+import { markCloseOnExit, useStore } from "../store"
 
 const COPY = {
   stop: {
@@ -14,6 +15,12 @@ const COPY = {
     body: "will be stopped and started again.",
     button: "Restart",
     danger: false,
+  },
+  "stop-close": {
+    title: "Stop",
+    body: "will be terminated and its tab closed.",
+    button: "Stop & close",
+    danger: true,
   },
 } as const
 
@@ -41,8 +48,14 @@ export function ConfirmDialog() {
     : `every process of ${confirming.project}`
 
   const run = () => {
-    if (confirming.action === "stop") actions.stop(confirming.project, confirming.process)
-    else actions.restart(confirming.project, confirming.process)
+    if (confirming.action === "restart") {
+      actions.restart(confirming.project, confirming.process)
+    } else {
+      if (confirming.action === "stop-close" && confirming.process) {
+        markCloseOnExit(sessionId(confirming.project, confirming.process))
+      }
+      actions.stop(confirming.project, confirming.process)
+    }
     closeConfirm()
   }
 

@@ -36,7 +36,7 @@ export function TabBar() {
             onClick={() =>
               session.status === "running"
                 ? requestConfirm({
-                    action: "stop",
+                    action: "stop-close",
                     project: session.project,
                     process: session.process,
                   })
