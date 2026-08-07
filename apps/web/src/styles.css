@@ -119,7 +119,7 @@
   --color-danger-a11: var(--red-a11);
   --color-danger-a12: var(--red-a12);
 
-  /* Warning — Radix amber: an armed button, a connection still negotiating. */
+  /* Warning — Radix amber: a connection still negotiating. */
   --color-warning-1: var(--amber-1);
   --color-warning-2: var(--amber-2);
   --color-warning-3: var(--amber-3);
@@ -428,8 +428,7 @@ code {
 }
 
 .row:hover .row-actions,
-.row:focus-within .row-actions,
-.row-actions:has(.armed) {
+.row:focus-within .row-actions {
   opacity: 1;
 }
 
@@ -449,34 +448,20 @@ code {
   color: var(--color-surface-12);
 }
 
-/* Armed: one more click and it fires. Unmissable — solid amber, pulsing glow. */
-.icon-button.armed,
-.icon-button.armed:hover,
-.tab-close.armed,
-.tab-close.armed:hover {
-  background: var(--color-warning-9);
-  color: var(--color-surface-1);
-  animation: arm-pulse 800ms ease-out infinite;
+/* Stop/restart confirmation: a compact version of the project dialog. */
+.dialog.slim {
+  width: 380px;
 }
 
-.tab .tab-close.armed {
-  opacity: 1;
+.confirm-text {
+  margin: 0;
+  color: var(--color-surface-11, var(--color-surface-10));
+  font-size: 13px;
+  line-height: 1.5;
 }
 
-@keyframes arm-pulse {
-  0% {
-    box-shadow: 0 0 0 0 var(--color-warning-a7);
-  }
-  100% {
-    box-shadow: 0 0 0 5px transparent;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .icon-button.armed,
-  .tab-close.armed {
-    animation: none;
-  }
+.confirm-text code {
+  color: var(--color-surface-12);
 }
 
 .icon-button:disabled {

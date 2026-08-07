@@ -3,7 +3,6 @@ import { useMemo } from "react"
 import * as actions from "../actions"
 import { describe, toneOf } from "../status"
 import { useStore } from "../store"
-import { ArmedButton } from "./ArmedButton"
 import { Dot } from "./Dot"
 
 export function Sidebar() {
@@ -45,7 +44,7 @@ function ProjectRow({ project, byId }: { project: Project; byId: Map<string, Ses
   const collapsed = useStore((s) => s.collapsed[project.name] ?? false)
   const toggleCollapsed = useStore((s) => s.toggleCollapsed)
   const openEditor = useStore((s) => s.openEditor)
-  const disarm = useStore((s) => s.disarm)
+  const requestConfirm = useStore((s) => s.requestConfirm)
 
   const running = project.processes.some(
     (p) => byId.get(sessionId(project.name, p.name))?.status === "running",
@@ -53,8 +52,7 @@ function ProjectRow({ project, byId }: { project: Project; byId: Map<string, Ses
 
   return (
     <section className="project">
-      {/* Leaving the row cancels a confirmation the pointer left half-done. */}
-      <div className="row project-row" onMouseLeave={() => disarm()}>
+      <div className="row project-row">
         <button
           type="button"
           className="row-main"
@@ -91,22 +89,24 @@ function ProjectRow({ project, byId }: { project: Project; byId: Map<string, Ses
             ▶
           </button>
           {running && (
-            <ArmedButton
-              armKey={`restart:${project.name}`}
+            <button
+              type="button"
+              className="icon-button"
               title="Restart all processes"
-              armedTitle="Click again to restart all"
-              glyph="↻"
-              onConfirm={() => actions.restart(project.name)}
-            />
+              onClick={() => requestConfirm({ action: "restart", project: project.name })}
+            >
+              ↻
+            </button>
           )}
-          <ArmedButton
-            armKey={`stop:${project.name}`}
+          <button
+            type="button"
+            className="icon-button"
             title="Stop all processes"
-            armedTitle="Click again to stop all"
-            glyph="■"
             disabled={!running}
-            onConfirm={() => actions.stop(project.name)}
-          />
+            onClick={() => requestConfirm({ action: "stop", project: project.name })}
+          >
+            ■
+          </button>
         </div>
       </div>
 
@@ -140,16 +140,13 @@ function ProcessRow({
 }) {
   const activeId = useStore((s) => s.activeId)
   const setActive = useStore((s) => s.setActive)
-  const disarm = useStore((s) => s.disarm)
+  const requestConfirm = useStore((s) => s.requestConfirm)
 
   const id = sessionId(project, name)
   const running = session?.status === "running"
 
   return (
-    <li
-      className={`row process-row${activeId === id ? " selected" : ""}`}
-      onMouseLeave={() => disarm()}
-    >
+    <li className={`row process-row${activeId === id ? " selected" : ""}`}>
       <button
         type="button"
         className="row-main"
@@ -165,20 +162,22 @@ function ProcessRow({
       <div className="row-actions">
         {running ? (
           <>
-            <ArmedButton
-              armKey={`restart:${id}`}
+            <button
+              type="button"
+              className="icon-button"
               title={`Restart ${name}`}
-              armedTitle={`Click again to restart ${name}`}
-              glyph="↻"
-              onConfirm={() => actions.restart(project, name)}
-            />
-            <ArmedButton
-              armKey={`stop:${id}`}
+              onClick={() => requestConfirm({ action: "restart", project, process: name })}
+            >
+              ↻
+            </button>
+            <button
+              type="button"
+              className="icon-button"
               title={`Stop ${name}`}
-              armedTitle={`Click again to stop ${name}`}
-              glyph="■"
-              onConfirm={() => actions.stop(project, name)}
-            />
+              onClick={() => requestConfirm({ action: "stop", project, process: name })}
+            >
+              ■
+            </button>
           </>
         ) : (
           <button

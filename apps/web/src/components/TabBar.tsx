@@ -1,13 +1,13 @@
 import * as actions from "../actions"
 import { describe, toneOf } from "../status"
 import { useStore } from "../store"
-import { ArmedButton } from "./ArmedButton"
 import { Dot } from "./Dot"
 
 export function TabBar() {
   const sessions = useStore((s) => s.sessions)
   const activeId = useStore((s) => s.activeId)
   const setActive = useStore((s) => s.setActive)
+  const requestConfirm = useStore((s) => s.requestConfirm)
 
   if (sessions.length === 0) return <div className="tabbar empty-tabbar" />
 
@@ -29,25 +29,22 @@ export function TabBar() {
             <Dot tone={toneOf(session)} small title={describe(session)} />
             <span className="tab-label">{session.id}</span>
           </button>
-          {session.status === "running" ? (
-            <ArmedButton
-              armKey={`tab:${session.id}`}
-              className="tab-close"
-              glyph="×"
-              title={`Stop ${session.process}`}
-              armedTitle={`Click again to stop ${session.process}`}
-              onConfirm={() => actions.close(session)}
-            />
-          ) : (
-            <button
-              type="button"
-              className="tab-close"
-              title="Close session"
-              onClick={() => actions.close(session)}
-            >
-              ×
-            </button>
-          )}
+          <button
+            type="button"
+            className="tab-close"
+            title={session.status === "running" ? `Stop ${session.process}` : "Close session"}
+            onClick={() =>
+              session.status === "running"
+                ? requestConfirm({
+                    action: "stop",
+                    project: session.project,
+                    process: session.process,
+                  })
+                : actions.close(session)
+            }
+          >
+            ×
+          </button>
         </div>
       ))}
     </div>

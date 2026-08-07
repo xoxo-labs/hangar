@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import { ConfirmDialog } from "./components/ConfirmDialog"
 import { ProjectDialog } from "./components/ProjectDialog"
 import { Sidebar } from "./components/Sidebar"
 import { StatusBar } from "./components/StatusBar"
@@ -35,6 +36,7 @@ export function App() {
       </main>
       <StatusBar />
       <ProjectDialog />
+      <ConfirmDialog />
     </div>
   )
 }
