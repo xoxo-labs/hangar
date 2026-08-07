@@ -308,7 +308,11 @@ code {
  */
 .electron .brand {
   -webkit-app-region: drag;
-  padding-left: 72px;
+  /* Lights group ends ≈70px in (trafficLightPosition x:18 + 3 lights); 84px
+   * leaves a clear gutter. Fixed 44px height keeps the mark and the lights on
+   * the same optical centerline (lights y:16 + 12px diameter → center 22). */
+  padding: 0 14px 0 84px;
+  min-height: 44px;
 }
 
 .electron .tabbar {

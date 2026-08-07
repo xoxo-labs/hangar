@@ -146,6 +146,8 @@ function createWindow() {
     minHeight: 600,
     backgroundColor: "#111213",
     titleBarStyle: "hiddenInset",
+    // Centers the lights on the 44px brand strip the web UI reserves.
+    trafficLightPosition: { x: 18, y: 16 },
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
