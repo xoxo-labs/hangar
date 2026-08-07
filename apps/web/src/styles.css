@@ -300,6 +300,26 @@ code {
   box-shadow: 0 0 0 1px var(--color-surface-a4) inset;
 }
 
+/*
+ * Electron chrome: the frameless window (titleBarStyle hiddenInset) puts the
+ * macOS traffic lights over the top-left corner and provides no drag region.
+ * The brand strip clears the lights and, together with the tab bar, becomes
+ * the grab area — interactive children opt back out.
+ */
+.electron .brand {
+  -webkit-app-region: drag;
+  padding-left: 72px;
+}
+
+.electron .tabbar {
+  -webkit-app-region: drag;
+}
+
+.electron .tab,
+.electron .tabbar button {
+  -webkit-app-region: no-drag;
+}
+
 .projects {
   flex: 1;
   min-height: 0;
@@ -393,14 +413,14 @@ code {
   transition: opacity 120ms ease;
 }
 
-/* 4 × 24px button + 3 × 3px gap */
+/* 4 × 26px button + 3 × 3px gap */
 .project-row .row-actions {
-  min-width: 105px;
+  min-width: 113px;
 }
 
-/* 2 × 24px button + 1 × 3px gap */
+/* 2 × 26px button + 1 × 3px gap */
 .process-row .row-actions {
-  min-width: 51px;
+  min-width: 55px;
 }
 
 .row:hover .row-actions,
@@ -412,11 +432,11 @@ code {
 .icon-button {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 5px;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
   color: var(--color-surface-10);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1;
 }
 
@@ -425,12 +445,11 @@ code {
   color: var(--color-surface-12);
 }
 
-/* Armed: one more click and it fires. Tint only — the box never resizes. */
+/* Armed: one more click and it fires. Fill only — no ring, no resize. */
 .icon-button.armed,
 .icon-button.armed:hover {
-  background: var(--color-warning-a4);
-  box-shadow: 0 0 0 1px var(--color-warning-a7) inset;
-  color: var(--color-warning-9);
+  background: var(--color-warning-a5);
+  color: var(--color-warning-11);
 }
 
 .icon-button:disabled {
