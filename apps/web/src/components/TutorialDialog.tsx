@@ -27,7 +27,7 @@ function Key({ children }: { children: ReactNode }) {
 /** Shared stage for the step schematics; decorative, so hidden from readers. */
 function Frame({ children }: { children: ReactNode }) {
   return (
-    <div aria-hidden="true" className="grid h-[108px] place-items-center overflow-hidden rounded-lg border border-surface-5 bg-surface-1 select-none">
+    <div aria-hidden="true" className="grid h-[128px] place-items-center overflow-hidden rounded-lg border border-surface-5 bg-surface-1 select-none">
       {children}
     </div>
   )
@@ -149,19 +149,31 @@ function MockSync() {
 
 /** The session strip's port button plus the inspector's binding rows. */
 function MockPorts() {
+  const bindings = [
+    ["Local", "127.0.0.1"],
+    ["LAN", "192.168.1.24"],
+    ["Tailscale", "100.84.3.7"],
+  ]
+
   return (
     <Frame>
-      <div className="flex flex-col items-center gap-2">
-        <div className="flex items-center gap-1.5">
-          <span className="rounded-sm px-[5px] py-[3px] text-sm tabular-nums text-accent-10">:3000</span>
-          <ExternalLink size={11} className="text-surface-9" />
-          <Copy size={11} className="text-surface-9" />
+      <div className="flex items-center gap-2.5">
+        <div className="rounded-md border border-surface-5 bg-surface-a2 px-2.5 py-2 text-center">
+          <span className="block text-2xs tracking-label text-surface-8">PORT</span>
+          <span className="mt-1 flex items-center gap-1.5 text-base font-semibold tabular-nums text-accent-10">
+            :3000 <ExternalLink size={11} />
+          </span>
         </div>
-        <div className="flex gap-3 font-mono text-2xs text-surface-9">
-          <span>Local · 127.0.0.1</span>
-          <span>LAN · 192.168.1.24</span>
-          <span>Tailscale · 100.84.3.7</span>
-        </div>
+        <span className="text-sm text-surface-8">→</span>
+        <ul className="m-0 w-[196px] list-none overflow-hidden rounded-md border border-surface-5 bg-surface-2 p-0">
+          {bindings.map(([label, address]) => (
+            <li key={label} className="flex items-center gap-2 border-b border-surface-5 px-2 py-1.5 last:border-b-0">
+              <span className="w-[48px] text-2xs text-surface-9">{label}</span>
+              <span className="flex-1 font-mono text-2xs tabular-nums text-surface-11">{address}</span>
+              <Copy size={10} className="flex-none text-surface-8" />
+            </li>
+          ))}
+        </ul>
       </div>
     </Frame>
   )
@@ -270,15 +282,15 @@ function Tour() {
 
   return (
     <Overlay onDismiss={finish}>
-      <Dialog label="Tutorial" className="w-[min(380px,100%)]" onKeyDown={onKeyDown}>
+      <Dialog label="Tutorial" className="w-[min(400px,100%)]!" onKeyDown={onKeyDown}>
         <div className="flex flex-col gap-2.5 px-5 pt-5 pb-2">
           {current.visual}
           <h2 className="m-0 text-md font-semibold tracking-label">{current.title}</h2>
-          <p className="m-0 min-h-[78px] text-base leading-relaxed text-surface-10">{current.body}</p>
+          <p className="m-0 min-h-[60px] text-base leading-relaxed text-surface-10">{current.body}</p>
         </div>
-        <DialogFooter>
-          {!last && <Button onClick={finish}>Skip</Button>}
-          <span className="flex flex-1 items-center justify-center gap-1.5">
+        <DialogFooter className="grid grid-cols-[1fr_auto_1fr]">
+          <span className="justify-self-start">{!last && <Button onClick={finish}>Skip</Button>}</span>
+          <span className="flex items-center justify-center gap-1.5">
             {STEPS.map((entry, index) => (
               <button
                 key={entry.title}
@@ -293,10 +305,12 @@ function Tour() {
               />
             ))}
           </span>
-          {step > 0 && <Button onClick={() => setStep(step - 1)}>Back</Button>}
-          <Button variant="primary" onClick={() => (last ? finish() : setStep(step + 1))}>
-            {last ? "Done" : "Next"}
-          </Button>
+          <span className="flex justify-self-end gap-2">
+            {step > 0 && <Button onClick={() => setStep(step - 1)}>Back</Button>}
+            <Button variant="primary" onClick={() => (last ? finish() : setStep(step + 1))}>
+              {last ? "Done" : "Next"}
+            </Button>
+          </span>
         </DialogFooter>
       </Dialog>
     </Overlay>
