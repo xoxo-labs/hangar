@@ -1,4 +1,4 @@
-import { Copy, ExternalLink, Folder, Play, Search } from "lucide-react"
+import { ChevronRight, Copy, ExternalLink, Folder, Play, Search } from "lucide-react"
 import { useState, type KeyboardEvent, type ReactNode } from "react"
 import * as actions from "../actions"
 import { useStore } from "../store"
@@ -33,17 +33,49 @@ function Frame({ children }: { children: ReactNode }) {
   )
 }
 
-function MockRow({ name, running = false }: { name: string; running?: boolean }) {
+/** Same polyline shape the real charts draw (ResourceMetrics `Sparkline`). */
+function Spark({ points, className, marker }: { points: number[]; className?: string; marker?: number }) {
+  const max = Math.max(...points)
+  const xAt = (index: number) => (index / (points.length - 1)) * 100
+  const path = points.map((value, index) => `${xAt(index).toFixed(1)},${(27 - (value / max) * 25).toFixed(1)}`).join(" ")
   return (
-    <div className="flex items-center gap-1.5 rounded-sm px-1 py-0.5 text-xs text-surface-11">
-      <span className={cx("size-[5px] flex-none rounded-full", running ? "bg-success-10" : "bg-surface-8")} />
-      {name}
-      {!running && <Play size={9} className="ml-auto text-surface-9" />}
+    <svg viewBox="0 0 100 28" preserveAspectRatio="none" className={cx("h-[18px] w-full overflow-visible", className)}>
+      {marker !== undefined && (
+        <line
+          x1={xAt(marker)}
+          x2={xAt(marker)}
+          y1="0"
+          y2="28"
+          className="stroke-surface-11 opacity-45 [stroke-width:1] [vector-effect:non-scaling-stroke]"
+        />
+      )}
+      <polyline points={path} className="fill-none stroke-current [stroke-width:1.5] [vector-effect:non-scaling-stroke]" />
+    </svg>
+  )
+}
+
+/** Echo of the inspector's `Metric` card: label, readout, toned sparkline. */
+function MetricCard({ label, value, tone, points, marker }: { label: string; value: string; tone: string; points: number[]; marker?: number }) {
+  return (
+    <div className="w-[104px] rounded-md border border-surface-5 bg-surface-a2 p-[8px]">
+      <span className="block text-xs text-surface-9">{label}</span>
+      <strong className="mt-[2px] block text-lg font-book text-surface-12">{value}</strong>
+      <Spark points={points} className={tone} marker={marker} />
     </div>
   )
 }
 
-/** A folder becoming a project group: opened in place, never cloned. */
+function MockRow({ name, running = false }: { name: string; running?: boolean }) {
+  return (
+    <li className="flex items-center gap-1.5 rounded-sm px-1 py-0.5 text-base text-surface-11">
+      <span className={cx("size-[6px] flex-none rounded-full", running ? "bg-success-10 shadow-glow shadow-success-a6" : "bg-surface-8")} />
+      {name}
+      {!running && <Play size={9} className="ml-auto text-surface-9" />}
+    </li>
+  )
+}
+
+/** A folder becoming a sidebar project group: opened in place, never cloned. */
 function MockProjects() {
   return (
     <Frame>
@@ -52,73 +84,62 @@ function MockProjects() {
           <Folder size={11} /> ~/code/app
         </span>
         <span className="text-sm text-surface-8">→</span>
-        <div className="w-[136px] rounded-md border border-surface-5 bg-surface-2 p-1.5">
-          <div className="flex items-center justify-between px-1 pb-1 text-xs font-semibold text-surface-10">
-            app <span className="text-2xs font-normal text-surface-8">2/3</span>
+        <div className="w-[140px] rounded-md border border-surface-5 bg-surface-2 p-1.5">
+          <div className="flex items-center gap-1 px-1 pb-0.5 text-md font-semibold text-surface-12">
+            <ChevronRight size={11} className="flex-none rotate-90 text-surface-9" />
+            app
+            <span className="ml-auto text-2xs font-normal tabular-nums text-surface-9">2/3</span>
           </div>
-          <MockRow name="web" running />
-          <MockRow name="api" running />
-          <MockRow name="db" />
+          <ul className="m-0 ml-2 list-none border-l border-surface-5 p-0 pl-2">
+            <MockRow name="web" running />
+            <MockRow name="api" running />
+            <MockRow name="db" />
+          </ul>
         </div>
       </div>
     </Frame>
   )
 }
 
-const CPU_BARS = [12, 16, 14, 22, 30, 26, 44, 68, 86, 93]
-const MEM_BARS = [38, 40, 41, 45, 44, 47, 49, 50, 52, 51]
+const CPU_POINTS = [8, 11, 9, 14, 22, 19, 34, 58, 81, 93]
+const MEM_POINTS = [38, 40, 41, 45, 44, 47, 49, 50, 52, 51]
 
-function MetricCard({ label, value, bars, hot = false }: { label: string; value: string; bars: number[]; hot?: boolean }) {
-  return (
-    <div className="w-[120px] rounded-md border border-surface-5 bg-surface-2 p-2">
-      <div className="flex items-baseline justify-between">
-        <span className="text-2xs font-semibold tracking-caps text-surface-9 uppercase">{label}</span>
-        <span className={cx("font-mono text-xs", hot ? "text-warning-10" : "text-surface-11")}>{value}</span>
-      </div>
-      <div className="mt-1.5 flex h-6 items-end gap-[2px]">
-        {bars.map((height, index) => (
-          <span
-            key={index}
-            className={cx("flex-1 rounded-[1px]", hot && height > 60 ? "bg-warning-10" : "bg-surface-7")}
-            style={{ height: `${height}%` }}
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
-
+/** Metric cards over the session strip, with its amber high-CPU readout. */
 function MockMetrics() {
   return (
     <Frame>
-      <div className="flex gap-2.5">
-        <MetricCard label="CPU" value="93%" bars={CPU_BARS} hot />
-        <MetricCard label="Memory" value="412 MB" bars={MEM_BARS} />
+      <div className="flex flex-col items-center gap-1.5">
+        <div className="flex gap-[7px]">
+          <MetricCard label="CPU" value="93%" tone="text-accent-10" points={CPU_POINTS} />
+          <MetricCard label="Memory" value="412 MB" tone="text-success-10" points={MEM_POINTS} />
+        </div>
+        <div className="flex items-center gap-[8px] text-sm text-surface-9">
+          <span className="font-semibold tabular-nums text-warning-11">CPU 93%</span>
+          <strong className="font-book text-surface-11">web</strong>
+          <span>2h 14m</span>
+          <i className="h-[12px] w-px bg-surface-5" />
+          <span>412 MB</span>
+        </div>
       </div>
     </Frame>
   )
 }
 
-const SYNC_BARS = [22, 30, 26, 74, 34, 28, 38, 30]
+const SYNC_POINTS = [18, 24, 20, 30, 62, 34, 26, 30, 24, 28]
 
 /** A chart point and the output line it maps to, cross-linked both ways. */
 function MockSync() {
   return (
     <Frame>
       <div className="flex items-center gap-3">
-        <div className="flex h-9 w-[92px] items-end gap-[3px] rounded-md border border-surface-5 bg-surface-2 p-1.5">
-          {SYNC_BARS.map((height, index) => (
-            <span
-              key={index}
-              className={cx("flex-1 rounded-[1px]", index === 3 ? "bg-accent-9" : "bg-surface-7")}
-              style={{ height: `${height}%` }}
-            />
-          ))}
-        </div>
+        <MetricCard label="CPU" value="61%" tone="text-accent-10" points={SYNC_POINTS} marker={4} />
         <span className="text-sm text-surface-8">⇄</span>
         <div className="w-[150px] rounded-md border border-surface-5 bg-surface-2 p-1.5 font-mono text-2xs leading-relaxed text-surface-9">
           <p className="m-0 truncate">ready in 812 ms</p>
-          <p className="m-0 -mx-1.5 truncate border-l-2 border-accent-9 bg-surface-a3 px-1.5 text-surface-11">compiling /app…</p>
+          {/* The real jump flashes `.metric-line-decoration` — an inset amber hairline. */}
+          <p className="m-0 -mx-1.5 truncate bg-surface-a3 px-1.5 text-surface-11 shadow-[inset_0_1px_var(--color-warning-a6)]">
+            compiling /app…
+          </p>
           <p className="m-0 truncate">✓ compiled in 4.2 s</p>
         </div>
       </div>
@@ -126,12 +147,13 @@ function MockSync() {
   )
 }
 
+/** The session strip's port button plus the inspector's binding rows. */
 function MockPorts() {
   return (
     <Frame>
       <div className="flex flex-col items-center gap-2">
         <div className="flex items-center gap-1.5">
-          <span className="rounded-md border border-surface-5 bg-surface-a3 px-2 py-0.5 font-mono text-xs text-surface-12">:3000</span>
+          <span className="rounded-sm px-[5px] py-[3px] text-sm tabular-nums text-accent-10">:3000</span>
           <ExternalLink size={11} className="text-surface-9" />
           <Copy size={11} className="text-surface-9" />
         </div>
@@ -155,7 +177,7 @@ function MockPalette() {
           <kbd className="ml-auto rounded-sm border border-surface-6 bg-surface-a3 px-1 font-mono text-2xs text-surface-10">⌘K</kbd>
         </div>
         <div className="p-1 text-xs text-surface-11">
-          <p className="m-0 rounded-sm bg-surface-a4 px-1.5 py-0.5">▶ Start app/web</p>
+          <p className="m-0 rounded-sm bg-surface-a4 px-1.5 py-0.5 text-surface-12">▶ Start app/web</p>
           <p className="m-0 px-1.5 py-0.5 text-surface-9">◷ web · yesterday</p>
         </div>
       </div>
@@ -233,7 +255,8 @@ function Tour() {
   /** Leaving the tour in any way counts as having seen it. */
   const finish = () => {
     close()
-    if (!settings.onboarding.tutorialSeen) {
+    // `=== false` guards against a server old enough to not send `onboarding`.
+    if (settings.onboarding?.tutorialSeen === false) {
       actions.updateSettings({ ...settings, onboarding: { tutorialSeen: true } })
     }
   }

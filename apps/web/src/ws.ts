@@ -75,7 +75,9 @@ function handle(msg: ServerMsg): void {
       for (const session of gone) disposeTerminal(session.id)
       if (!sawFirstState) {
         sawFirstState = true
-        if (!msg.settings.onboarding.tutorialSeen) store.openTutorial()
+        // `=== false` (not `!`): an older server that predates the onboarding
+        // section sends nothing here, and that must not re-open the tour.
+        if (msg.settings.onboarding?.tutorialSeen === false) store.openTutorial()
       }
       return
     }
