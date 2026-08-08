@@ -5,6 +5,10 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# The release step creates/updates the GitHub release for the pushed tag.
+permissions:
+  contents: write
+
 jobs:
   mac:
     runs-on: macos-latest
