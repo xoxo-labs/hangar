@@ -25,6 +25,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm dist:mac
+      # A version-free alias so the site can deep-link the newest build
+      # directly: /releases/latest/download/Hangar-arm64.dmg
+      - run: cp apps/desktop/release/Hangar-*-arm64.dmg apps/desktop/release/Hangar-arm64.dmg
       - uses: actions/upload-artifact@v4
         with:
           name: hangar-mac
