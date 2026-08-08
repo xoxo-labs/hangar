@@ -75,6 +75,10 @@ function validateSettings(settings: AppSettings): void {
   if (!["system", "safari", "chrome", "arc", "firefox", "brave", "edge"].includes(settings?.links?.browser)) {
     throw new Error("invalid browser setting")
   }
+  if (!["auto", "lan", "tailscale", "custom"].includes(settings?.links?.shareHost)) {
+    throw new Error("invalid share host setting")
+  }
+  if (typeof settings.links.customHost !== "string") throw new Error("invalid custom share host")
   const terminal = settings?.terminal
   if (
     typeof terminal?.copyOnSelect !== "boolean" ||

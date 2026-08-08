@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, type AppSettings, type BrowserChoice, type ThemeSetting } from "@hangar/contracts"
+import { DEFAULT_SETTINGS, type AppSettings, type BrowserChoice, type ShareHostChoice, type ThemeSetting } from "@hangar/contracts"
 import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react"
 import * as actions from "../actions"
 import { useStore } from "../store"
@@ -146,16 +146,30 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
             </Field>
           </Section>
           <Section title="Links">
-            <Field label="Open detected ports with" className="max-w-[260px]">
-              <Select
-                className={SELECT_HOVER}
-                value={links.browser}
-                onChange={(e) => patchLinks({ browser: e.target.value as BrowserChoice })}
-              >
-                <option value="system">System default</option>
-                {window.hangarDesktop && <><option value="safari">Safari</option><option value="chrome">Google Chrome</option><option value="arc">Arc</option><option value="firefox">Firefox</option><option value="brave">Brave</option><option value="edge">Microsoft Edge</option></>}
-              </Select>
-            </Field>
+            <div className="grid max-w-[420px] grid-cols-2 gap-2.5">
+              <Field label="Open detected ports with">
+                <Select
+                  className={SELECT_HOVER}
+                  value={links.browser}
+                  onChange={(e) => patchLinks({ browser: e.target.value as BrowserChoice })}
+                >
+                  <option value="system">System default</option>
+                  {window.hangarDesktop && <><option value="safari">Safari</option><option value="chrome">Google Chrome</option><option value="arc">Arc</option><option value="firefox">Firefox</option><option value="brave">Brave</option><option value="edge">Microsoft Edge</option></>}
+                </Select>
+              </Field>
+              <Field label="Copy links using">
+                <Select className={SELECT_HOVER} value={links.shareHost} onChange={(e) => patchLinks({ shareHost: e.target.value as ShareHostChoice })}>
+                  <option value="auto">Automatic</option>
+                  <option value="lan">Local network</option>
+                  <option value="tailscale">Tailscale</option>
+                  <option value="custom">Custom host</option>
+                </Select>
+              </Field>
+            </div>
+            {links.shareHost === "custom" && <Field label="Custom host" hint="Hostname or IP address, without a port." className="mt-2.5 max-w-[260px]">
+              <TextInput mono value={links.customHost} placeholder="dev.example.test" spellCheck={false} onChange={(e) => patchLinks({ customHost: e.target.value })} />
+            </Field>}
+            <p className="mt-2 mb-0 text-xs leading-normal text-surface-9">LAN links work on the same Wi-Fi. Tailscale links work on devices in your tailnet.</p>
           </Section>
           <Section title="Terminal behavior">
             <ToggleRow

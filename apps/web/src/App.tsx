@@ -31,6 +31,8 @@ export function App() {
   const confirming = useStore((s) => s.confirming)
   const toggleInspector = useStore((s) => s.toggleInspector)
 
+  useEffect(() => window.hangarDesktop?.onOpenSettings(openSettings), [openSettings])
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey)) return

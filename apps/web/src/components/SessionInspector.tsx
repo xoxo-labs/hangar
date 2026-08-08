@@ -1,11 +1,12 @@
 import type { SessionHistoryEntry, SessionInfo, SessionMetrics } from "@hangar/contracts"
-import { Check, ChevronDown } from "lucide-react"
+import { Check, ChevronDown, Copy, ExternalLink, Info } from "lucide-react"
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import * as actions from "../actions"
+import { type MetricRange, useMetricTimeline } from "../hooks/useMetricTimeline"
+import { usePortLinks } from "../hooks/usePortLinks"
 import { openLocalPort } from "../links"
 import { hasHighCpu, toneOf } from "../status"
 import { type SessionMetricPoint, useStore } from "../store"
-import { scrollToMetricPosition, subscribeToMetricSelection } from "../terminals"
 import { Button } from "../ui/Button"
 import { cx } from "../ui/cx"
 import { IconButton } from "../ui/IconButton"
@@ -108,13 +109,9 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
   )
   const metrics = session.metrics
   const metricHistory = useStore((state) => state.metricHistory[session.id] ?? NO_METRIC_HISTORY)
-  const browser = useStore((state) => state.settings.links.browser)
-  const showNotice = useStore((state) => state.showNotice)
   const requestConfirm = useStore((state) => state.requestConfirm)
   const running = session.status === "running"
-  const openPort = (port: number) => {
-    void openLocalPort(port, browser).catch(() => showNotice(`Could not open port ${port}`))
-  }
+  const { openPort, copyPort, linkForPort, isLoopbackOnly } = usePortLinks(metrics)
 
   return (
     <aside
@@ -166,15 +163,30 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
         {metrics && metrics.ports.length > 0 && <section className={SECTION}>
           <h3 className={SECTION_TITLE}>Ports</h3>
           <div className={STACK}>
-            {metrics.ports.map((port) => <button
-              key={port}
-              className="flex items-center justify-between rounded-md border border-surface-5 bg-surface-a2 px-[8px] py-[7px] text-xs text-surface-9 hover:bg-surface-a4 hover:text-accent-10"
-              type="button"
-              onClick={() => openPort(port)}
-            >
-              <code className="text-surface-12">:{port}</code><span>Open in browser ↗</span>
-            </button>)}
+            {metrics.ports.map((port) => {
+              const link = linkForPort(port)
+              const address = link.url.replace(/^https?:\/\//, "")
+              const kind = { local: "Local", lan: "LAN", tailscale: "Tailscale", custom: "Custom" }[link.kind]
+              return <div key={port} className="flex min-h-[44px] items-center gap-2 rounded-md bg-surface-a2 py-1.5 pr-1.5 pl-2.5">
+                <div className="min-w-0 flex-1">
+                  <div className="font-mono text-base font-medium tabular-nums text-surface-12">:{port}</div>
+                  <div className="mt-0.5 truncate text-2xs text-surface-8" title={link.url}>{kind} · {address}</div>
+                </div>
+                <div className="flex flex-none items-center gap-0.5">
+                  <IconButton className="size-[28px]" title={`Copy ${link.url}`} aria-label={`Copy link for port ${port}`} onClick={() => copyPort(port)}>
+                    <Copy className="size-[14px]" aria-hidden="true" />
+                  </IconButton>
+                  <IconButton className="size-[28px]" title={`Open localhost:${port}`} aria-label={`Open port ${port} in browser`} onClick={() => openPort(port)}>
+                    <ExternalLink className="size-[14px]" aria-hidden="true" />
+                  </IconButton>
+                </div>
+              </div>
+            })}
           </div>
+          {metrics.ports.some(isLoopbackOnly) && <div className="mt-2.5 flex items-start gap-2 rounded-md bg-warning-a2 px-2.5 py-2 text-xs leading-normal text-warning-11">
+            <Info className="mt-px size-[14px] flex-none" aria-hidden="true" />
+            <div><strong className="font-book">Local only.</strong> Bind the dev server to <code>0.0.0.0</code> for phone access. Try <code>vite --host 0.0.0.0</code> or <code>next dev --hostname 0.0.0.0</code>.</div>
+          </div>}
         </section>}
 
         <section className={SECTION}>
@@ -194,46 +206,14 @@ function inspectorState(session: SessionInfo): string {
   return session.exitCode == null ? "Exited" : `Exited with code ${session.exitCode}`
 }
 
-type MetricRange = "5m" | "15m" | "1h" | "session"
-const METRIC_RANGE_MS: Record<Exclude<MetricRange, "session">, number> = {
-  "5m": 5 * 60_000,
-  "15m": 15 * 60_000,
-  "1h": 60 * 60_000,
-}
-
 function ResourceSection({ sessionId, metrics, history: allHistory }: { sessionId: string; metrics: SessionMetrics; history: SessionMetricPoint[] }) {
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
-  const [selectedRange, setSelectedRange] = useState<[number, number] | null>(null)
   const [layout, setLayout] = useState<"grid" | "rows">("grid")
-  const [range, setRange] = useState<MetricRange>("15m")
-  const showNotice = useStore((state) => state.showNotice)
-  const history = useMemo(() => {
-    if (range === "session" || allHistory.length === 0) return allHistory
-    const latest = allHistory[allHistory.length - 1]!.sampledAt
-    const cutoff = latest - METRIC_RANGE_MS[range]
-    return allHistory.filter((point) => point.sampledAt >= cutoff)
-  }, [allHistory, range])
+  const { history, range, setRange, hoveredIndex, setHoveredIndex, selectedRange, selectSample } =
+    useMetricTimeline(sessionId, allHistory)
   const hovered = hoveredIndex === null ? undefined : history[hoveredIndex]
   const interval = history.length > 1
     ? `${formatRangeTime(history[0]!.sampledAt)}–${formatRangeTime(history[history.length - 1]!.sampledAt)}`
     : "Collecting data…"
-
-  useEffect(() => subscribeToMetricSelection(sessionId, (range) => {
-    if (range === null) {
-      setSelectedRange(null)
-      return
-    }
-    const start = history.findIndex((point) => point.sampledAt === range.startSampledAt)
-    const end = history.findIndex((point) => point.sampledAt === range.endSampledAt)
-    setSelectedRange(start < 0 || end < 0 ? null : [Math.min(start, end), Math.max(start, end)])
-  }), [history, sessionId])
-  const selectSample = (index: number) => {
-    const sample = history[index]
-    if (!sample) return
-    if (!scrollToMetricPosition(sessionId, sample.sampledAt)) {
-      showNotice("That output line is no longer in scrollback")
-    }
-  }
 
   const shared = { hoveredIndex, selectedRange, compact: layout === "rows", onHover: setHoveredIndex, onSelect: selectSample }
   return <section className={SECTION} onPointerLeave={() => setHoveredIndex(null)}>
@@ -249,11 +229,7 @@ function ResourceSection({ sessionId, metrics, history: allHistory }: { sessionI
       <div className="flex items-center gap-1">
         <MetricRangeMenu
           value={range}
-          onChange={(next) => {
-            setRange(next)
-            setHoveredIndex(null)
-            setSelectedRange(null)
-          }}
+          onChange={setRange}
         />
         <IconButton
         className="size-[22px] rounded-sm text-[13px] text-surface-8"

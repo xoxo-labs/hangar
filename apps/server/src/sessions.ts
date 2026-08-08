@@ -180,18 +180,23 @@ function descendants(rootPid: number, samples: ProcessSample[]): ProcessSample[]
   return samples.filter((sample) => wanted.has(sample.pid))
 }
 
-async function listeningPorts(pids: number[]): Promise<number[]> {
-  if (pids.length === 0) return []
+async function listeningPorts(pids: number[]): Promise<{ ports: number[]; bindings: Record<number, string[]> }> {
+  if (pids.length === 0) return { ports: [], bindings: {} }
   try {
     const output = await run("lsof", ["-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-p", pids.join(","), "-Fn"])
-    const ports = new Set<number>()
+    const byPort = new Map<number, Set<string>>()
     for (const line of output.split("\n")) {
-      const match = line.match(/:(\d+)(?: \(LISTEN\))?$/)
-      if (match) ports.add(Number(match[1]))
+      const match = line.match(/^n(.+):(\d+)(?: \(LISTEN\))?$/)
+      if (!match) continue
+      const port = Number(match[2])
+      const hosts = byPort.get(port) ?? new Set<string>()
+      hosts.add(match[1]!)
+      byPort.set(port, hosts)
     }
-    return [...ports].sort((a, b) => a - b)
+    const ports = [...byPort.keys()].sort((a, b) => a - b)
+    return { ports, bindings: Object.fromEntries(ports.map((port) => [port, [...byPort.get(port)!]])) }
   } catch {
-    return []
+    return { ports: [], bindings: {} }
   }
 }
 
@@ -479,16 +484,17 @@ export class SessionManager {
           (session.metrics.outputBytes - session.outputBytesAtLastSample) / elapsed,
         )
         session.outputBytesAtLastSample = session.metrics.outputBytes
-        const ports = this.sampleNumber % 3 === 1
+        const listening = this.sampleNumber % 3 === 1
           ? await listeningPorts(tree.map((item) => item.pid))
-          : session.metrics.ports
+          : { ports: session.metrics.ports, bindings: session.metrics.portBindings ?? {} }
         session.metrics = {
           ...session.metrics,
           cpuPercent: Math.round(cpuPercent * 10) / 10,
           memoryBytes,
           processCount: tree.length,
           outputBytesPerSecond,
-          ports,
+          ports: listening.ports,
+          portBindings: listening.bindings,
           sampledAt: Date.now(),
           peakCpuPercent: Math.max(session.metrics.peakCpuPercent, cpuPercent),
           peakMemoryBytes: Math.max(session.metrics.peakMemoryBytes, memoryBytes),

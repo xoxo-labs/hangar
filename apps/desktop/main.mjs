@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from "electron"
 
 // When launched under a supervisor (concurrently, a dead terminal), stdout and
 // stderr can vanish before we do; an unguarded console.* then throws EPIPE and
@@ -156,6 +156,34 @@ async function ensureServer() {
   }
 }
 
+function installApplicationMenu(window) {
+  if (process.platform !== "darwin") return
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    {
+      label: app.name,
+      submenu: [
+        { role: "about" },
+        { type: "separator" },
+        {
+          label: "Settings…",
+          accelerator: "CommandOrControl+,",
+          click: () => window.webContents.send("hangar:open-settings"),
+        },
+        { type: "separator" },
+        { role: "services" },
+        { type: "separator" },
+        { role: "hide" },
+        { role: "hideOthers" },
+        { role: "unhide" },
+        { type: "separator" },
+        { role: "quit" },
+      ],
+    },
+    { role: "editMenu" },
+    { role: "windowMenu" },
+  ]))
+}
+
 function createWindow() {
   const window = new BrowserWindow({
     width: 1280,
@@ -175,6 +203,8 @@ function createWindow() {
       preload: PRELOAD_ENTRY,
     },
   })
+
+  installApplicationMenu(window)
 
   // In dev the Vite server may still be booting. Keep retrying until it is up.
   const giveUpAt = Date.now() + LOAD_RETRY_TIMEOUT_MS

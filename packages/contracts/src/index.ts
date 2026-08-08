@@ -26,6 +26,7 @@ export type Registry = {
 }
 
 export type BrowserChoice = "system" | "safari" | "chrome" | "arc" | "firefox" | "brave" | "edge"
+export type ShareHostChoice = "auto" | "lan" | "tailscale" | "custom"
 
 export type ThemeSetting = "system" | "light" | "dark"
 
@@ -37,6 +38,9 @@ export type AppSettings = {
   links: {
     /** Browser used for detected localhost ports. */
     browser: BrowserChoice
+    /** Address used when copying a detected-port link. */
+    shareHost: ShareHostChoice
+    customHost: string
   }
   terminal: {
     copyOnSelect: boolean
@@ -63,6 +67,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   links: {
     browser: "system",
+    shareHost: "auto",
+    customHost: "",
   },
   terminal: {
     copyOnSelect: true,
@@ -97,6 +103,8 @@ export type SessionMetrics = {
   outputBytes: number
   outputBytesPerSecond: number
   ports: number[]
+  /** Listening addresses reported by lsof, keyed by port. */
+  portBindings?: Record<number, string[]>
   sampledAt: number
   peakCpuPercent: number
   peakMemoryBytes: number

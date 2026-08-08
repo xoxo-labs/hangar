@@ -1,6 +1,7 @@
 import { createServer } from "node:http"
 import { existsSync, mkdirSync, readFileSync, statSync, watch } from "node:fs"
 import { join, resolve } from "node:path"
+import { networkInterfaces } from "node:os"
 import { WebSocketServer, WebSocket } from "ws"
 import type { AppSettings, ClientMsg, Project, ServerMsg } from "@hangar/contracts"
 import {
@@ -14,6 +15,24 @@ import {
 import { loadHistory, loadHistoryReplay } from "./history.ts"
 import { SessionManager } from "./sessions.ts"
 import { loadSettings, saveSettings } from "./settings.ts"
+
+function networkInfo(): { lan: string[]; tailscale: string[] } {
+  const lan: string[] = []
+  const tailscale: string[] = []
+  for (const addresses of Object.values(networkInterfaces())) {
+    for (const address of addresses ?? []) {
+      if (address.internal || address.family !== "IPv4") continue
+      const [first, second] = address.address.split(".").map(Number)
+      if (first === 100 && second !== undefined && second >= 64 && second <= 127) tailscale.push(address.address)
+      else if (
+        first === 10 ||
+        (first === 172 && second !== undefined && second >= 16 && second <= 31) ||
+        (first === 192 && second === 168)
+      ) lan.push(address.address)
+    }
+  }
+  return { lan: [...new Set(lan)], tailscale: [...new Set(tailscale)] }
+}
 
 type PackageJson = {
   name?: unknown
@@ -101,6 +120,11 @@ export function serve(port: number): void {
     if (url.pathname === "/health") {
       res.writeHead(200, { "content-type": "text/plain" })
       res.end("ok")
+      return
+    }
+    if (req.method === "GET" && url.pathname === "/network-info") {
+      res.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*" })
+      res.end(JSON.stringify(networkInfo()))
       return
     }
     if (req.method === "GET" && url.pathname === "/project-info") {
