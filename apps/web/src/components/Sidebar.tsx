@@ -1,5 +1,5 @@
 import { type Project, type ProjectProcess, type SessionInfo, sessionId } from "@hangar/contracts"
-import { ChevronRight, History, Play, RotateCw, Settings, Square } from "lucide-react"
+import { ChevronRight, CircleHelp, History, Play, RotateCw, Settings, Square } from "lucide-react"
 import { type DragEvent, useMemo, useState } from "react"
 import * as actions from "../actions"
 import { describe, hasHighCpu, toneOf } from "../status"
@@ -17,15 +17,35 @@ import { Dot } from "./Dot"
  * `electron:` padding overrides is different and stays: it guarantees they
  * beat the base `px-`/`py-` utilities regardless of variant sort order.
  */
-const ROW = "flex items-center gap-1 rounded-md pr-1"
-/* Every row is a single line now, so nothing here sets the height: at 4px the
- * padded label is shorter than the 26px action buttons beside it, and those
- * decide the row. Do not reintroduce the old two-line height math. */
+/* Action buttons overlay the row's right edge instead of sitting in flow, so a
+ * label keeps the full row width while they are hidden. The 26px min-height
+ * replaces the height the in-flow buttons used to establish; the label alone
+ * is shorter. Do not reintroduce the old two-line height math. */
+const ROW = "relative flex min-h-[26px] items-center rounded-md pr-1"
 const ROW_MAIN = "flex min-w-0 flex-1 items-center gap-[7px] px-1.5! py-1! text-left"
 const ROW_ACTIONS =
-  "flex flex-none justify-end gap-[3px] opacity-0 transition-opacity duration-[120ms] ease-[ease] group-hover:opacity-100 group-focus-within:opacity-100"
+  "absolute inset-y-0 right-1 flex items-center gap-[3px] opacity-0 transition-opacity duration-[120ms] ease-[ease] group-hover:opacity-100 group-focus-within:opacity-100"
+/* Labels fade out over their last 8px instead of hard-clipping. While the
+ * row's actions are visible (hover, focus-within, open menu) the fade slides
+ * left to end just before the overlaid buttons — 26px wide for one button,
+ * 55px for two — so no text shows through them. The offsets bake in the
+ * label's 10px inset from the row edge (pr-1 + px-1.5) and the buttons'
+ * right-1 anchor. */
+const LABEL = "min-w-0 flex-1 overflow-hidden whitespace-nowrap"
+const FADE = "mask-r-from-[calc(100%-8px)]"
+const FADE_CLEARS_ONE = "mask-r-from-[calc(100%-30px)] mask-r-to-[calc(100%-22px)]"
+const FADE_HOVER_ONE =
+  "group-hover:mask-r-from-[calc(100%-30px)] group-hover:mask-r-to-[calc(100%-22px)] group-focus-within:mask-r-from-[calc(100%-30px)] group-focus-within:mask-r-to-[calc(100%-22px)]"
+const FADE_HOVER_TWO =
+  "group-hover:mask-r-from-[calc(100%-59px)] group-hover:mask-r-to-[calc(100%-51px)] group-focus-within:mask-r-from-[calc(100%-59px)] group-focus-within:mask-r-to-[calc(100%-51px)]"
 
-export function Sidebar() {
+export function Sidebar({
+  onResizeStart,
+  onResizeBy,
+}: {
+  onResizeStart: (clientX: number) => void
+  onResizeBy: (delta: number) => void
+}) {
   const projects = useStore((s) => s.projects)
   const sessions = useStore((s) => s.sessions)
   const openEditor = useStore((s) => s.openEditor)
@@ -34,6 +54,7 @@ export function Sidebar() {
   const activeHistory = useStore((s) => s.activeHistory)
   const historyCount = useStore((s) => s.history.length)
   const openSettings = useStore((s) => s.openSettings)
+  const openHelp = useStore((s) => s.openHelp)
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<{ name: string; side: "before" | "after" } | null>(null)
   const [filter, setFilter] = useState("")
@@ -56,7 +77,23 @@ export function Sidebar() {
   )
 
   return (
-    <aside className="row-start-1 col-start-1 flex min-h-0 flex-col border-r border-surface-5 bg-surface-2 select-none">
+    <aside className="relative row-start-1 col-start-1 flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-surface-5 bg-surface-2 select-none">
+      <div
+        role="separator"
+        aria-label="Resize sidebar"
+        aria-orientation="vertical"
+        tabIndex={0}
+        className="absolute top-0 right-[-3px] z-20 h-full w-[7px] cursor-col-resize transition-colors hover:bg-accent-a4 focus:bg-accent-a4 focus:outline-none"
+        onPointerDown={(event) => {
+          event.preventDefault()
+          onResizeStart(event.clientX)
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
+          event.preventDefault()
+          onResizeBy(event.key === "ArrowLeft" ? -10 : 10)
+        }}
+      />
       <header
         className={cx(
           "flex min-h-[48px] flex-none items-center gap-[9px] border-b px-3.5 py-[7px] electron:h-[48px] electron:py-0! electron:pr-3.5! electron:pl-[92px]! electron:[-webkit-app-region:drag]",
@@ -76,7 +113,7 @@ export function Sidebar() {
           </span>
           <span
             className={cx(
-              "mt-0.5 text-2xs font-book tracking-caps whitespace-nowrap uppercase",
+              "mt-0.5 overflow-hidden text-2xs font-book tracking-caps whitespace-nowrap uppercase mask-r-from-[calc(100%-8px)]",
               import.meta.env.DEV ? "text-success-11" : "text-surface-8",
             )}
           >
@@ -85,7 +122,7 @@ export function Sidebar() {
         </span>
       </header>
 
-      <nav className="min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-3">
+      <nav className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pt-1 pb-3">
         <div className="flex items-center justify-between px-1.5 pt-[7px] pb-2 text-xs font-semibold tracking-caps text-surface-9 uppercase">
           <span>Projects</span>
           <button
@@ -181,6 +218,9 @@ export function Sidebar() {
           <span className="flex-1 leading-[20px]">History</span>
           {historyCount > 0 && <span className="rounded-full bg-surface-a4 px-[6px] py-px text-2xs tabular-nums text-surface-9">{historyCount}</span>}
         </button>
+        <IconButton className="size-[30px]" title="Help & keyboard shortcuts" aria-label="Help & keyboard shortcuts" onClick={openHelp}>
+          <CircleHelp className="size-[17px]" aria-hidden="true" />
+        </IconButton>
         <IconButton className="size-[30px]" title="Settings (⌘,)" data-shortcut-hint="," data-shortcut-placement="top-left" aria-label="Settings" onClick={openSettings}>
           <Settings className="size-[17px]" aria-hidden="true" />
         </IconButton>
@@ -287,9 +327,20 @@ function ProjectRow({
               title={`High CPU: ${warningProcesses.map((process) => process.name).join(", ")}`}
             />
           )}
-          <span className="min-w-0 truncate text-md font-semibold text-surface-12">{project.name}</span>
+          <span
+            className={cx(LABEL, "text-md font-semibold text-surface-12", menuOpen ? FADE_CLEARS_ONE : FADE, FADE_HOVER_ONE)}
+          >
+            {project.name}
+          </span>
           {running && (
-            <span className="flex-none text-2xs tabular-nums text-surface-9">
+            /* Sits where the overlaid menu button lands, so it yields whenever
+             * the actions come in. */
+            <span
+              className={cx(
+                "flex-none text-2xs tabular-nums text-surface-9 transition-opacity duration-[120ms] ease-[ease] group-hover:opacity-0 group-focus-within:opacity-0",
+                menuOpen && "opacity-0",
+              )}
+            >
               {runningCount}/{project.processes.length}
             </span>
           )}
@@ -371,11 +422,10 @@ function ProcessRow({
         onClick={() => (session ? setActive(id) : openPending(project, name))}
       >
         <Dot tone={toneOf(session)} small title={describe(session)} />
-        <span className="min-w-0 truncate text-base">{name}</span>
+        <span className={cx(LABEL, "text-base", FADE, running ? FADE_HOVER_TWO : FADE_HOVER_ONE)}>{name}</span>
       </button>
 
-      {/* 2 × 26px button + 1 × 3px gap */}
-      <div className={cx(ROW_ACTIONS, "min-w-[55px]")}>
+      <div className={ROW_ACTIONS}>
         {running ? (
           <>
             <IconButton

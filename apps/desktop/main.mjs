@@ -181,6 +181,15 @@ function installApplicationMenu(window) {
     },
     { role: "editMenu" },
     { role: "windowMenu" },
+    {
+      role: "help",
+      submenu: [
+        {
+          label: "Hangar Help & Shortcuts",
+          click: () => window.webContents.send("hangar:open-help"),
+        },
+      ],
+    },
   ]))
 }
 

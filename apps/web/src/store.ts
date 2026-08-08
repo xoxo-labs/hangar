@@ -95,6 +95,8 @@ type Store = {
   port: number
   settings: AppSettings
   settingsOpen: boolean
+  /** Whether the keyboard-shortcuts help dialog is up. */
+  helpOpen: boolean
   /** Whether the welcome tutorial is up (first run, or replayed from Settings). */
   tutorialOpen: boolean
   /** Whether the ⌘K command palette is up. */
@@ -139,6 +141,8 @@ type Store = {
   closeEditor: () => void
   openSettings: () => void
   closeSettings: () => void
+  openHelp: () => void
+  closeHelp: () => void
   openTutorial: () => void
   closeTutorial: () => void
   openPalette: () => void
@@ -168,6 +172,7 @@ export const useStore = create<Store>((set) => ({
   port: readPort(),
   settings: structuredClone(DEFAULT_SETTINGS),
   settingsOpen: false,
+  helpOpen: false,
   tutorialOpen: false,
   paletteOpen: false,
   lastError: null,
@@ -390,28 +395,20 @@ export const useStore = create<Store>((set) => ({
     }, 1800)
   },
 
-  openEditor: (project) => {
-    if (project !== undefined) {
-      set({ editorOpen: true, editingProject: project, newProjectPath: "" })
-      return
-    }
-
-    const choose = window.hangarDesktop?.chooseDirectory
-    if (!choose) {
-      set({ editorOpen: true, editingProject: null, newProjectPath: "" })
-      return
-    }
-
-    void choose("Choose a project folder").then((path) => {
-      if (path !== null) set({ editorOpen: true, editingProject: null, newProjectPath: path })
-    })
-  },
+  // Open first; folder selection lives in the dialog so cancelling the native
+  // picker does not make the whole add flow disappear without feedback.
+  openEditor: (project) =>
+    set({ editorOpen: true, editingProject: project ?? null, newProjectPath: "" }),
 
   closeEditor: () => set({ editorOpen: false, editingProject: null, newProjectPath: "" }),
 
   openSettings: () => set({ settingsOpen: true }),
 
   closeSettings: () => set({ settingsOpen: false }),
+
+  openHelp: () => set({ helpOpen: true }),
+
+  closeHelp: () => set({ helpOpen: false }),
 
   openTutorial: () => set({ tutorialOpen: true }),
 

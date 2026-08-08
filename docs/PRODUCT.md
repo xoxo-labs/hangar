@@ -28,7 +28,7 @@ it. Architecture and dev setup live in the [README](../README.md).
 
 | Feature | What it means |
 |---|---|
-| **Start what you need** | Projects group their processes; start/stop/restart one or all. Clicking a process opens a *pending tab* without starting anything — ▶ is what starts it. New projects are inspected from `package.json` (scripts, package manager). |
+| **Start what you need** | Projects group their processes; start/stop/restart one or all. Clicking a process opens a *pending tab* without starting anything — ▶ is what starts it. New projects are inspected from `package.json` (scripts, package manager), including npm/Yarn/Bun and pnpm workspaces; monorepo scripts are suggested as `package/script` processes with the package folder as cwd. |
 | **Live resource usage, warnings surfaced** | CPU, memory, process count, and output rate sampled every 2 s across the whole process tree, with session peaks. High CPU (>80%) is flagged amber in the sidebar, tabs, session strip, and inspector. |
 | **Metrics synced to output** | Click a point on a chart → the terminal scrolls to the line it was printing at that moment. Select terminal output → the matching time range highlights on all charts. Fixed-window ranges: 5 m / 15 m / 1 h / full session. |
 | **Copy-friendly terminal** | Copy on select (default on), copy last 50/100 lines, copy all output, per-session log reveal. |

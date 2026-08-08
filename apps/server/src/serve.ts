@@ -1,6 +1,6 @@
 import { createServer } from "node:http"
-import { existsSync, mkdirSync, readFileSync, statSync, watch } from "node:fs"
-import { join, resolve } from "node:path"
+import { existsSync, globSync, mkdirSync, readFileSync, statSync, watch } from "node:fs"
+import { basename, dirname, join, resolve } from "node:path"
 import { networkInterfaces } from "node:os"
 import { WebSocketServer, WebSocket } from "ws"
 import type { AppSettings, ClientMsg, Project, ServerMsg } from "@hangar/contracts"
@@ -38,10 +38,84 @@ type PackageJson = {
   name?: unknown
   packageManager?: unknown
   scripts?: unknown
+  workspaces?: unknown
+}
+
+type DetectedScript = {
+  name: string
+  value: string
+  cmd: string
+  cwd?: string
+  workspace?: string
 }
 
 function shellArg(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`
+}
+
+function packageScripts(parsed: PackageJson, manager: string, prefix?: string, cwd?: string): DetectedScript[] {
+  if (!parsed.scripts || typeof parsed.scripts !== "object") return []
+  return Object.entries(parsed.scripts)
+    .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+    .map(([name, value]) => ({
+      name: prefix ? `${prefix}/${name}` : name,
+      value,
+      cmd: `${manager} run ${shellArg(name)}`,
+      ...(cwd ? { cwd } : {}),
+      ...(prefix ? { workspace: prefix } : {}),
+    }))
+}
+
+/** Handles package.json workspaces plus the common, intentionally small pnpm-workspace.yaml form. */
+function workspacePatterns(path: string, parsed: PackageJson): string[] {
+  const declared = Array.isArray(parsed.workspaces)
+    ? parsed.workspaces
+    : parsed.workspaces && typeof parsed.workspaces === "object" &&
+        Array.isArray((parsed.workspaces as { packages?: unknown }).packages)
+      ? (parsed.workspaces as { packages: unknown[] }).packages
+      : []
+  const fromPackage = declared.filter((entry): entry is string => typeof entry === "string")
+  if (fromPackage.length > 0) return fromPackage
+
+  const workspaceFile = join(path, "pnpm-workspace.yaml")
+  if (!existsSync(workspaceFile)) return []
+  const patterns: string[] = []
+  let inPackages = false
+  for (const line of readFileSync(workspaceFile, "utf8").split(/\r?\n/)) {
+    if (/^packages\s*:/.test(line)) {
+      inPackages = true
+      continue
+    }
+    if (inPackages && /^\S/.test(line)) break
+    if (!inPackages) continue
+    const match = line.match(/^\s+-\s+["']?([^"'#]+?)["']?\s*(?:#.*)?$/)
+    if (match?.[1]) patterns.push(match[1].trim())
+  }
+  return patterns
+}
+
+function workspaceScripts(path: string, parsed: PackageJson, manager: string): DetectedScript[] {
+  const patterns = workspacePatterns(path, parsed)
+    .map((pattern) => pattern.replace(/^\.\//, "").replace(/\/$/, ""))
+    .filter((pattern) => pattern !== "" && !pattern.startsWith("/") && !pattern.startsWith("../"))
+  const included = patterns.filter((pattern) => !pattern.startsWith("!"))
+  if (included.length === 0) return []
+  const excluded = patterns
+    .filter((pattern) => pattern.startsWith("!"))
+    .map((pattern) => `${pattern.slice(1)}/package.json`)
+
+  const packageFiles = globSync(included.map((pattern) => `${pattern}/package.json`), {
+    cwd: path,
+    exclude: ["**/node_modules/**", ...excluded],
+  }).sort()
+
+  return packageFiles.flatMap((packageFile) => {
+    const workspace = JSON.parse(readFileSync(join(path, packageFile), "utf8")) as PackageJson
+    const cwd = dirname(packageFile).replaceAll("\\", "/")
+    const packageName = typeof workspace.name === "string" ? workspace.name.split("/").pop() : null
+    const label = packageName || basename(cwd)
+    return packageScripts(workspace, manager, label, cwd)
+  })
 }
 
 function inspectProject(inputPath: string): object {
@@ -67,15 +141,8 @@ function inspectProject(inputPath: string): object {
         : existsSync(join(path, "bun.lock")) || existsSync(join(path, "bun.lockb"))
           ? "bun"
           : "npm"
-  const scripts = parsed.scripts && typeof parsed.scripts === "object"
-    ? Object.entries(parsed.scripts)
-        .filter((entry): entry is [string, string] => typeof entry[1] === "string")
-        .map(([name, value]) => ({
-          name,
-          value,
-          cmd: `${manager} run ${shellArg(name)}`,
-        }))
-    : []
+  const rootScripts = packageScripts(parsed, manager)
+  const childScripts = workspaceScripts(path, parsed, manager)
 
   return {
     path,
@@ -83,7 +150,8 @@ function inspectProject(inputPath: string): object {
     package: {
       name: typeof parsed.name === "string" ? parsed.name : null,
       manager,
-      scripts,
+      scripts: [...rootScripts, ...childScripts],
+      workspaceScriptCount: childScripts.length,
     },
   }
 }

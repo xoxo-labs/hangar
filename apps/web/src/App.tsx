@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import * as actions from "./actions"
 import { CommandPalette } from "./components/CommandPalette"
 import { ConfirmDialog } from "./components/ConfirmDialog"
+import { HelpDialog } from "./components/HelpDialog"
 import { HistoryWorkspace } from "./components/HistoryWorkspace"
 import { ProjectDialog } from "./components/ProjectDialog"
 import { ReleaseNotesWorkspace } from "./components/ReleaseNotesWorkspace"
@@ -12,11 +13,38 @@ import { StatusBar } from "./components/StatusBar"
 import { TabBar } from "./components/TabBar"
 import { TerminalPane } from "./components/TerminalPane"
 import { TutorialDialog } from "./components/TutorialDialog"
-import { useStore } from "./store"
+import { markCloseOnExit, useStore } from "./store"
 import { Button } from "./ui/Button"
+
+const MIN_SIDEBAR_WIDTH = 180
+const DEFAULT_SIDEBAR_WIDTH = 280
 
 export function App() {
   const [shortcutHintsVisible, setShortcutHintsVisible] = useState(false)
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = Number(window.localStorage.getItem("hangar.sidebarWidth"))
+    return Number.isFinite(saved) && saved >= MIN_SIDEBAR_WIDTH ? saved : DEFAULT_SIDEBAR_WIDTH
+  })
+
+  const resizeSidebar = (width: number) => {
+    const next = Math.round(Math.max(MIN_SIDEBAR_WIDTH, Math.min(width, window.innerWidth - 320)))
+    setSidebarWidth(next)
+    window.localStorage.setItem("hangar.sidebarWidth", String(next))
+  }
+
+  const startSidebarResize = (_clientX: number) => {
+    const onMove = (event: PointerEvent) => resizeSidebar(event.clientX)
+    const onUp = () => {
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+    }
+    document.body.style.cursor = "col-resize"
+    document.body.style.userSelect = "none"
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
+  }
   const sessions = useStore((s) => s.sessions)
   const activeId = useStore((s) => s.activeId)
   const waiting = useStore((s) => s.pending.find((tab) => tab.id === s.activeId))
@@ -28,14 +56,11 @@ export function App() {
   const inspectingId = useStore((s) => s.inspectingId)
   const closeInspector = useStore((s) => s.closeInspector)
   const openSettings = useStore((s) => s.openSettings)
+  const openHelp = useStore((s) => s.openHelp)
   const paletteOpen = useStore((s) => s.paletteOpen)
-  const openPalette = useStore((s) => s.openPalette)
-  const closePalette = useStore((s) => s.closePalette)
-  const confirming = useStore((s) => s.confirming)
-  const tutorialOpen = useStore((s) => s.tutorialOpen)
-  const toggleInspector = useStore((s) => s.toggleInspector)
 
   useEffect(() => window.hangarDesktop?.onOpenSettings(openSettings), [openSettings])
+  useEffect(() => window.hangarDesktop?.onOpenHelp(openHelp), [openHelp])
 
   // Holding the platform shortcut modifier reveals the remaining keys directly
   // on controls that have a shortcut. Capture makes this work over xterm too.
@@ -60,28 +85,92 @@ export function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey)) return
+      // This is an imperative window listener, so read the current Zustand
+      // snapshot on each keypress instead of resubscribing for every state change.
+      const state = useStore.getState()
+      const modalOpen =
+        state.confirming !== null ||
+        state.tutorialOpen ||
+        state.editorOpen ||
+        state.settingsOpen ||
+        state.helpOpen ||
+        state.paletteOpen
+
       if (event.key === ",") {
         event.preventDefault()
-        openSettings()
+        state.openSettings()
         return
       }
-      if (!event.shiftKey && event.key.toLowerCase() === "i" && activeId !== null && activeHistory === null && !releaseNotesActive) {
+      if (!event.altKey && event.key.toLowerCase() === "w") {
+        // Own ⌘W so Electron/the browser never closes the whole window. An open
+        // modal keeps its tab in place; Shift bypasses the running-session confirm.
         event.preventDefault()
-        toggleInspector(activeId)
+        if (modalOpen) return
+        if (state.releaseNotesActive) {
+          state.closeReleaseNotes()
+          return
+        }
+        if (state.activeHistory === "overview") {
+          state.closeHistory()
+          return
+        }
+        if (state.activeHistory !== null) {
+          state.closeHistoryRun(state.activeHistory)
+          return
+        }
+        const session = state.sessions.find((item) => item.id === state.activeId)
+        if (session) {
+          if (session.status === "running" && event.shiftKey) {
+            markCloseOnExit(session.id)
+            actions.stop(session.project, session.process)
+          } else if (session.status === "running") {
+            state.requestConfirm({ action: "stop-close", project: session.project, process: session.process })
+          } else actions.close(session)
+          return
+        }
+        const pending = state.pending.find((tab) => tab.id === state.activeId)
+        if (pending) state.closePending(pending.id)
+        return
+      }
+      if (!event.altKey && event.key.toLowerCase() === "r") {
+        // Replace browser/Electron reload with restart for the active process.
+        // Running processes ask first unless Shift is held.
+        event.preventDefault()
+        if (modalOpen || state.activeHistory !== null || state.releaseNotesActive) return
+        const session = state.sessions.find((item) => item.id === state.activeId)
+        if (session) {
+          if (session.status === "running" && !event.shiftKey) {
+            state.requestConfirm({ action: "restart", project: session.project, process: session.process })
+          } else actions.restart(session.project, session.process)
+          return
+        }
+        const pending = state.pending.find((tab) => tab.id === state.activeId)
+        if (pending) actions.start(pending.project, pending.process)
+        return
+      }
+      if (
+        !event.shiftKey &&
+        event.key.toLowerCase() === "i" &&
+        state.activeId !== null &&
+        state.activeHistory === null &&
+        !state.releaseNotesActive
+      ) {
+        event.preventDefault()
+        state.toggleInspector(state.activeId)
         return
       }
       // ⌘⇧K stays with the active terminal (clear scrollback), which claims it
       // on the capture phase; the shift split is what keeps the two apart.
       if (event.key.toLowerCase() === "k" && !event.shiftKey) {
         event.preventDefault()
-        if (paletteOpen) closePalette()
+        if (state.paletteOpen) state.closePalette()
         // A destructive confirm (or the tour) owns the keyboard until it is answered.
-        else if (confirming === null && !tutorialOpen) openPalette()
+        else if (state.confirming === null && !state.tutorialOpen) state.openPalette()
       }
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [openSettings, openPalette, closePalette, paletteOpen, confirming, tutorialOpen, activeId, activeHistory, releaseNotesActive, toggleInspector])
+  }, [])
 
   // A pane exists for every session that already has a terminal, plus the
   // active one — mounting it is what creates its terminal on first open.
@@ -94,8 +183,14 @@ export function App() {
   )
 
   return (
-    <div className={`grid h-full grid-cols-[280px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)]${shortcutHintsEnabled && shortcutHintsVisible ? " shortcut-hints" : ""}`}>
-      <Sidebar />
+    <div
+      className={`grid h-full grid-rows-[minmax(0,1fr)]${shortcutHintsEnabled && shortcutHintsVisible ? " shortcut-hints" : ""}`}
+      style={{ gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr)` }}
+    >
+      <Sidebar
+        onResizeStart={startSidebarResize}
+        onResizeBy={(delta) => resizeSidebar(sidebarWidth + delta)}
+      />
       <main className="col-start-2 row-start-1 flex min-h-0 min-w-0 flex-col bg-surface-1">
         <TabBar />
         <div className="relative min-h-0 flex-1">
@@ -122,6 +217,7 @@ export function App() {
       <StatusBar />
       <ProjectDialog />
       <SettingsDialog />
+      <HelpDialog />
       <TutorialDialog />
       <ConfirmDialog />
       {/* Mounted only while open: unmounting is what resets the query. */}

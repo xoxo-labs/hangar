@@ -1,5 +1,6 @@
 import { sessionId, type ThemeSetting } from "@hangar/contracts"
 import { Command } from "cmdk"
+import { BookOpen, CircleHelp } from "lucide-react"
 import { useMemo } from "react"
 import * as actions from "../actions"
 import { describe, toneOf } from "../status"
@@ -61,6 +62,7 @@ export function CommandPalette() {
   const openHistoryRun = useStore((s) => s.openHistoryRun)
   const openReleaseNotes = useStore((s) => s.openReleaseNotes)
   const openSettings = useStore((s) => s.openSettings)
+  const openHelp = useStore((s) => s.openHelp)
   const openTutorial = useStore((s) => s.openTutorial)
   const closePalette = useStore((s) => s.closePalette)
 
@@ -257,8 +259,13 @@ export function CommandPalette() {
             <Command.Item value="release notes" className={ITEM} onSelect={() => run(openReleaseNotes)}>
               <span className={GLYPH} aria-hidden="true">✦</span>Release notes
             </Command.Item>
-            <Command.Item value="tutorial" keywords={["tour", "help", "welcome", "onboarding"]} className={ITEM} onSelect={() => run(openTutorial)}>
-              <span className={GLYPH} aria-hidden="true">?</span>Tutorial
+            <Command.Item value="help shortcuts" keywords={["keyboard", "keys", "commands"]} className={ITEM} onSelect={() => run(openHelp)}>
+              <CircleHelp className="size-3 flex-none text-surface-9" aria-hidden="true" />
+              Help & keyboard shortcuts
+            </Command.Item>
+            <Command.Item value="tutorial" keywords={["tour", "welcome", "onboarding"]} className={ITEM} onSelect={() => run(openTutorial)}>
+              <BookOpen className="size-3 flex-none text-surface-9" aria-hidden="true" />
+              Tutorial
             </Command.Item>
             {THEMES.map(([theme, label]) => (
               <Command.Item
@@ -281,8 +288,13 @@ export function CommandPalette() {
             <Command.Item value="settings" className={ITEM} onSelect={() => run(openSettings)}>
               <span className={GLYPH} aria-hidden="true">⚙</span>Settings
             </Command.Item>
-            <Command.Item value="new project" className={ITEM} onSelect={() => run(() => openEditor())}>
-              <span className={GLYPH} aria-hidden="true">+</span>New project…
+            <Command.Item
+              value="add project"
+              keywords={["new", "folder", "import", "workspace", "monorepo"]}
+              className={ITEM}
+              onSelect={() => run(() => openEditor())}
+            >
+              <span className={GLYPH} aria-hidden="true">+</span>Add project…
             </Command.Item>
             {projects.map((project) => (
               <Command.Item

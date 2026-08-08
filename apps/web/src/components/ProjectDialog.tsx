@@ -1,4 +1,5 @@
 import type { Project, ProjectProcess } from "@hangar/contracts"
+import { FolderOpen } from "lucide-react"
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
 import * as actions from "../actions"
 import { useStore } from "../store"
@@ -25,7 +26,7 @@ const ELLIPSIS = "overflow-hidden text-ellipsis whitespace-nowrap"
 
 /** A process being edited. `id` only keeps React keys stable across row removals. */
 type Row = { id: number; name: string; cmd: string; cwd: string; shell: boolean }
-type PackageScript = { name: string; value: string; cmd: string }
+type PackageScript = { name: string; value: string; cmd: string; cwd?: string; workspace?: string }
 type ProjectInfo = {
   path: string
   exists: boolean
@@ -33,7 +34,21 @@ type ProjectInfo = {
     name: string | null
     manager: string
     scripts: PackageScript[]
+    workspaceScriptCount?: number
   }
+}
+
+type ScriptGroup = { label: string; scripts: PackageScript[] }
+
+function groupPackageScripts(scripts: PackageScript[]): ScriptGroup[] {
+  const groups = new Map<string, PackageScript[]>()
+  for (const script of scripts) {
+    const label = script.workspace ?? (script.cwd || "Root")
+    const group = groups.get(label)
+    if (group) group.push(script)
+    else groups.set(label, [script])
+  }
+  return Array.from(groups, ([label, entries]) => ({ label, scripts: entries }))
 }
 
 let nextRowId = 0
@@ -77,6 +92,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null)
   const [inspecting, setInspecting] = useState(false)
   const [browsing, setBrowsing] = useState(false)
+  const [manual, setManual] = useState(editing === null && !window.hangarDesktop)
 
   const nameEdited = useRef(false)
 
@@ -168,6 +184,45 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
     }
   }
 
+  const choosingFolder = editing === null && !manual && path.trim() === ""
+  if (choosingFolder) {
+    return (
+      <Overlay onDismiss={closeEditor}>
+        <Dialog label="Add project" className="w-[min(620px,100%)]!" onKeyDown={onKeyDown}>
+          <DialogHeader title="Add project" />
+          <DialogBody className="gap-3 py-5">
+            <button
+              type="button"
+              autoFocus
+              className="group flex min-h-[190px] w-full flex-col items-center justify-center rounded-lg border border-dashed border-surface-6 bg-surface-1 px-8 text-center hover:border-accent-8 hover:bg-accent-a2 focus:border-accent-9 focus:shadow-[0_0_0_2px_var(--color-accent-a3)] focus:outline-none"
+              disabled={browsing}
+              onClick={() => void browse()}
+            >
+              <span className="grid size-11 place-items-center rounded-full border border-surface-5 bg-surface-a3 text-surface-10 group-hover:text-accent-10">
+                <FolderOpen size={21} strokeWidth={1.6} />
+              </span>
+              <strong className="mt-3 text-md font-semibold text-surface-12">
+                {browsing ? "Opening folder picker…" : "Choose a project folder"}
+              </strong>
+              <span className="mt-1 max-w-[390px] text-base leading-relaxed text-surface-9">
+                Hangar will detect package.json scripts, the package manager, and monorepo workspaces.
+              </span>
+            </button>
+            <div className="flex items-center gap-3 text-xs text-surface-8">
+              <span className="h-px flex-1 bg-surface-5" />
+              or
+              <span className="h-px flex-1 bg-surface-5" />
+            </div>
+            <Button className="self-center" onClick={() => setManual(true)}>Add manually</Button>
+          </DialogBody>
+          <DialogFooter>
+            <Button onClick={closeEditor}>Cancel</Button>
+          </DialogFooter>
+        </Dialog>
+      </Overlay>
+    )
+  }
+
   const addPackageScript = (script: PackageScript): void => {
     setRows((current) => {
       if (current.some((row) => row.name.trim() === script.name)) return current
@@ -177,47 +232,68 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
       if (blank) {
         return current.map((row) =>
           row.id === blank.id
-            ? { ...row, name: script.name, cmd: script.cmd, shell: false }
+            ? { ...row, name: script.name, cmd: script.cmd, cwd: script.cwd ?? "", shell: false }
             : row,
         )
       }
-      return [...current, { ...emptyRow(), name: script.name, cmd: script.cmd }]
+      return [...current, { ...emptyRow(), name: script.name, cmd: script.cmd, cwd: script.cwd ?? "" }]
     })
   }
 
   return (
     // mousedown (not click) so a drag that ends on the backdrop keeps the dialog up.
     <Overlay onDismiss={closeEditor}>
-      <Dialog label={editing === null ? "New project" : `Edit ${editing}`} onKeyDown={onKeyDown}>
-        <DialogHeader title={editing === null ? "New project" : "Edit project"} />
+      <Dialog
+        label={editing === null ? "Add project" : `Edit ${editing}`}
+        className="w-[min(620px,100%)]!"
+        onKeyDown={onKeyDown}
+      >
+        <DialogHeader title={editing === null ? "Add project" : "Edit project"} />
 
         <DialogBody>
-          <div className={FIELD}>
-            <label className={FIELD_LABEL} htmlFor="project-path">Path</label>
-            <div className="flex w-full gap-1.5">
-              <TextInput
-                mono
-                id="project-path"
-                value={path}
-                spellCheck={false}
-                autoComplete="off"
-                placeholder="~/code/my-app"
-                onChange={(e) => setPath(e.target.value)}
-              />
-              {window.hangarDesktop && (
-                <Button
-                  className="flex-none whitespace-nowrap"
-                  disabled={browsing}
-                  onClick={() => void browse()}
-                >
-                  {browsing ? "Opening…" : "Choose…"}
-                </Button>
-              )}
+          {editing === null && !manual && window.hangarDesktop ? (
+            <div className={FIELD}>
+              <span className={FIELD_LABEL}>Project folder</span>
+              <div className="flex w-full min-w-0 items-center gap-2 rounded-md border border-surface-5 bg-surface-1 px-2 py-1.5">
+                <FolderOpen size={14} className="flex-none text-surface-9" />
+                <code className={cx(ELLIPSIS, "flex-1 text-sm text-surface-11")} title={path}>{path}</code>
+                <button type="button" className={cx(TEXT_BUTTON, "flex-none")} disabled={browsing} onClick={() => void browse()}>
+                  {browsing ? "Opening…" : "Change…"}
+                </button>
+              </div>
+              <span className={FIELD_HINT}>
+                {inspecting ? "Inspecting package.json and workspaces…" : "Folder selected; nothing will be copied or moved."}
+              </span>
             </div>
-            <span className={FIELD_HINT}>
-              {inspecting ? "Looking for package.json…" : <><code>~</code> expands to your home directory.</>}
-            </span>
-          </div>
+          ) : (
+            <div className={FIELD}>
+              <label className={FIELD_LABEL} htmlFor="project-path">Path</label>
+              <div className="flex w-full gap-1.5">
+                <TextInput
+                  mono
+                  id="project-path"
+                  autoFocus={editing === null && manual}
+                  value={path}
+                  spellCheck={false}
+                  autoComplete="off"
+                  placeholder="~/code/my-app"
+                  onChange={(e) => setPath(e.target.value)}
+                />
+                {window.hangarDesktop && (
+                  <Button
+                    className="flex-none whitespace-nowrap"
+                    disabled={browsing}
+                    onClick={() => void browse()}
+                  >
+                    {browsing ? "Opening…" : "Choose…"}
+                  </Button>
+                )}
+              </div>
+              <span className={FIELD_HINT}>
+                {inspecting ? "Inspecting package.json and workspaces…" : <><code>~</code> expands to your home directory.</>}
+              </span>
+            </div>
+          )}
 
           <Field
             label="Name"
@@ -243,34 +319,51 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
           {projectInfo?.package && projectInfo.package.scripts.length > 0 && (
             <div className={cx(FIELD, "w-full")}>
               <span className={FIELD_LABEL}>
-                package.json scripts · {projectInfo.package.manager}
+                {projectInfo.package.workspaceScriptCount
+                  ? `Monorepo scripts · ${projectInfo.package.manager}`
+                  : `package.json scripts · ${projectInfo.package.manager}`}
               </span>
-              <div className="max-h-[150px] w-full overflow-y-auto rounded-md border border-surface-5 bg-surface-1">
-                {projectInfo.package.scripts.map((script) => {
-                  const added = rows.some((row) => row.name.trim() === script.name)
-                  return (
-                    <div
-                      className="grid min-h-[28px] grid-cols-[minmax(70px,0.7fr)_minmax(120px,2fr)_42px] items-center gap-2 border-b border-surface-4 px-[7px] py-[3px] last:border-b-0"
-                      key={script.name}
-                      title={script.value}
-                    >
-                      <code className={cx(ELLIPSIS, "text-sm text-surface-12")}>{script.name}</code>
-                      <span className={cx(ELLIPSIS, "font-mono text-xs text-surface-9")}>
-                        {script.value}
-                      </span>
-                      <button
-                        type="button"
-                        className={cx(TEXT_BUTTON, "justify-self-end")}
-                        disabled={added}
-                        onClick={() => addPackageScript(script)}
-                      >
-                        {added ? "Added" : "+ Add"}
-                      </button>
+              <div className="max-h-[210px] w-full overflow-y-auto rounded-md border border-surface-5 bg-surface-1">
+                {groupPackageScripts(projectInfo.package.scripts).map((group) => (
+                  <section key={group.label}>
+                    <div className="sticky top-0 z-[1] flex items-center border-b border-surface-5 bg-surface-2 px-2 py-1 text-2xs font-semibold tracking-caps text-surface-9 uppercase">
+                      <span className="truncate">{group.label}</span>
+                      <span className="ml-auto font-normal tabular-nums text-surface-8">{group.scripts.length}</span>
                     </div>
-                  )
-                })}
+                    {group.scripts.map((script) => {
+                      const added = rows.some((row) => row.name.trim() === script.name)
+                      const displayName = script.workspace
+                        ? script.name.slice(script.workspace.length + 1)
+                        : script.name
+                      return (
+                        <div
+                          className="grid min-h-[28px] grid-cols-[minmax(70px,0.7fr)_minmax(120px,2fr)_42px] items-center gap-2 border-b border-surface-4 px-[7px] py-[3px] last:border-b-0"
+                          key={script.name}
+                          title={`${script.name}: ${script.value}`}
+                        >
+                          <code className={cx(ELLIPSIS, "text-sm text-surface-12")}>{displayName}</code>
+                          <span className={cx(ELLIPSIS, "font-mono text-xs text-surface-9")}>
+                            {script.value}
+                          </span>
+                          <button
+                            type="button"
+                            className={cx(TEXT_BUTTON, "justify-self-end")}
+                            disabled={added}
+                            onClick={() => addPackageScript(script)}
+                          >
+                            {added ? "Added" : "+ Add"}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </section>
+                ))}
               </div>
-              <span className={FIELD_HINT}>Add any scripts you want, then edit them or add custom commands below.</span>
+              <span className={FIELD_HINT}>
+                {projectInfo.package.workspaceScriptCount
+                  ? "Workspace scripts use package/script names and run from that package's folder."
+                  : "Add any scripts you want, then edit them or add custom commands below."}
+              </span>
             </div>
           )}
 
