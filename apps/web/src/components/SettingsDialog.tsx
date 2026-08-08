@@ -1,4 +1,10 @@
-import { DEFAULT_SETTINGS, type AppSettings, type BrowserChoice, type ShareHostChoice, type ThemeSetting } from "@hangar/contracts"
+import {
+  DEFAULT_SETTINGS,
+  type AppSettings,
+  type BrowserChoice,
+  type ShareHostChoice,
+  type ThemeSetting,
+} from "@hangar/contracts"
 import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react"
 import * as actions from "../actions"
 import { useStore } from "../store"
@@ -163,11 +169,24 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
                   onChange={(e) => patchLinks({ browser: e.target.value as BrowserChoice })}
                 >
                   <option value="system">System default</option>
-                  {window.hangarDesktop && <><option value="safari">Safari</option><option value="chrome">Google Chrome</option><option value="arc">Arc</option><option value="firefox">Firefox</option><option value="brave">Brave</option><option value="edge">Microsoft Edge</option></>}
+                  {window.hangarDesktop && (
+                    <>
+                      <option value="safari">Safari</option>
+                      <option value="chrome">Google Chrome</option>
+                      <option value="arc">Arc</option>
+                      <option value="firefox">Firefox</option>
+                      <option value="brave">Brave</option>
+                      <option value="edge">Microsoft Edge</option>
+                    </>
+                  )}
                 </Select>
               </Field>
               <Field label="Copy links using">
-                <Select className={SELECT_HOVER} value={links.shareHost} onChange={(e) => patchLinks({ shareHost: e.target.value as ShareHostChoice })}>
+                <Select
+                  className={SELECT_HOVER}
+                  value={links.shareHost}
+                  onChange={(e) => patchLinks({ shareHost: e.target.value as ShareHostChoice })}
+                >
                   <option value="auto">Automatic</option>
                   <option value="lan">Local network</option>
                   <option value="tailscale">Tailscale</option>
@@ -175,10 +194,24 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
                 </Select>
               </Field>
             </div>
-            {links.shareHost === "custom" && <Field label="Custom host" hint="Hostname or IP address, without a port." className="mt-2.5 max-w-[260px]">
-              <TextInput mono value={links.customHost} placeholder="dev.example.test" spellCheck={false} onChange={(e) => patchLinks({ customHost: e.target.value })} />
-            </Field>}
-            <p className="mt-2 mb-0 text-xs leading-normal text-surface-9">LAN links work on the same Wi-Fi. Tailscale links work on devices in your tailnet.</p>
+            {links.shareHost === "custom" && (
+              <Field
+                label="Custom host"
+                hint="Hostname or IP address, without a port."
+                className="mt-2.5 max-w-[260px]"
+              >
+                <TextInput
+                  mono
+                  value={links.customHost}
+                  placeholder="dev.example.test"
+                  spellCheck={false}
+                  onChange={(e) => patchLinks({ customHost: e.target.value })}
+                />
+              </Field>
+            )}
+            <p className="mt-2 mb-0 text-xs leading-normal text-surface-9">
+              LAN links work on the same Wi-Fi. Tailscale links work on devices in your tailnet.
+            </p>
           </Section>
           <Section title="Terminal behavior">
             <ToggleRow
@@ -199,7 +232,9 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
                     <option value={terminal.fontFamily}>Custom</option>
                   )}
                   {FONT_OPTIONS.map((option) => (
-                    <option key={option.label} value={option.value}>{option.label}</option>
+                    <option key={option.label} value={option.value}>
+                      {option.label}
+                    </option>
                   ))}
                 </Select>
               </Field>
@@ -230,18 +265,47 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
             />
             <div className={cx("mt-3 flex max-w-[180px] flex-col gap-3", !history.enabled && "opacity-55")}>
               <Field label="Retention">
-                <Select className={SELECT_HOVER} disabled={!history.enabled} value={history.retentionDays ?? "forever"} onChange={(e) => patchHistory({ retentionDays: e.target.value === "forever" ? null : Number(e.target.value) as 7 | 30 | 90 })}>
-                  <option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option><option value="forever">Forever</option>
+                <Select
+                  className={SELECT_HOVER}
+                  disabled={!history.enabled}
+                  value={history.retentionDays ?? "forever"}
+                  onChange={(e) =>
+                    patchHistory({
+                      retentionDays: e.target.value === "forever" ? null : (Number(e.target.value) as 7 | 30 | 90),
+                    })
+                  }
+                >
+                  <option value={7}>7 days</option>
+                  <option value={30}>30 days</option>
+                  <option value={90}>90 days</option>
+                  <option value="forever">Forever</option>
                 </Select>
               </Field>
             </div>
           </Section>
           <Section title="About">
             <div className="flex items-center justify-between rounded-md border border-surface-5 p-[10px]">
-              <div><strong className="block text-base font-book">Hangar</strong><span className="text-xs tabular-nums text-surface-9">Version {version}</span></div>
+              <div>
+                <strong className="block text-base font-book">Hangar</strong>
+                <span className="text-xs tabular-nums text-surface-9">Version {version}</span>
+              </div>
               <div className="flex gap-1.5">
-                <Button onClick={() => { close(); openTutorial() }}>Replay tutorial</Button>
-                <Button onClick={() => { close(); openReleaseNotes() }}>Release notes</Button>
+                <Button
+                  onClick={() => {
+                    close()
+                    openTutorial()
+                  }}
+                >
+                  Replay tutorial
+                </Button>
+                <Button
+                  onClick={() => {
+                    close()
+                    openReleaseNotes()
+                  }}
+                >
+                  Release notes
+                </Button>
               </div>
             </div>
           </Section>
@@ -255,23 +319,58 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
             <div className={cx("mt-3 flex flex-col gap-3", !log.enabled && "opacity-55")}>
               <Field label="Logs directory">
                 <div className="flex w-full gap-1.5">
-                  <TextInput mono value={log.directory} disabled={!log.enabled} onChange={(e) => patch({ directory: e.target.value })} />
-                  {window.hangarDesktop && <Button disabled={!log.enabled} onClick={() => void browse()}>Choose…</Button>}
-                  {window.hangarDesktop && <Button disabled={!log.enabled} onClick={() => void window.hangarDesktop?.openPath(log.directory)}>Open</Button>}
+                  <TextInput
+                    mono
+                    value={log.directory}
+                    disabled={!log.enabled}
+                    onChange={(e) => patch({ directory: e.target.value })}
+                  />
+                  {window.hangarDesktop && (
+                    <Button disabled={!log.enabled} onClick={() => void browse()}>
+                      Choose…
+                    </Button>
+                  )}
+                  {window.hangarDesktop && (
+                    <Button disabled={!log.enabled} onClick={() => void window.hangarDesktop?.openPath(log.directory)}>
+                      Open
+                    </Button>
+                  )}
                 </div>
               </Field>
               <div className="grid grid-cols-[1fr_1.25fr_1fr] gap-2.5">
                 <Field label="Retention">
-                  <Select className={SELECT_HOVER} disabled={!log.enabled} value={log.retentionDays ?? "forever"} onChange={(e) => patch({ retentionDays: e.target.value === "forever" ? null : Number(e.target.value) as 7 | 30 })}>
-                    <option value={7}>7 days</option><option value={30}>30 days</option><option value="forever">Forever</option>
+                  <Select
+                    className={SELECT_HOVER}
+                    disabled={!log.enabled}
+                    value={log.retentionDays ?? "forever"}
+                    onChange={(e) =>
+                      patch({ retentionDays: e.target.value === "forever" ? null : (Number(e.target.value) as 7 | 30) })
+                    }
+                  >
+                    <option value={7}>7 days</option>
+                    <option value={30}>30 days</option>
+                    <option value="forever">Forever</option>
                   </Select>
                 </Field>
                 <Field label="Maximum file size (MB)">
-                  <TextInput type="number" min={1} max={1000} disabled={!log.enabled} value={log.maxFileSizeMb} onChange={(e) => patch({ maxFileSizeMb: Math.max(1, Number(e.target.value)) })} />
+                  <TextInput
+                    type="number"
+                    min={1}
+                    max={1000}
+                    disabled={!log.enabled}
+                    value={log.maxFileSizeMb}
+                    onChange={(e) => patch({ maxFileSizeMb: Math.max(1, Number(e.target.value)) })}
+                  />
                 </Field>
                 <Field label="Format">
-                  <Select className={SELECT_HOVER} disabled={!log.enabled} value={log.format} onChange={(e) => patch({ format: e.target.value as "plain" | "ansi" })}>
-                    <option value="plain">Plain text</option><option value="ansi">Raw ANSI</option>
+                  <Select
+                    className={SELECT_HOVER}
+                    disabled={!log.enabled}
+                    value={log.format}
+                    onChange={(e) => patch({ format: e.target.value as "plain" | "ansi" })}
+                  >
+                    <option value="plain">Plain text</option>
+                    <option value="ansi">Raw ANSI</option>
                   </Select>
                 </Field>
               </div>
@@ -282,7 +381,9 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
         <DialogFooter>
           <span className="flex-1" />
           <Button onClick={close}>Cancel</Button>
-          <Button variant="primary" data-shortcut-hint="↵" onClick={save}>Save</Button>
+          <Button variant="primary" data-shortcut-hint="↵" onClick={save}>
+            Save
+          </Button>
         </DialogFooter>
       </Dialog>
     </Overlay>

@@ -52,10 +52,7 @@ function ensureSpawnHelperExecutable(): void {
   }
 }
 
-type SessionLog = Pick<
-  Session,
-  "logPath" | "logStream" | "logBytes" | "logMaxBytes" | "logFormat"
->
+type SessionLog = Pick<Session, "logPath" | "logStream" | "logBytes" | "logMaxBytes" | "logFormat">
 
 function safeSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-")
@@ -213,11 +210,7 @@ export class SessionManager {
   private notifyState: () => void
   private getSettings: () => AppSettings
 
-  constructor(
-    broadcast: (msg: ServerMsg) => void,
-    notifyState: () => void,
-    getSettings: () => AppSettings,
-  ) {
+  constructor(broadcast: (msg: ServerMsg) => void, notifyState: () => void, getSettings: () => AppSettings) {
     this.broadcast = broadcast
     this.notifyState = notifyState
     this.getSettings = getSettings
@@ -243,9 +236,7 @@ export class SessionManager {
   }
 
   snapshots(): Array<{ id: SessionId; data: string }> {
-    return [...this.sessions.values()]
-      .filter((s) => s.buffer.length > 0)
-      .map((s) => ({ id: s.id, data: s.buffer }))
+    return [...this.sessions.values()].filter((s) => s.buffer.length > 0).map((s) => ({ id: s.id, data: s.buffer }))
   }
 
   /** Start all (or one) of a project's processes. Running sessions are left alone. */
@@ -253,9 +244,7 @@ export class SessionManager {
     ensureSpawnHelperExecutable()
     const root = expandHome(project.path)
     if (!existsSync(root)) throw new Error(`project path does not exist: ${root}`)
-    const targets = only
-      ? project.processes.filter((p) => p.name === only)
-      : project.processes
+    const targets = only ? project.processes.filter((p) => p.name === only) : project.processes
     if (targets.length === 0) throw new Error(`no process named ${JSON.stringify(only)}`)
 
     for (const proc of targets) {
@@ -352,25 +341,28 @@ export class SessionManager {
         session.replayStream?.end()
         session.replayStream = null
         if (session.historyEnabled) {
-          appendHistory({
-            runId: session.runId,
-            id: session.id,
-            project: session.project,
-            process: session.process,
-            cmd: session.cmd,
-            startedAt: session.startedAt,
-            endedAt: session.endedAt,
-            durationMs: session.endedAt - session.startedAt,
-            exitCode,
-            reason: session.stopRequested ? "stopped" : exitCode === 0 ? "completed" : "failed",
-            peakCpuPercent: session.metrics.peakCpuPercent,
-            peakMemoryBytes: session.metrics.peakMemoryBytes,
-            totalOutputBytes: session.metrics.outputBytes,
-            ...(session.historyMetrics.length > 0 ? { metricSamples: session.historyMetrics } : {}),
-            ...(session.replayCaptured ? { hasReplay: true } : {}),
-            ...(session.replayTruncated ? { replayTruncated: true } : {}),
-            ...(session.logPath ? { logPath: session.logPath } : {}),
-          }, this.getSettings())
+          appendHistory(
+            {
+              runId: session.runId,
+              id: session.id,
+              project: session.project,
+              process: session.process,
+              cmd: session.cmd,
+              startedAt: session.startedAt,
+              endedAt: session.endedAt,
+              durationMs: session.endedAt - session.startedAt,
+              exitCode,
+              reason: session.stopRequested ? "stopped" : exitCode === 0 ? "completed" : "failed",
+              peakCpuPercent: session.metrics.peakCpuPercent,
+              peakMemoryBytes: session.metrics.peakMemoryBytes,
+              totalOutputBytes: session.metrics.outputBytes,
+              ...(session.historyMetrics.length > 0 ? { metricSamples: session.historyMetrics } : {}),
+              ...(session.replayCaptured ? { hasReplay: true } : {}),
+              ...(session.replayTruncated ? { replayTruncated: true } : {}),
+              ...(session.logPath ? { logPath: session.logPath } : {}),
+            },
+            this.getSettings(),
+          )
         }
         this.broadcast({ type: "exit", id, exitCode })
         const restartAs = this.pendingRestarts.get(id)
@@ -395,9 +387,7 @@ export class SessionManager {
    * and respawn when their exit lands; everything else just starts.
    */
   restart(project: Project, only?: string): void {
-    const targets = only
-      ? project.processes.filter((p) => p.name === only)
-      : project.processes
+    const targets = only ? project.processes.filter((p) => p.name === only) : project.processes
     if (targets.length === 0) throw new Error(`no process named ${JSON.stringify(only)}`)
     for (const proc of targets) {
       const id = sessionId(project.name, proc.name)
@@ -484,9 +474,10 @@ export class SessionManager {
           (session.metrics.outputBytes - session.outputBytesAtLastSample) / elapsed,
         )
         session.outputBytesAtLastSample = session.metrics.outputBytes
-        const listening = this.sampleNumber % 3 === 1
-          ? await listeningPorts(tree.map((item) => item.pid))
-          : { ports: session.metrics.ports, bindings: session.metrics.portBindings ?? {} }
+        const listening =
+          this.sampleNumber % 3 === 1
+            ? await listeningPorts(tree.map((item) => item.pid))
+            : { ports: session.metrics.ports, bindings: session.metrics.portBindings ?? {} }
         session.metrics = {
           ...session.metrics,
           cpuPercent: Math.round(cpuPercent * 10) / 10,

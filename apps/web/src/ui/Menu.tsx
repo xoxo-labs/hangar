@@ -4,9 +4,7 @@ import { IconButton } from "./IconButton"
 /** Drops a divider between two groups of items. */
 export const MENU_SEPARATOR = "separator"
 
-export type MenuItem =
-  | typeof MENU_SEPARATOR
-  | { label: string; disabled?: boolean; onSelect: () => void }
+export type MenuItem = typeof MENU_SEPARATOR | { label: string; disabled?: boolean; onSelect: () => void }
 
 const ITEM =
   "w-full rounded-sm px-2 py-1 text-left text-base text-surface-11 enabled:hover:bg-surface-a3 enabled:hover:text-surface-12 disabled:cursor-default disabled:opacity-30"

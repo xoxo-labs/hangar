@@ -20,7 +20,8 @@ export function Overlay({ onDismiss, children }: { onDismiss: () => void; childr
 
 type DialogProps = HTMLAttributes<HTMLDivElement> & { label: string }
 
-const FOCUSABLE = "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [href], [tabindex]:not([tabindex='-1'])"
+const FOCUSABLE =
+  "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [href], [tabindex]:not([tabindex='-1'])"
 
 export function Dialog({ label, className, onKeyDown, ...rest }: DialogProps) {
   const ref = useRef<HTMLDivElement>(null)
@@ -88,5 +89,10 @@ export function DialogBody({ className, ...rest }: HTMLAttributes<HTMLDivElement
 }
 
 export function DialogFooter({ className, ...rest }: HTMLAttributes<HTMLElement>) {
-  return <footer className={cx("flex items-center justify-end gap-2 border-t border-surface-4 px-4 py-[11px]", className)} {...rest} />
+  return (
+    <footer
+      className={cx("flex items-center justify-end gap-2 border-t border-surface-4 px-4 py-[11px]", className)}
+      {...rest}
+    />
+  )
 }

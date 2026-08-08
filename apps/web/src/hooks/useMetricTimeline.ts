@@ -31,15 +31,19 @@ export function useMetricTimeline(sessionId: string, allHistory: SessionMetricPo
     return Math.min(1, elapsed / RANGE_MS[range])
   }, [history, range])
 
-  useEffect(() => subscribeToMetricSelection(sessionId, (selection) => {
-    if (selection === null) {
-      setSelectedRange(null)
-      return
-    }
-    const start = history.findIndex((point) => point.sampledAt === selection.startSampledAt)
-    const end = history.findIndex((point) => point.sampledAt === selection.endSampledAt)
-    setSelectedRange(start < 0 || end < 0 ? null : [Math.min(start, end), Math.max(start, end)])
-  }), [history, sessionId])
+  useEffect(
+    () =>
+      subscribeToMetricSelection(sessionId, (selection) => {
+        if (selection === null) {
+          setSelectedRange(null)
+          return
+        }
+        const start = history.findIndex((point) => point.sampledAt === selection.startSampledAt)
+        const end = history.findIndex((point) => point.sampledAt === selection.endSampledAt)
+        setSelectedRange(start < 0 || end < 0 ? null : [Math.min(start, end), Math.max(start, end)])
+      }),
+    [history, sessionId],
+  )
 
   const setRange = (next: MetricRange) => {
     setRangeState(next)

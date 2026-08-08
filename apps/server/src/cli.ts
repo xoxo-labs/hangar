@@ -1,14 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util"
 import { resolve } from "node:path"
-import {
-  expandHome,
-  findProject,
-  loadRegistry,
-  registryPath,
-  saveRegistry,
-  validateProject,
-} from "./registry.ts"
+import { expandHome, findProject, loadRegistry, registryPath, saveRegistry, validateProject } from "./registry.ts"
 import { startProject } from "./start.ts"
 import type { Project, ProjectProcess } from "@hangar/contracts"
 

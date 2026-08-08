@@ -1,6 +1,13 @@
 import type { ClientMsg, ServerMsg } from "@hangar/contracts"
 import { takeCloseOnExit, useStore } from "./store"
-import { applyTerminalSettings, disposeTerminal, noteExit, recordMetricPosition, writeOutput, writeSnapshot } from "./terminals"
+import {
+  applyTerminalSettings,
+  disposeTerminal,
+  noteExit,
+  recordMetricPosition,
+  writeOutput,
+  writeSnapshot,
+} from "./terminals"
 import { applyThemeSetting } from "./theme"
 
 const MIN_BACKOFF = 500

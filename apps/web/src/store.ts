@@ -112,7 +112,12 @@ type Store = {
   /** Stop/restart waiting in the confirm dialog; null when it is closed. */
   confirming: ConfirmRequest | null
 
-  applyState: (projects: Project[], sessions: SessionInfo[], history: SessionHistoryEntry[], settings: AppSettings) => void
+  applyState: (
+    projects: Project[],
+    sessions: SessionInfo[],
+    history: SessionHistoryEntry[],
+    settings: AppSettings,
+  ) => void
   updateMetrics: (id: SessionId, runId: string, metrics: SessionMetrics) => void
   setStatus: (status: ConnectionStatus) => void
   setActive: (id: SessionId | null) => void
@@ -205,8 +210,7 @@ export const useStore = create<Store>((set) => ({
         (tab) =>
           !live.has(tab.id) &&
           projects.some(
-            (project) =>
-              project.name === tab.project && project.processes.some((p) => p.name === tab.process),
+            (project) => project.name === tab.project && project.processes.some((p) => p.name === tab.process),
           ),
       )
 
@@ -216,8 +220,7 @@ export const useStore = create<Store>((set) => ({
       const stillOpen =
         state.activeId !== null &&
         (ordered.some((s) => s.id === state.activeId) || pending.some((tab) => tab.id === state.activeId))
-      const activeId =
-        focus?.id ?? (stillOpen ? state.activeId : (ordered.at(-1)?.id ?? null))
+      const activeId = focus?.id ?? (stillOpen ? state.activeId : (ordered.at(-1)?.id ?? null))
 
       const metricHistory = Object.fromEntries(
         Object.entries(state.metricHistory).filter(([id]) => ordered.some((session) => session.id === id)),
@@ -230,7 +233,9 @@ export const useStore = create<Store>((set) => ({
       const activeHistory = focus
         ? null
         : state.activeHistory !== null && state.activeHistory !== "overview" && !validRuns.has(state.activeHistory)
-          ? (state.historyOpen ? "overview" : null)
+          ? state.historyOpen
+            ? "overview"
+            : null
           : state.activeHistory
       const validTabKeys = new Set([
         ...ordered.map((session) => `session:${session.id}`),
@@ -243,7 +248,20 @@ export const useStore = create<Store>((set) => ({
       tabOrder.push(...validTabKeys)
       const releaseNotesActive = focus ? false : state.releaseNotesActive
       const nextActiveId = activeHistory === null && !releaseNotesActive ? activeId : null
-      return { projects, sessions: ordered, pending, history, historyTabs, historyReplays, metricHistory, activeId: nextActiveId, activeHistory, releaseNotesActive, tabOrder, settings }
+      return {
+        projects,
+        sessions: ordered,
+        pending,
+        history,
+        historyTabs,
+        historyReplays,
+        metricHistory,
+        activeId: nextActiveId,
+        activeHistory,
+        releaseNotesActive,
+        tabOrder,
+        settings,
+      }
     }),
 
   updateMetrics: (id, runId, metrics) =>
@@ -259,9 +277,7 @@ export const useStore = create<Store>((set) => ({
         outputBytesPerSecond: metrics.outputBytesPerSecond,
       }
       return {
-        sessions: state.sessions.map((session) =>
-          session.id === id ? { ...session, metrics } : session,
-        ),
+        sessions: state.sessions.map((session) => (session.id === id ? { ...session, metrics } : session)),
         // Keep up to six hours at the server's two-second sampling interval.
         metricHistory: { ...state.metricHistory, [id]: [...previous, point].slice(-10_800) },
       }
@@ -293,22 +309,26 @@ export const useStore = create<Store>((set) => ({
       ...(state.activeId === id ? { activeId: state.sessions.at(-1)?.id ?? null } : {}),
     })),
 
-  openHistory: () => set((state) => ({
-    activeId: null,
-    activeHistory: "overview",
-    historyOpen: true,
-    releaseNotesActive: false,
-    tabOrder: state.tabOrder.includes("history") ? state.tabOrder : [...state.tabOrder, "history"],
-  })),
+  openHistory: () =>
+    set((state) => ({
+      activeId: null,
+      activeHistory: "overview",
+      historyOpen: true,
+      releaseNotesActive: false,
+      tabOrder: state.tabOrder.includes("history") ? state.tabOrder : [...state.tabOrder, "history"],
+    })),
 
-  closeHistory: () => set((state) => ({
-    historyOpen: false,
-    tabOrder: state.tabOrder.filter((key) => key !== "history"),
-    ...(state.activeHistory === "overview" ? {
-      activeHistory: null,
-      activeId: state.sessions.at(-1)?.id ?? null,
-    } : {}),
-  })),
+  closeHistory: () =>
+    set((state) => ({
+      historyOpen: false,
+      tabOrder: state.tabOrder.filter((key) => key !== "history"),
+      ...(state.activeHistory === "overview"
+        ? {
+            activeHistory: null,
+            activeId: state.sessions.at(-1)?.id ?? null,
+          }
+        : {}),
+    })),
 
   openHistoryRun: (runId) =>
     set((state) => ({
@@ -323,33 +343,38 @@ export const useStore = create<Store>((set) => ({
     set((state) => ({
       historyTabs: state.historyTabs.filter((id) => id !== runId),
       tabOrder: state.tabOrder.filter((key) => key !== `history:${runId}`),
-      ...(state.activeHistory === runId ? {
-        activeHistory: state.historyOpen ? "overview" as const : null,
-        activeId: state.historyOpen ? null : (state.sessions.at(-1)?.id ?? null),
-      } : {}),
+      ...(state.activeHistory === runId
+        ? {
+            activeHistory: state.historyOpen ? ("overview" as const) : null,
+            activeId: state.historyOpen ? null : (state.sessions.at(-1)?.id ?? null),
+          }
+        : {}),
     })),
 
-  openReleaseNotes: () => set((state) => ({
-    activeId: null,
-    activeHistory: null,
-    releaseNotesOpen: true,
-    releaseNotesActive: true,
-    tabOrder: state.tabOrder.includes("release-notes") ? state.tabOrder : [...state.tabOrder, "release-notes"],
-  })),
+  openReleaseNotes: () =>
+    set((state) => ({
+      activeId: null,
+      activeHistory: null,
+      releaseNotesOpen: true,
+      releaseNotesActive: true,
+      tabOrder: state.tabOrder.includes("release-notes") ? state.tabOrder : [...state.tabOrder, "release-notes"],
+    })),
 
-  closeReleaseNotes: () => set((state) => ({
-    releaseNotesOpen: false,
-    releaseNotesActive: false,
-    tabOrder: state.tabOrder.filter((key) => key !== "release-notes"),
-    activeId: state.releaseNotesActive ? (state.sessions.at(-1)?.id ?? null) : state.activeId,
-  })),
+  closeReleaseNotes: () =>
+    set((state) => ({
+      releaseNotesOpen: false,
+      releaseNotesActive: false,
+      tabOrder: state.tabOrder.filter((key) => key !== "release-notes"),
+      activeId: state.releaseNotesActive ? (state.sessions.at(-1)?.id ?? null) : state.activeId,
+    })),
 
-  reorderTab: (source, target) => set((state) => {
-    if (source === target || !state.tabOrder.includes(source) || !state.tabOrder.includes(target)) return state
-    const tabOrder = state.tabOrder.filter((key) => key !== source)
-    tabOrder.splice(tabOrder.indexOf(target), 0, source)
-    return { tabOrder }
-  }),
+  reorderTab: (source, target) =>
+    set((state) => {
+      if (source === target || !state.tabOrder.includes(source) || !state.tabOrder.includes(target)) return state
+      const tabOrder = state.tabOrder.filter((key) => key !== source)
+      tabOrder.splice(tabOrder.indexOf(target), 0, source)
+      return { tabOrder }
+    }),
 
   beginHistoryReplay: (runId) =>
     set((state) => ({
@@ -377,12 +402,9 @@ export const useStore = create<Store>((set) => ({
     set((state) => ({ collapsed: { ...state.collapsed, [project]: !state.collapsed[project] } })),
 
   noteTerminal: (id) =>
-    set((state) =>
-      state.terminalIds.includes(id) ? state : { terminalIds: [...state.terminalIds, id] },
-    ),
+    set((state) => (state.terminalIds.includes(id) ? state : { terminalIds: [...state.terminalIds, id] })),
 
-  dropTerminal: (id) =>
-    set((state) => ({ terminalIds: state.terminalIds.filter((t) => t !== id) })),
+  dropTerminal: (id) => set((state) => ({ terminalIds: state.terminalIds.filter((t) => t !== id) })),
 
   setError: (lastError) => set({ lastError }),
 
@@ -397,8 +419,7 @@ export const useStore = create<Store>((set) => ({
 
   // Open first; folder selection lives in the dialog so cancelling the native
   // picker does not make the whole add flow disappear without feedback.
-  openEditor: (project) =>
-    set({ editorOpen: true, editingProject: project ?? null, newProjectPath: "" }),
+  openEditor: (project) => set({ editorOpen: true, editingProject: project ?? null, newProjectPath: "" }),
 
   closeEditor: () => set({ editorOpen: false, editingProject: null, newProjectPath: "" }),
 

@@ -59,7 +59,10 @@ export function HelpDialog() {
               </h3>
               <div className="overflow-hidden rounded-md border border-surface-5 bg-surface-1">
                 {group.shortcuts.map((shortcut) => (
-                  <div key={`${shortcut.shift ? "shift-" : ""}${shortcut.key}`} className="flex min-h-[38px] items-center gap-4 border-b border-surface-4 px-3 py-1.5 last:border-b-0">
+                  <div
+                    key={`${shortcut.shift ? "shift-" : ""}${shortcut.key}`}
+                    className="flex min-h-[38px] items-center gap-4 border-b border-surface-4 px-3 py-1.5 last:border-b-0"
+                  >
                     <span className="flex-1 text-base text-surface-11">{shortcut.description}</span>
                     <Key keyName={shortcut.key} shift={shortcut.shift} />
                   </div>
@@ -72,9 +75,18 @@ export function HelpDialog() {
           </p>
         </DialogBody>
         <DialogFooter>
-          <Button onClick={() => { close(); openTutorial() }}>Replay tutorial</Button>
+          <Button
+            onClick={() => {
+              close()
+              openTutorial()
+            }}
+          >
+            Replay tutorial
+          </Button>
           <span className="flex-1" />
-          <Button variant="primary" onClick={close}>Done</Button>
+          <Button variant="primary" onClick={close}>
+            Done
+          </Button>
         </DialogFooter>
       </Dialog>
     </Overlay>

@@ -39,9 +39,7 @@ export function StatusBar() {
       {lastError !== null && (
         <span className="overflow-hidden text-ellipsis whitespace-nowrap text-danger-10">{lastError}</span>
       )}
-      {notice !== null && (
-        <span className="animate-[status-notice-in_140ms_ease-out] text-success-10">✓ {notice}</span>
-      )}
+      {notice !== null && <span className="animate-[status-notice-in_140ms_ease-out] text-success-10">✓ {notice}</span>}
       <span className="flex-1" />
       <div className="relative flex h-full items-center" onPointerDown={(event) => event.stopPropagation()}>
         {/*

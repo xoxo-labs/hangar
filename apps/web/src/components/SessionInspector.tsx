@@ -41,36 +41,52 @@ export function SessionStrip({ session, onInspect }: { session: SessionInfo; onI
         onClick={onInspect}
         title="Open session inspector"
       >
-        {highCpu
-          ? <span
-              className="font-semibold tabular-nums text-warning-11"
-              title={`High CPU usage: ${formatCpu(metrics.cpuPercent)}`}
-              aria-label={`High CPU usage: ${formatCpu(metrics.cpuPercent)}`}
-            >
-              CPU {formatCpu(metrics.cpuPercent)}
-            </span>
-          : <Dot tone={toneOf(session)} small />}
+        {highCpu ? (
+          <span
+            className="font-semibold tabular-nums text-warning-11"
+            title={`High CPU usage: ${formatCpu(metrics.cpuPercent)}`}
+            aria-label={`High CPU usage: ${formatCpu(metrics.cpuPercent)}`}
+          >
+            CPU {formatCpu(metrics.cpuPercent)}
+          </span>
+        ) : (
+          <Dot tone={toneOf(session)} small />
+        )}
         <strong className="text-sm font-book text-surface-11">{session.process}</strong>
         <span>{formatDuration((session.endedAt ?? now) - session.startedAt)}</span>
-        {metrics && <>
-          <i className="mx-[1px] h-[12px] w-[1px] bg-surface-5 max-[760px]:hidden" />
-          {!highCpu && <span className="max-[760px]:hidden">CPU {formatCpu(metrics.cpuPercent)}</span>}
-          <span>{formatBytes(metrics.memoryBytes)}</span>
-        </>}
+        {metrics && (
+          <>
+            <i className="mx-[1px] h-[12px] w-[1px] bg-surface-5 max-[760px]:hidden" />
+            {!highCpu && <span className="max-[760px]:hidden">CPU {formatCpu(metrics.cpuPercent)}</span>}
+            <span>{formatBytes(metrics.memoryBytes)}</span>
+          </>
+        )}
       </button>
-      {primaryPort !== undefined && <button
-        className="self-center rounded-sm px-[5px] py-[3px] font-sans text-sm leading-[inherit] tabular-nums text-accent-10 hover:text-accent-11 focus:outline-none"
-        type="button"
-        onClick={() => openPort(primaryPort)}
-        title={`Open localhost:${primaryPort}`}
-      >
-        :{primaryPort}
-      </button>}
+      {primaryPort !== undefined && (
+        <button
+          className="self-center rounded-sm px-[5px] py-[3px] font-sans text-sm leading-[inherit] tabular-nums text-accent-10 hover:text-accent-11 focus:outline-none"
+          type="button"
+          onClick={() => openPort(primaryPort)}
+          title={`Open localhost:${primaryPort}`}
+        >
+          :{primaryPort}
+        </button>
+      )}
     </div>
   )
 }
 
-export function PendingSessionInspector({ project, process, cmd, onClose }: { project: string; process: string; cmd: string; onClose: () => void }) {
+export function PendingSessionInspector({
+  project,
+  process,
+  cmd,
+  onClose,
+}: {
+  project: string
+  process: string
+  cmd: string
+  onClose: () => void
+}) {
   return (
     <aside
       className="absolute top-0 right-0 bottom-[28px] z-[8] flex w-[min(360px,calc(100%-32px))] animate-[inspector-in_140ms_ease-out] flex-col border-l border-surface-6 bg-surface-2/82 shadow-[-14px_0_36px_#0006] backdrop-blur-xl"
@@ -81,7 +97,14 @@ export function PendingSessionInspector({ project, process, cmd, onClose }: { pr
           <h2 className="m-0 text-lg font-semibold">{process}</h2>
           <span className="text-xs text-surface-9">{project}</span>
         </div>
-        <button className="grid size-[26px] place-items-center rounded-md text-[20px] leading-none text-surface-9 hover:bg-surface-a4 hover:text-surface-12" type="button" onClick={onClose} aria-label="Close inspector">×</button>
+        <button
+          className="grid size-[26px] place-items-center rounded-md text-[20px] leading-none text-surface-9 hover:bg-surface-a4 hover:text-surface-12"
+          type="button"
+          onClick={onClose}
+          aria-label="Close inspector"
+        >
+          ×
+        </button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <section className={SECTION}>
@@ -89,7 +112,9 @@ export function PendingSessionInspector({ project, process, cmd, onClose }: { pr
             <Dot tone="idle" small />
             <strong className="font-book">not started</strong>
           </div>
-          <Button variant="primary" className="mb-[12px]" onClick={() => actions.start(project, process)}>Start</Button>
+          <Button variant="primary" className="mb-[12px]" onClick={() => actions.start(project, process)}>
+            Start
+          </Button>
           <dl className="m-0 grid grid-cols-[68px_minmax(0,1fr)] gap-x-[10px] gap-y-[7px] text-sm">
             <Detail label="Command" value={cmd} mono />
           </dl>
@@ -140,13 +165,23 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
             <strong className="font-book">{inspectorState(session)}</strong>
           </div>
           <div className="mb-[12px] flex gap-2">
-            <Button variant={!running ? "primary" : "default"} disabled={running} onClick={() => actions.start(session.project, session.process)}>
+            <Button
+              variant={!running ? "primary" : "default"}
+              disabled={running}
+              onClick={() => actions.start(session.project, session.process)}
+            >
               Start
             </Button>
-            <Button disabled={!running} onClick={() => requestConfirm({ action: "restart", project: session.project, process: session.process })}>
+            <Button
+              disabled={!running}
+              onClick={() => requestConfirm({ action: "restart", project: session.project, process: session.process })}
+            >
               Restart
             </Button>
-            <Button disabled={!running} onClick={() => requestConfirm({ action: "stop", project: session.project, process: session.process })}>
+            <Button
+              disabled={!running}
+              onClick={() => requestConfirm({ action: "stop", project: session.project, process: session.process })}
+            >
               Stop
             </Button>
           </div>
@@ -160,40 +195,70 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
 
         {metrics && <ResourceMetrics sessionId={session.id} metrics={metrics} history={metricHistory} />}
 
-        {metrics && metrics.ports.length > 0 && <section className={SECTION}>
-          <h3 className={SECTION_TITLE}>Ports</h3>
-          <div className={STACK}>
-            {metrics.ports.map((port) => {
-              const link = linkForPort(port)
-              const address = link.url.replace(/^https?:\/\//, "")
-              const kind = { local: "Local", lan: "LAN", tailscale: "Tailscale", custom: "Custom" }[link.kind]
-              return <div key={port} className="flex min-h-[44px] items-center gap-2 rounded-md bg-surface-a2 py-1.5 pr-1.5 pl-2.5">
-                <div className="min-w-0 flex-1">
-                  <div className="font-mono text-base font-medium tabular-nums text-surface-12">:{port}</div>
-                  <div className="mt-0.5 truncate text-2xs text-surface-8" title={link.url}>{kind} · {address}</div>
-                </div>
-                <div className="flex flex-none items-center gap-0.5">
-                  <IconButton className="size-[28px]" title={`Copy ${link.url}`} aria-label={`Copy link for port ${port}`} onClick={() => copyPort(port)}>
-                    <Copy className="size-[14px]" aria-hidden="true" />
-                  </IconButton>
-                  <IconButton className="size-[28px]" title={`Open localhost:${port}`} aria-label={`Open port ${port} in browser`} onClick={() => openPort(port)}>
-                    <ExternalLink className="size-[14px]" aria-hidden="true" />
-                  </IconButton>
+        {metrics && metrics.ports.length > 0 && (
+          <section className={SECTION}>
+            <h3 className={SECTION_TITLE}>Ports</h3>
+            <div className={STACK}>
+              {metrics.ports.map((port) => {
+                const link = linkForPort(port)
+                const address = link.url.replace(/^https?:\/\//, "")
+                const kind = { local: "Local", lan: "LAN", tailscale: "Tailscale", custom: "Custom" }[link.kind]
+                return (
+                  <div
+                    key={port}
+                    className="flex min-h-[44px] items-center gap-2 rounded-md bg-surface-a2 py-1.5 pr-1.5 pl-2.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-mono text-base font-medium tabular-nums text-surface-12">:{port}</div>
+                      <div className="mt-0.5 truncate text-2xs text-surface-8" title={link.url}>
+                        {kind} · {address}
+                      </div>
+                    </div>
+                    <div className="flex flex-none items-center gap-0.5">
+                      <IconButton
+                        className="size-[28px]"
+                        title={`Copy ${link.url}`}
+                        aria-label={`Copy link for port ${port}`}
+                        onClick={() => copyPort(port)}
+                      >
+                        <Copy className="size-[14px]" aria-hidden="true" />
+                      </IconButton>
+                      <IconButton
+                        className="size-[28px]"
+                        title={`Open localhost:${port}`}
+                        aria-label={`Open port ${port} in browser`}
+                        onClick={() => openPort(port)}
+                      >
+                        <ExternalLink className="size-[14px]" aria-hidden="true" />
+                      </IconButton>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            {metrics.ports.some(isLoopbackOnly) && (
+              <div className="mt-2.5 flex items-start gap-2 rounded-md bg-warning-a2 px-2.5 py-2 text-xs leading-normal text-warning-11">
+                <Info className="mt-px size-[14px] flex-none" aria-hidden="true" />
+                <div>
+                  <strong className="font-book">Local only.</strong> Bind the dev server to <code>0.0.0.0</code> for
+                  phone access. Try <code>vite --host 0.0.0.0</code> or <code>next dev --hostname 0.0.0.0</code>.
                 </div>
               </div>
-            })}
-          </div>
-          {metrics.ports.some(isLoopbackOnly) && <div className="mt-2.5 flex items-start gap-2 rounded-md bg-warning-a2 px-2.5 py-2 text-xs leading-normal text-warning-11">
-            <Info className="mt-px size-[14px] flex-none" aria-hidden="true" />
-            <div><strong className="font-book">Local only.</strong> Bind the dev server to <code>0.0.0.0</code> for phone access. Try <code>vite --host 0.0.0.0</code> or <code>next dev --hostname 0.0.0.0</code>.</div>
-          </div>}
-        </section>}
+            )}
+          </section>
+        )}
 
         <section className={SECTION}>
           <h3 className={SECTION_TITLE}>Previous runs</h3>
           {!historyEnabled && <p className={EMPTY}>Enable session history in Settings to keep local run summaries.</p>}
           {historyEnabled && history.length === 0 && <p className={EMPTY}>No previous runs yet.</p>}
-          {history.length > 0 && <div className={STACK}>{history.map((entry) => <HistoryRow key={entry.runId} entry={entry} />)}</div>}
+          {history.length > 0 && (
+            <div className={STACK}>
+              {history.map((entry) => (
+                <HistoryRow key={entry.runId} entry={entry} />
+              ))}
+            </div>
+          )}
         </section>
       </div>
     </aside>
@@ -207,15 +272,20 @@ function inspectorState(session: SessionInfo): string {
 }
 
 function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return <>
-    <dt className="text-surface-8">{label}</dt>
-    <dd
-      className={cx("m-0 overflow-hidden text-ellipsis whitespace-nowrap text-surface-11", mono && "font-mono text-xs")}
-      title={value}
-    >
-      {value}
-    </dd>
-  </>
+  return (
+    <>
+      <dt className="text-surface-8">{label}</dt>
+      <dd
+        className={cx(
+          "m-0 overflow-hidden text-ellipsis whitespace-nowrap text-surface-11",
+          mono && "font-mono text-xs",
+        )}
+        title={value}
+      >
+        {value}
+      </dd>
+    </>
+  )
 }
 
 /** Ports of `.history-result.completed` / `.failed` / `.stopped`. */
@@ -227,14 +297,28 @@ const RESULT_TONE: Record<SessionHistoryEntry["reason"], string> = {
 
 function HistoryRow({ entry }: { entry: SessionHistoryEntry }) {
   const openHistoryRun = useStore((state) => state.openHistoryRun)
-  return <button type="button" className="grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-[7px] rounded-md px-[4px] py-[6px] text-left hover:bg-surface-a3" onClick={() => openHistoryRun(entry.runId)} title="Open historical run">
-    <span className={cx("text-center text-[13px]", RESULT_TONE[entry.reason])}>{entry.reason === "completed" ? "✓" : entry.reason === "failed" ? "×" : "■"}</span>
-    <span className="flex min-w-0 flex-col">
-      <strong className="text-sm font-medium">{formatDate(entry.startedAt)}</strong>
-      <small className="text-xs text-surface-8">{formatDuration(entry.durationMs)} · {entry.reason}{entry.exitCode === null ? "" : ` (${entry.exitCode})`} · {formatBytes(entry.totalOutputBytes)} output</small>
-    </span>
-    <span className="text-xs text-surface-8">{formatCpu(entry.peakCpuPercent)} · {formatBytes(entry.peakMemoryBytes)}</span>
-  </button>
+  return (
+    <button
+      type="button"
+      className="grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-[7px] rounded-md px-[4px] py-[6px] text-left hover:bg-surface-a3"
+      onClick={() => openHistoryRun(entry.runId)}
+      title="Open historical run"
+    >
+      <span className={cx("text-center text-[13px]", RESULT_TONE[entry.reason])}>
+        {entry.reason === "completed" ? "✓" : entry.reason === "failed" ? "×" : "■"}
+      </span>
+      <span className="flex min-w-0 flex-col">
+        <strong className="text-sm font-medium">{formatDate(entry.startedAt)}</strong>
+        <small className="text-xs text-surface-8">
+          {formatDuration(entry.durationMs)} · {entry.reason}
+          {entry.exitCode === null ? "" : ` (${entry.exitCode})`} · {formatBytes(entry.totalOutputBytes)} output
+        </small>
+      </span>
+      <span className="text-xs text-surface-8">
+        {formatCpu(entry.peakCpuPercent)} · {formatBytes(entry.peakMemoryBytes)}
+      </span>
+    </button>
+  )
 }
 
 function useNow(running: boolean): number {

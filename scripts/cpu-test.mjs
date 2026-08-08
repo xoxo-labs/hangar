@@ -8,7 +8,7 @@ async function loadCpu(percent, durationMs) {
   const deadline = performance.now() + durationMs
   while (performance.now() < deadline) {
     const sliceStarted = performance.now()
-    const busyUntil = sliceStarted + SLICE_MS * percent / 100
+    const busyUntil = sliceStarted + (SLICE_MS * percent) / 100
     while (performance.now() < busyUntil) {
       // Intentionally occupy one CPU core.
     }
@@ -18,7 +18,7 @@ async function loadCpu(percent, durationMs) {
 
 console.log(`Ramping CPU to 100% over ${RAMP_SECONDS}s…`)
 for (let second = 1; second <= RAMP_SECONDS; second += 1) {
-  const percent = Math.round(second / RAMP_SECONDS * 100)
+  const percent = Math.round((second / RAMP_SECONDS) * 100)
   console.log(`CPU target: ${percent}%`)
   await loadCpu(percent, 1_000)
 }

@@ -4,14 +4,7 @@ import { basename, dirname, join, resolve } from "node:path"
 import { networkInterfaces } from "node:os"
 import { WebSocketServer, WebSocket } from "ws"
 import type { AppSettings, ClientMsg, Project, ServerMsg } from "@hangar/contracts"
-import {
-  expandHome,
-  findProject,
-  hangarHome,
-  loadRegistry,
-  saveRegistry,
-  validateProject,
-} from "./registry.ts"
+import { expandHome, findProject, hangarHome, loadRegistry, saveRegistry, validateProject } from "./registry.ts"
 import { loadHistory, loadHistoryReplay } from "./history.ts"
 import { SessionManager } from "./sessions.ts"
 import { loadSettings, saveSettings } from "./settings.ts"
@@ -28,7 +21,8 @@ function networkInfo(): { lan: string[]; tailscale: string[] } {
         first === 10 ||
         (first === 172 && second !== undefined && second >= 16 && second <= 31) ||
         (first === 192 && second === 168)
-      ) lan.push(address.address)
+      )
+        lan.push(address.address)
     }
   }
   return { lan: [...new Set(lan)], tailscale: [...new Set(tailscale)] }
@@ -70,7 +64,8 @@ function packageScripts(parsed: PackageJson, manager: string, prefix?: string, c
 function workspacePatterns(path: string, parsed: PackageJson): string[] {
   const declared = Array.isArray(parsed.workspaces)
     ? parsed.workspaces
-    : parsed.workspaces && typeof parsed.workspaces === "object" &&
+    : parsed.workspaces &&
+        typeof parsed.workspaces === "object" &&
         Array.isArray((parsed.workspaces as { packages?: unknown }).packages)
       ? (parsed.workspaces as { packages: unknown[] }).packages
       : []
@@ -104,10 +99,13 @@ function workspaceScripts(path: string, parsed: PackageJson, manager: string): D
     .filter((pattern) => pattern.startsWith("!"))
     .map((pattern) => `${pattern.slice(1)}/package.json`)
 
-  const packageFiles = globSync(included.map((pattern) => `${pattern}/package.json`), {
-    cwd: path,
-    exclude: ["**/node_modules/**", ...excluded],
-  }).sort()
+  const packageFiles = globSync(
+    included.map((pattern) => `${pattern}/package.json`),
+    {
+      cwd: path,
+      exclude: ["**/node_modules/**", ...excluded],
+    },
+  ).sort()
 
   return packageFiles.flatMap((packageFile) => {
     const workspace = JSON.parse(readFileSync(join(path, packageFile), "utf8")) as PackageJson
@@ -128,19 +126,17 @@ function inspectProject(inputPath: string): object {
   if (!existsSync(packagePath)) return { path, exists: true, package: null }
 
   const parsed = JSON.parse(readFileSync(packagePath, "utf8")) as PackageJson
-  const declaredManager = typeof parsed.packageManager === "string"
-    ? parsed.packageManager.split("@")[0]
-    : null
-  const manager = declaredManager === "pnpm" || declaredManager === "yarn" ||
-      declaredManager === "bun" || declaredManager === "npm"
-    ? declaredManager
-    : existsSync(join(path, "pnpm-lock.yaml"))
-      ? "pnpm"
-      : existsSync(join(path, "yarn.lock"))
-        ? "yarn"
-        : existsSync(join(path, "bun.lock")) || existsSync(join(path, "bun.lockb"))
-          ? "bun"
-          : "npm"
+  const declaredManager = typeof parsed.packageManager === "string" ? parsed.packageManager.split("@")[0] : null
+  const manager =
+    declaredManager === "pnpm" || declaredManager === "yarn" || declaredManager === "bun" || declaredManager === "npm"
+      ? declaredManager
+      : existsSync(join(path, "pnpm-lock.yaml"))
+        ? "pnpm"
+        : existsSync(join(path, "yarn.lock"))
+          ? "yarn"
+          : existsSync(join(path, "bun.lock")) || existsSync(join(path, "bun.lockb"))
+            ? "bun"
+            : "npm"
   const rootScripts = packageScripts(parsed, manager)
   const childScripts = workspaceScripts(path, parsed, manager)
 

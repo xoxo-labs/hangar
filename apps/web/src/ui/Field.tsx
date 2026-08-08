@@ -8,7 +8,17 @@ import { cx } from "./cx"
  * native one.
  */
 
-export function Field({ label, hint, className, children }: { label: string; hint?: string; className?: string; children: ReactNode }) {
+export function Field({
+  label,
+  hint,
+  className,
+  children,
+}: {
+  label: string
+  hint?: string
+  className?: string
+  children: ReactNode
+}) {
   return (
     <label className={cx("flex flex-col items-start gap-[5px]", className)}>
       <span className="text-sm tracking-label text-surface-10">{label}</span>

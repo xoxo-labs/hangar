@@ -140,7 +140,10 @@ export function recordMetricPosition(id: SessionId, sampledAt: number): void {
 export type MetricSelection = { startSampledAt: number; endSampledAt: number }
 
 /** Maps xterm's native line selection to the corresponding metrics time range. */
-export function subscribeToMetricSelection(id: SessionId, listener: (range: MetricSelection | null) => void): () => void {
+export function subscribeToMetricSelection(
+  id: SessionId,
+  listener: (range: MetricSelection | null) => void,
+): () => void {
   const entry = ensure(id)
   entry.metricSelectionListeners.add(listener)
   notifyMetricSelection(entry)
@@ -157,9 +160,10 @@ function notifyMetricSelection(entry: Entry): void {
     const startSampledAt = nearestMetricAtLine(entry, firstLine)
     const endSampledAt = nearestMetricAtLine(entry, lastLine)
     if (startSampledAt !== null && endSampledAt !== null) {
-      range = startSampledAt <= endSampledAt
-        ? { startSampledAt, endSampledAt }
-        : { startSampledAt: endSampledAt, endSampledAt: startSampledAt }
+      range =
+        startSampledAt <= endSampledAt
+          ? { startSampledAt, endSampledAt }
+          : { startSampledAt: endSampledAt, endSampledAt: startSampledAt }
     }
   }
   for (const listener of entry.metricSelectionListeners) listener(range)

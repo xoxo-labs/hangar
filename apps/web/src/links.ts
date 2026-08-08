@@ -14,7 +14,10 @@ export function shareUrl(
   customHost: string,
   network: NetworkInfo,
 ): { url: string; kind: "local" | "lan" | "tailscale" | "custom" } {
-  const custom = customHost.trim().replace(/^https?:\/\//, "").replace(/\/$/, "")
+  const custom = customHost
+    .trim()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/$/, "")
   if (choice === "custom" && custom) return { url: `http://${custom}:${port}`, kind: "custom" }
   if ((choice === "tailscale" || choice === "auto") && network.tailscale[0]) {
     return { url: `http://${network.tailscale[0]}:${port}`, kind: "tailscale" }

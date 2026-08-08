@@ -199,7 +199,13 @@ export type ClientMsg =
 /** Messages the server broadcasts to every connected UI. */
 export type ServerMsg =
   /** Full picture: registry projects + all sessions. Sent on connect and after any change. */
-  | { type: "state"; projects: Project[]; sessions: SessionInfo[]; history: SessionHistoryEntry[]; settings: AppSettings }
+  | {
+      type: "state"
+      projects: Project[]
+      sessions: SessionInfo[]
+      history: SessionHistoryEntry[]
+      settings: AppSettings
+    }
   /** Lightweight resource updates, kept out of full state broadcasts. */
   | { type: "metrics"; id: SessionId; runId: string; metrics: SessionMetrics }
   /** Full scrollback of one session. Sent to a client right after connect, before live output. */

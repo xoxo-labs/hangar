@@ -22,9 +22,7 @@ for (const stream of [process.stdout, process.stderr]) {
 }
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const SERVER_ENTRY = app.isPackaged
-  ? resolve(HERE, "dist/server/cli.mjs")
-  : resolve(HERE, "../server/src/cli.ts")
+const SERVER_ENTRY = app.isPackaged ? resolve(HERE, "dist/server/cli.mjs") : resolve(HERE, "../server/src/cli.ts")
 const WEB_ENTRY = resolve(HERE, "dist/web/index.html")
 const PRELOAD_ENTRY = resolve(HERE, "preload.cjs")
 const RELEASE_NOTES_ENTRY = resolve(HERE, "RELEASE_NOTES.md")
@@ -72,9 +70,7 @@ function spawnServer() {
   // Development sources require system Node 24. Packaged builds use Electron's
   // bundled Node runtime and the precompiled server, so the .app is standalone.
   const executable = app.isPackaged ? process.execPath : "node"
-  const env = app.isPackaged
-    ? { ...process.env, ELECTRON_RUN_AS_NODE: "1" }
-    : process.env
+  const env = app.isPackaged ? { ...process.env, ELECTRON_RUN_AS_NODE: "1" } : process.env
   const child = spawn(executable, [SERVER_ENTRY, "serve", "--port", String(PORT)], {
     stdio: "inherit",
     detached: true,
@@ -149,48 +145,48 @@ async function ensureServer() {
 
   if (!(await waitForHealth())) {
     console.error(
-      `[hangar] server did not become healthy within ${
-        HEALTH_POLL_TIMEOUT_MS / 1000
-      }s — opening the window anyway`,
+      `[hangar] server did not become healthy within ${HEALTH_POLL_TIMEOUT_MS / 1000}s — opening the window anyway`,
     )
   }
 }
 
 function installApplicationMenu(window) {
   if (process.platform !== "darwin") return
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
-    {
-      label: app.name,
-      submenu: [
-        { role: "about" },
-        { type: "separator" },
-        {
-          label: "Settings…",
-          accelerator: "CommandOrControl+,",
-          click: () => window.webContents.send("hangar:open-settings"),
-        },
-        { type: "separator" },
-        { role: "services" },
-        { type: "separator" },
-        { role: "hide" },
-        { role: "hideOthers" },
-        { role: "unhide" },
-        { type: "separator" },
-        { role: "quit" },
-      ],
-    },
-    { role: "editMenu" },
-    { role: "windowMenu" },
-    {
-      role: "help",
-      submenu: [
-        {
-          label: "Hangar Help & Shortcuts",
-          click: () => window.webContents.send("hangar:open-help"),
-        },
-      ],
-    },
-  ]))
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      {
+        label: app.name,
+        submenu: [
+          { role: "about" },
+          { type: "separator" },
+          {
+            label: "Settings…",
+            accelerator: "CommandOrControl+,",
+            click: () => window.webContents.send("hangar:open-settings"),
+          },
+          { type: "separator" },
+          { role: "services" },
+          { type: "separator" },
+          { role: "hide" },
+          { role: "hideOthers" },
+          { role: "unhide" },
+          { type: "separator" },
+          { role: "quit" },
+        ],
+      },
+      { role: "editMenu" },
+      { role: "windowMenu" },
+      {
+        role: "help",
+        submenu: [
+          {
+            label: "Hangar Help & Shortcuts",
+            click: () => window.webContents.send("hangar:open-help"),
+          },
+        ],
+      },
+    ]),
+  )
 }
 
 function createWindow() {
@@ -226,9 +222,7 @@ function createWindow() {
     if (window.isDestroyed()) return
     // Rejection is expected while the dev server is down; did-fail-load drives
     // the retry, so swallow it rather than leaking an unhandled rejection.
-    const navigation = app.isPackaged
-      ? window.loadFile(WEB_ENTRY)
-      : window.loadURL(WEB_URL)
+    const navigation = app.isPackaged ? window.loadFile(WEB_ENTRY) : window.loadURL(WEB_URL)
     navigation.catch(() => {})
   }
 
@@ -239,21 +233,16 @@ function createWindow() {
       return
     }
     const target = app.isPackaged ? WEB_ENTRY : WEB_URL
-    console.error(
-      `[hangar] ${target} not ready (${errorDescription}) — retrying`,
-    )
+    console.error(`[hangar] ${target} not ready (${errorDescription}) — retrying`)
     retryTimer = setTimeout(load, LOAD_RETRY_INTERVAL_MS)
   }
 
-  window.webContents.on(
-    "did-fail-load",
-    (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
-      if (!isMainFrame) return
-      if (errorCode === -3) return // ERR_ABORTED — a navigation we replaced
-      if (window.isDestroyed()) return
-      scheduleRetry(errorDescription)
-    },
-  )
+  window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
+    if (!isMainFrame) return
+    if (errorCode === -3) return // ERR_ABORTED — a navigation we replaced
+    if (window.isDestroyed()) return
+    scheduleRetry(errorDescription)
+  })
 
   load()
   mainWindow = window
@@ -284,9 +273,7 @@ ipcMain.handle("hangar:choose-directory", async (_event, requestedTitle) => {
     title: typeof requestedTitle === "string" ? requestedTitle : "Choose a folder",
     properties: ["openDirectory"],
   }
-  const result = mainWindow
-    ? await dialog.showOpenDialog(mainWindow, options)
-    : await dialog.showOpenDialog(options)
+  const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
   return result.canceled ? null : (result.filePaths[0] ?? null)
 })
 

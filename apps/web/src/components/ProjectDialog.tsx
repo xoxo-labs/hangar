@@ -132,7 +132,11 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
 
   useEffect(() => {
     if (editing !== null || nameEdited.current || projectInfo === null || !projectInfo.exists) return
-    const folderName = projectInfo.path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? ""
+    const folderName =
+      projectInfo.path
+        .replace(/[\\/]+$/, "")
+        .split(/[\\/]/)
+        .pop() ?? ""
     const packageName = projectInfo.package?.name?.split("/").pop() ?? ""
     const suggested = (packageName || folderName).trim().replace(/[\s/]+/g, "-")
     if (suggested !== "") setName(suggested)
@@ -213,7 +217,9 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
               or
               <span className="h-px flex-1 bg-surface-5" />
             </div>
-            <Button className="self-center" onClick={() => setManual(true)}>Add manually</Button>
+            <Button className="self-center" onClick={() => setManual(true)}>
+              Add manually
+            </Button>
           </DialogBody>
           <DialogFooter>
             <Button onClick={closeEditor}>Cancel</Button>
@@ -226,9 +232,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
   const addPackageScript = (script: PackageScript): void => {
     setRows((current) => {
       if (current.some((row) => row.name.trim() === script.name)) return current
-      const blank = current.find(
-        (row) => row.name === "" && row.cmd === "" && row.cwd === "" && !row.shell,
-      )
+      const blank = current.find((row) => row.name === "" && row.cmd === "" && row.cwd === "" && !row.shell)
       if (blank) {
         return current.map((row) =>
           row.id === blank.id
@@ -256,18 +260,29 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
               <span className={FIELD_LABEL}>Project folder</span>
               <div className="flex w-full min-w-0 items-center gap-2 rounded-md border border-surface-5 bg-surface-1 px-2 py-1.5">
                 <FolderOpen size={14} className="flex-none text-surface-9" />
-                <code className={cx(ELLIPSIS, "flex-1 text-sm text-surface-11")} title={path}>{path}</code>
-                <button type="button" className={cx(TEXT_BUTTON, "flex-none")} disabled={browsing} onClick={() => void browse()}>
+                <code className={cx(ELLIPSIS, "flex-1 text-sm text-surface-11")} title={path}>
+                  {path}
+                </code>
+                <button
+                  type="button"
+                  className={cx(TEXT_BUTTON, "flex-none")}
+                  disabled={browsing}
+                  onClick={() => void browse()}
+                >
                   {browsing ? "Opening…" : "Change…"}
                 </button>
               </div>
               <span className={FIELD_HINT}>
-                {inspecting ? "Inspecting package.json and workspaces…" : "Folder selected; nothing will be copied or moved."}
+                {inspecting
+                  ? "Inspecting package.json and workspaces…"
+                  : "Folder selected; nothing will be copied or moved."}
               </span>
             </div>
           ) : (
             <div className={FIELD}>
-              <label className={FIELD_LABEL} htmlFor="project-path">Path</label>
+              <label className={FIELD_LABEL} htmlFor="project-path">
+                Path
+              </label>
               <div className="flex w-full gap-1.5">
                 <TextInput
                   mono
@@ -280,17 +295,19 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
                   onChange={(e) => setPath(e.target.value)}
                 />
                 {window.hangarDesktop && (
-                  <Button
-                    className="flex-none whitespace-nowrap"
-                    disabled={browsing}
-                    onClick={() => void browse()}
-                  >
+                  <Button className="flex-none whitespace-nowrap" disabled={browsing} onClick={() => void browse()}>
                     {browsing ? "Opening…" : "Choose…"}
                   </Button>
                 )}
               </div>
               <span className={FIELD_HINT}>
-                {inspecting ? "Inspecting package.json and workspaces…" : <><code>~</code> expands to your home directory.</>}
+                {inspecting ? (
+                  "Inspecting package.json and workspaces…"
+                ) : (
+                  <>
+                    <code>~</code> expands to your home directory.
+                  </>
+                )}
               </span>
             </div>
           )}
@@ -342,9 +359,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
                           title={`${script.name}: ${script.value}`}
                         >
                           <code className={cx(ELLIPSIS, "text-sm text-surface-12")}>{displayName}</code>
-                          <span className={cx(ELLIPSIS, "font-mono text-xs text-surface-9")}>
-                            {script.value}
-                          </span>
+                          <span className={cx(ELLIPSIS, "font-mono text-xs text-surface-9")}>{script.value}</span>
                           <button
                             type="button"
                             className={cx(TEXT_BUTTON, "justify-self-end")}
@@ -384,9 +399,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
                 />
               ))}
             </div>
-            <span className={FIELD_HINT}>
-              A cwd is relative to the project path and defaults to its root.
-            </span>
+            <span className={FIELD_HINT}>A cwd is relative to the project path and defaults to its root.</span>
             <button
               type="button"
               className={TEXT_BUTTON}
@@ -398,10 +411,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
               type="button"
               className={TEXT_BUTTON}
               onClick={() =>
-                setRows((current) => [
-                  ...current,
-                  { ...emptyRow(), name: uniqueTerminalName(current), shell: true },
-                ])
+                setRows((current) => [...current, { ...emptyRow(), name: uniqueTerminalName(current), shell: true }])
               }
             >
               + Add empty terminal
@@ -414,9 +424,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
             // The span carries the tooltip: browsers swallow hover on a disabled button.
             <span
               title={
-                running
-                  ? "Stop this project's processes before removing it"
-                  : "Remove this project from the registry"
+                running ? "Stop this project's processes before removing it" : "Remove this project from the registry"
               }
             >
               <Button
@@ -431,9 +439,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
             </span>
           )}
           <span className="flex-1" />
-          {problem !== null && (
-            <span className={cx(ELLIPSIS, "text-sm text-surface-9")}>{problem}</span>
-          )}
+          {problem !== null && <span className={cx(ELLIPSIS, "text-sm text-surface-9")}>{problem}</span>}
           <Button onClick={closeEditor}>Cancel</Button>
           <Button
             variant="primary"
@@ -523,12 +529,7 @@ function validate(name: string, path: string, rows: Row[]): string | null {
   return null
 }
 
-function toProject(
-  name: string,
-  path: string,
-  rows: Row[],
-  env: Record<string, string> | undefined,
-): Project {
+function toProject(name: string, path: string, rows: Row[], env: Record<string, string> | undefined): Project {
   const processes: ProjectProcess[] = rows.map((row) => {
     const cwd = row.cwd.trim()
     return {

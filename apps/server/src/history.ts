@@ -44,7 +44,10 @@ export function appendHistory(entry: SessionHistoryEntry, settings: AppSettings)
   pruneReplays(new Set(entries.filter((item) => item.hasReplay).map((item) => item.runId)), settings)
 }
 
-export function loadHistoryReplay(runId: string, settings: AppSettings): { events: HistoryOutputEvent[]; truncated: boolean } {
+export function loadHistoryReplay(
+  runId: string,
+  settings: AppSettings,
+): { events: HistoryOutputEvent[]; truncated: boolean } {
   const entry = loadHistory(settings).find((item) => item.runId === runId)
   if (!entry?.hasReplay) return { events: [], truncated: false }
   try {
@@ -86,10 +89,8 @@ function prune(entries: SessionHistoryEntry[], settings: AppSettings): SessionHi
   const days = settings.sessionHistory.retentionDays
   const cutoff = days === null ? 0 : Date.now() - days * 24 * 60 * 60 * 1000
   return entries
-    .filter((entry) =>
-      typeof entry?.runId === "string" &&
-      typeof entry?.endedAt === "number" &&
-      entry.endedAt >= cutoff,
+    .filter(
+      (entry) => typeof entry?.runId === "string" && typeof entry?.endedAt === "number" && entry.endedAt >= cutoff,
     )
     .sort((a, b) => b.startedAt - a.startedAt)
 }

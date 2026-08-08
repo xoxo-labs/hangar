@@ -113,9 +113,7 @@ export function CommandPalette() {
                       value={id}
                       keywords={[project.name, proc.name]}
                       className={ITEM}
-                      onSelect={() =>
-                        run(() => (session ? setActive(id) : openPending(project.name, proc.name)))
-                      }
+                      onSelect={() => run(() => (session ? setActive(id) : openPending(project.name, proc.name)))}
                     >
                       <Dot tone={toneOf(session)} small title={describe(session)} />
                       <span className="truncate">{proc.name}</span>
@@ -146,7 +144,10 @@ export function CommandPalette() {
                         className={ITEM}
                         onSelect={() => run(() => actions.start(project.name, proc.name))}
                       >
-                        <span className={GLYPH} aria-hidden="true">▶</span>Start {id}
+                        <span className={GLYPH} aria-hidden="true">
+                          ▶
+                        </span>
+                        Start {id}
                       </Command.Item>,
                     ]
                   }
@@ -160,7 +161,10 @@ export function CommandPalette() {
                         run(() => requestConfirm({ action: "restart", project: project.name, process: proc.name }))
                       }
                     >
-                      <span className={GLYPH} aria-hidden="true">↻</span>Restart {id}
+                      <span className={GLYPH} aria-hidden="true">
+                        ↻
+                      </span>
+                      Restart {id}
                     </Command.Item>,
                     <Command.Item
                       key={`stop ${id}`}
@@ -171,7 +175,10 @@ export function CommandPalette() {
                         run(() => requestConfirm({ action: "stop", project: project.name, process: proc.name }))
                       }
                     >
-                      <span className={GLYPH} aria-hidden="true">■</span>Stop {id}
+                      <span className={GLYPH} aria-hidden="true">
+                        ■
+                      </span>
+                      Stop {id}
                     </Command.Item>,
                   ]
                 })
@@ -185,7 +192,10 @@ export function CommandPalette() {
                     className={ITEM}
                     onSelect={() => run(() => actions.start(project.name))}
                   >
-                    <span className={GLYPH} aria-hidden="true">▶</span>Start all in {project.name}
+                    <span className={GLYPH} aria-hidden="true">
+                      ▶
+                    </span>
+                    Start all in {project.name}
                   </Command.Item>,
                   ...(anyRunning
                     ? [
@@ -196,7 +206,10 @@ export function CommandPalette() {
                           className={ITEM}
                           onSelect={() => run(() => requestConfirm({ action: "restart", project: project.name }))}
                         >
-                          <span className={GLYPH} aria-hidden="true">↻</span>Restart all in {project.name}
+                          <span className={GLYPH} aria-hidden="true">
+                            ↻
+                          </span>
+                          Restart all in {project.name}
                         </Command.Item>,
                         <Command.Item
                           key={`stop-all ${project.name}`}
@@ -205,7 +218,10 @@ export function CommandPalette() {
                           className={ITEM}
                           onSelect={() => run(() => requestConfirm({ action: "stop", project: project.name }))}
                         >
-                          <span className={GLYPH} aria-hidden="true">■</span>Stop all in {project.name}
+                          <span className={GLYPH} aria-hidden="true">
+                            ■
+                          </span>
+                          Stop all in {project.name}
                         </Command.Item>,
                       ]
                     : []),
@@ -230,18 +246,27 @@ export function CommandPalette() {
                     className={ITEM}
                     onSelect={() => run(() => openHistoryRun(entry.runId))}
                   >
-                    <span className={GLYPH} aria-hidden="true">◷</span>
-                    <span className="truncate">{entry.project}/{entry.process}</span>
+                    <span className={GLYPH} aria-hidden="true">
+                      ◷
+                    </span>
+                    <span className="truncate">
+                      {entry.project}/{entry.process}
+                    </span>
                     <span className="flex-none text-sm text-surface-9">
                       {date}{" "}
-                      <span className={result.tone} title={result.label} aria-hidden="true">{result.icon}</span>
+                      <span className={result.tone} title={result.label} aria-hidden="true">
+                        {result.icon}
+                      </span>
                     </span>
                   </Command.Item>
                 )
               })}
               {history.length > recentRuns.length && (
                 <Command.Item value="all history" className={ITEM} onSelect={() => run(openHistory)}>
-                  <span className={GLYPH} aria-hidden="true">◷</span>All history…
+                  <span className={GLYPH} aria-hidden="true">
+                    ◷
+                  </span>
+                  All history…
                 </Command.Item>
               )}
             </Command.Group>
@@ -253,17 +278,33 @@ export function CommandPalette() {
                 otherwise be unreachable from here. */}
             {recentRuns.length === 0 && (
               <Command.Item value="history" className={ITEM} onSelect={() => run(openHistory)}>
-                <span className={GLYPH} aria-hidden="true">◷</span>History
+                <span className={GLYPH} aria-hidden="true">
+                  ◷
+                </span>
+                History
               </Command.Item>
             )}
             <Command.Item value="release notes" className={ITEM} onSelect={() => run(openReleaseNotes)}>
-              <span className={GLYPH} aria-hidden="true">✦</span>Release notes
+              <span className={GLYPH} aria-hidden="true">
+                ✦
+              </span>
+              Release notes
             </Command.Item>
-            <Command.Item value="help shortcuts" keywords={["keyboard", "keys", "commands"]} className={ITEM} onSelect={() => run(openHelp)}>
+            <Command.Item
+              value="help shortcuts"
+              keywords={["keyboard", "keys", "commands"]}
+              className={ITEM}
+              onSelect={() => run(openHelp)}
+            >
               <CircleHelp className="size-3 flex-none text-surface-9" aria-hidden="true" />
               Help & keyboard shortcuts
             </Command.Item>
-            <Command.Item value="tutorial" keywords={["tour", "welcome", "onboarding"]} className={ITEM} onSelect={() => run(openTutorial)}>
+            <Command.Item
+              value="tutorial"
+              keywords={["tour", "welcome", "onboarding"]}
+              className={ITEM}
+              onSelect={() => run(openTutorial)}
+            >
               <BookOpen className="size-3 flex-none text-surface-9" aria-hidden="true" />
               Tutorial
             </Command.Item>
@@ -274,19 +315,25 @@ export function CommandPalette() {
                 keywords={["theme", "dark", "light", "appearance"]}
                 className={ITEM}
                 onSelect={() =>
-                  run(() =>
-                    actions.updateSettings({ ...settings, appearance: { ...settings.appearance, theme } }),
-                  )
+                  run(() => actions.updateSettings({ ...settings, appearance: { ...settings.appearance, theme } }))
                 }
               >
-                <span className={GLYPH} aria-hidden="true">◐</span>Theme: {label}
+                <span className={GLYPH} aria-hidden="true">
+                  ◐
+                </span>
+                Theme: {label}
                 {settings.appearance.theme === theme && (
-                  <span className="text-surface-9" aria-hidden="true">✓</span>
+                  <span className="text-surface-9" aria-hidden="true">
+                    ✓
+                  </span>
                 )}
               </Command.Item>
             ))}
             <Command.Item value="settings" className={ITEM} onSelect={() => run(openSettings)}>
-              <span className={GLYPH} aria-hidden="true">⚙</span>Settings
+              <span className={GLYPH} aria-hidden="true">
+                ⚙
+              </span>
+              Settings
             </Command.Item>
             <Command.Item
               value="add project"
@@ -294,7 +341,10 @@ export function CommandPalette() {
               className={ITEM}
               onSelect={() => run(() => openEditor())}
             >
-              <span className={GLYPH} aria-hidden="true">+</span>Add project…
+              <span className={GLYPH} aria-hidden="true">
+                +
+              </span>
+              Add project…
             </Command.Item>
             {projects.map((project) => (
               <Command.Item
@@ -304,7 +354,10 @@ export function CommandPalette() {
                 className={ITEM}
                 onSelect={() => run(() => openEditor(project.name))}
               >
-                <span className={GLYPH} aria-hidden="true">✎</span>Edit {project.name}…
+                <span className={GLYPH} aria-hidden="true">
+                  ✎
+                </span>
+                Edit {project.name}…
               </Command.Item>
             ))}
           </Command.Group>

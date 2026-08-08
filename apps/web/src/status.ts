@@ -5,9 +5,9 @@ export type Tone = "running" | "warning" | "idle" | "done" | "failed"
 export const HIGH_CPU_PERCENT = 80
 
 export function hasHighCpu(session: SessionInfo | undefined): boolean {
-  return session?.status === "running" &&
-    session.metrics !== undefined &&
-    session.metrics.cpuPercent >= HIGH_CPU_PERCENT
+  return (
+    session?.status === "running" && session.metrics !== undefined && session.metrics.cpuPercent >= HIGH_CPU_PERCENT
+  )
 }
 
 /** No session at all reads as "idle"; a non-zero exit is the only red state. */

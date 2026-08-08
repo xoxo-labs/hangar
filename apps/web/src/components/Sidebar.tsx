@@ -97,9 +97,7 @@ export function Sidebar({
       <header
         className={cx(
           "flex min-h-[48px] flex-none items-center gap-[9px] border-b px-3.5 py-[7px] electron:h-[48px] electron:py-0! electron:pr-3.5! electron:pl-[92px]! electron:[-webkit-app-region:drag]",
-          import.meta.env.DEV
-            ? "border-success-6 bg-success-3 text-success-12"
-            : "border-surface-5 bg-surface-3",
+          import.meta.env.DEV ? "border-success-6 bg-success-3 text-success-12" : "border-surface-5 bg-surface-3",
         )}
       >
         <span className="flex min-w-0 flex-col leading-none">
@@ -216,12 +214,28 @@ export function Sidebar({
         >
           <History className="size-[18px] flex-none" aria-hidden="true" />
           <span className="flex-1 leading-[20px]">History</span>
-          {historyCount > 0 && <span className="rounded-full bg-surface-a4 px-[6px] py-px text-2xs tabular-nums text-surface-9">{historyCount}</span>}
+          {historyCount > 0 && (
+            <span className="rounded-full bg-surface-a4 px-[6px] py-px text-2xs tabular-nums text-surface-9">
+              {historyCount}
+            </span>
+          )}
         </button>
-        <IconButton className="size-[30px]" title="Help & keyboard shortcuts" aria-label="Help & keyboard shortcuts" onClick={openHelp}>
+        <IconButton
+          className="size-[30px]"
+          title="Help & keyboard shortcuts"
+          aria-label="Help & keyboard shortcuts"
+          onClick={openHelp}
+        >
           <CircleHelp className="size-[17px]" aria-hidden="true" />
         </IconButton>
-        <IconButton className="size-[30px]" title="Settings (⌘,)" data-shortcut-hint="," data-shortcut-placement="top-left" aria-label="Settings" onClick={openSettings}>
+        <IconButton
+          className="size-[30px]"
+          title="Settings (⌘,)"
+          data-shortcut-hint=","
+          data-shortcut-placement="top-left"
+          aria-label="Settings"
+          onClick={openSettings}
+        >
           <Settings className="size-[17px]" aria-hidden="true" />
         </IconButton>
       </div>
@@ -322,13 +336,15 @@ function ProjectRow({
             aria-hidden="true"
           />
           {warningProcesses.length > 0 && (
-            <Dot
-              tone="warning"
-              title={`High CPU: ${warningProcesses.map((process) => process.name).join(", ")}`}
-            />
+            <Dot tone="warning" title={`High CPU: ${warningProcesses.map((process) => process.name).join(", ")}`} />
           )}
           <span
-            className={cx(LABEL, "text-md font-semibold text-surface-12", menuOpen ? FADE_CLEARS_ONE : FADE, FADE_HOVER_ONE)}
+            className={cx(
+              LABEL,
+              "text-md font-semibold text-surface-12",
+              menuOpen ? FADE_CLEARS_ONE : FADE,
+              FADE_HOVER_ONE,
+            )}
           >
             {project.name}
           </span>

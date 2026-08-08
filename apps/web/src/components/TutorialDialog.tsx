@@ -27,7 +27,10 @@ function Key({ children }: { children: ReactNode }) {
 /** Shared stage for the step schematics; decorative, so hidden from readers. */
 function Frame({ children }: { children: ReactNode }) {
   return (
-    <div aria-hidden="true" className="grid h-[128px] place-items-center overflow-hidden rounded-lg border border-surface-5 bg-surface-1 select-none">
+    <div
+      aria-hidden="true"
+      className="grid h-[128px] place-items-center overflow-hidden rounded-lg border border-surface-5 bg-surface-1 select-none"
+    >
       {children}
     </div>
   )
@@ -37,7 +40,9 @@ function Frame({ children }: { children: ReactNode }) {
 function Spark({ points, className, marker }: { points: number[]; className?: string; marker?: number }) {
   const max = Math.max(...points)
   const xAt = (index: number) => (index / (points.length - 1)) * 100
-  const path = points.map((value, index) => `${xAt(index).toFixed(1)},${(27 - (value / max) * 25).toFixed(1)}`).join(" ")
+  const path = points
+    .map((value, index) => `${xAt(index).toFixed(1)},${(27 - (value / max) * 25).toFixed(1)}`)
+    .join(" ")
   return (
     <svg viewBox="0 0 100 28" preserveAspectRatio="none" className={cx("h-[18px] w-full overflow-visible", className)}>
       {marker !== undefined && (
@@ -49,13 +54,28 @@ function Spark({ points, className, marker }: { points: number[]; className?: st
           className="stroke-surface-11 opacity-45 [stroke-width:1] [vector-effect:non-scaling-stroke]"
         />
       )}
-      <polyline points={path} className="fill-none stroke-current [stroke-width:1.5] [vector-effect:non-scaling-stroke]" />
+      <polyline
+        points={path}
+        className="fill-none stroke-current [stroke-width:1.5] [vector-effect:non-scaling-stroke]"
+      />
     </svg>
   )
 }
 
 /** Echo of the inspector's `Metric` card: label, readout, toned sparkline. */
-function MetricCard({ label, value, tone, points, marker }: { label: string; value: string; tone: string; points: number[]; marker?: number }) {
+function MetricCard({
+  label,
+  value,
+  tone,
+  points,
+  marker,
+}: {
+  label: string
+  value: string
+  tone: string
+  points: number[]
+  marker?: number
+}) {
   return (
     <div className="w-[104px] rounded-md border border-surface-5 bg-surface-a2 p-[8px]">
       <span className="block text-xs text-surface-9">{label}</span>
@@ -68,7 +88,12 @@ function MetricCard({ label, value, tone, points, marker }: { label: string; val
 function MockRow({ name, running = false }: { name: string; running?: boolean }) {
   return (
     <li className="flex items-center gap-1.5 rounded-sm px-1 py-0.5 text-base text-surface-11">
-      <span className={cx("size-[6px] flex-none rounded-full", running ? "bg-success-10 shadow-glow shadow-success-a6" : "bg-surface-8")} />
+      <span
+        className={cx(
+          "size-[6px] flex-none rounded-full",
+          running ? "bg-success-10 shadow-glow shadow-success-a6" : "bg-surface-8",
+        )}
+      />
       {name}
       {!running && <Play size={9} className="ml-auto text-surface-9" />}
     </li>
@@ -186,7 +211,9 @@ function MockPalette() {
         <div className="flex items-center gap-1.5 border-b border-surface-5 px-2 py-1.5 text-xs text-surface-8">
           <Search size={10} />
           Search…
-          <kbd className="ml-auto rounded-sm border border-surface-6 bg-surface-a3 px-1 font-mono text-2xs text-surface-10">⌘K</kbd>
+          <kbd className="ml-auto rounded-sm border border-surface-6 bg-surface-a3 px-1 font-mono text-2xs text-surface-10">
+            ⌘K
+          </kbd>
         </div>
         <div className="p-1 text-xs text-surface-11">
           <p className="m-0 rounded-sm bg-surface-a4 px-1.5 py-0.5 text-surface-12">▶ Start app/web</p>
@@ -203,8 +230,7 @@ const STEPS = [
     body: (
       <>
         Point hangar at a folder that&apos;s already on your Mac — nothing is cloned or copied. Its{" "}
-        <code>package.json</code> scripts become processes; clicking one opens its tab, and ▶ is
-        what starts it.
+        <code>package.json</code> scripts become processes; clicking one opens its tab, and ▶ is what starts it.
       </>
     ),
     visual: <MockProjects />,
@@ -213,8 +239,8 @@ const STEPS = [
     title: "Resources, watched live",
     body: (
       <>
-        Every session samples CPU, memory, and output rate every two seconds. High CPU turns the
-        dots amber wherever the session appears; <Key>⌘I</Key> opens the full inspector.
+        Every session samples CPU, memory, and output rate every two seconds. High CPU turns the dots amber wherever the
+        session appears; <Key>⌘I</Key> opens the full inspector.
       </>
     ),
     visual: <MockMetrics />,
@@ -223,8 +249,8 @@ const STEPS = [
     title: "Charts synced to output",
     body: (
       <>
-        Click a point on a resource chart and the terminal jumps to what it was printing at that
-        moment. Select terminal output and the matching range lights up on every chart.
+        Click a point on a resource chart and the terminal jumps to what it was printing at that moment. Select terminal
+        output and the matching range lights up on every chart.
       </>
     ),
     visual: <MockSync />,
@@ -233,8 +259,8 @@ const STEPS = [
     title: "Ports, opened and shared",
     body: (
       <>
-        Listening ports are detected automatically. Click one to open it in your browser — or copy a
-        LAN or Tailscale link and open it from your phone.
+        Listening ports are detected automatically. Click one to open it in your browser — or copy a LAN or Tailscale
+        link and open it from your phone.
       </>
     ),
     visual: <MockPorts />,
@@ -243,8 +269,8 @@ const STEPS = [
     title: "Find anything",
     body: (
       <>
-        <Key>⌘K</Key> searches processes, actions, and archived runs. History and terminal logs are
-        opt-in, in Settings — and this tour can be replayed from there too.
+        <Key>⌘K</Key> searches processes, actions, and archived runs. History and terminal logs are opt-in, in Settings
+        — and this tour can be replayed from there too.
       </>
     ),
     visual: <MockPalette />,

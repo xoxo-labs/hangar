@@ -100,18 +100,88 @@ export function TerminalPane({ id, active }: { id: SessionId; active: boolean })
     >
       <div className="absolute top-[6px] right-[4px] bottom-[28px] left-[8px] min-h-0 overflow-hidden" ref={ref} />
       {session && <SessionStrip session={session} onInspect={() => toggleInspector(id)} />}
-      <button className={cx("absolute top-[8px] right-[16px] z-[4] rounded-md border border-surface-5 bg-surface-3/88 px-[6px] pt-[2px] pb-[4px] text-[11px] tracking-[1px] text-surface-9 transition-opacity duration-[120ms] ease-[ease] group-hover:opacity-100 focus:opacity-100", menuOpen ? "opacity-100" : "opacity-0")} type="button" title="Terminal actions" onClick={(event) => { event.stopPropagation(); setMenuOpen((value) => !value) }}>•••</button>
+      <button
+        className={cx(
+          "absolute top-[8px] right-[16px] z-[4] rounded-md border border-surface-5 bg-surface-3/88 px-[6px] pt-[2px] pb-[4px] text-[11px] tracking-[1px] text-surface-9 transition-opacity duration-[120ms] ease-[ease] group-hover:opacity-100 focus:opacity-100",
+          menuOpen ? "opacity-100" : "opacity-0",
+        )}
+        type="button"
+        title="Terminal actions"
+        onClick={(event) => {
+          event.stopPropagation()
+          setMenuOpen((value) => !value)
+        }}
+      >
+        •••
+      </button>
       {menuOpen && (
-        <div className="absolute top-[34px] right-[16px] z-[5] flex w-[238px] flex-col rounded-lg border border-surface-6 bg-surface-3 p-[5px] shadow-[0_10px_30px_#0008]" onPointerDown={(event) => event.stopPropagation()}>
-          <button className={MENU_ITEM} disabled={!hasTerminalSelection(id)} onClick={() => void copied(() => copyTerminalSelection(id))}>Copy selection <kbd className={MENU_KBD}>⌘C</kbd></button>
-          <button className={MENU_ITEM} onClick={() => void copied(() => copyTerminalOutput(id, 50))}>Select &amp; copy last 50 lines</button>
-          <button className={MENU_ITEM} onClick={() => void copied(() => copyTerminalOutput(id, 100))}>Select &amp; copy last 100 lines</button>
-          <button className={MENU_ITEM} onClick={() => void copied(() => copyTerminalOutput(id))}>Copy all output</button>
+        <div
+          className="absolute top-[34px] right-[16px] z-[5] flex w-[238px] flex-col rounded-lg border border-surface-6 bg-surface-3 p-[5px] shadow-[0_10px_30px_#0008]"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <button
+            className={MENU_ITEM}
+            disabled={!hasTerminalSelection(id)}
+            onClick={() => void copied(() => copyTerminalSelection(id))}
+          >
+            Copy selection <kbd className={MENU_KBD}>⌘C</kbd>
+          </button>
+          <button className={MENU_ITEM} onClick={() => void copied(() => copyTerminalOutput(id, 50))}>
+            Select &amp; copy last 50 lines
+          </button>
+          <button className={MENU_ITEM} onClick={() => void copied(() => copyTerminalOutput(id, 100))}>
+            Select &amp; copy last 100 lines
+          </button>
+          <button className={MENU_ITEM} onClick={() => void copied(() => copyTerminalOutput(id))}>
+            Copy all output
+          </button>
           <span className="mx-[3px] my-[4px] h-px bg-surface-5" />
-          {session && <button className={MENU_ITEM} onClick={() => { openInspector(id); setMenuOpen(false) }}>Session details</button>}
-          {session?.logPath && window.hangarDesktop && <button className={MENU_ITEM} onClick={() => { void window.hangarDesktop?.revealPath(session.logPath!); setMenuOpen(false) }}>Reveal current log in Finder</button>}
-          {session?.logPath && <button className={MENU_ITEM} onClick={() => void copied(async () => { await navigator.clipboard.writeText(session.logPath!); return 1 })}>Copy log path</button>}
-          <button className={MENU_ITEM} data-shortcut-hint="⇧K" onClick={() => { clearTerminal(id); setMenuOpen(false); focusTerminal(id) }}>Clear terminal <kbd className={MENU_KBD}>⌘⇧K</kbd></button>
+          {session && (
+            <button
+              className={MENU_ITEM}
+              onClick={() => {
+                openInspector(id)
+                setMenuOpen(false)
+              }}
+            >
+              Session details
+            </button>
+          )}
+          {session?.logPath && window.hangarDesktop && (
+            <button
+              className={MENU_ITEM}
+              onClick={() => {
+                void window.hangarDesktop?.revealPath(session.logPath!)
+                setMenuOpen(false)
+              }}
+            >
+              Reveal current log in Finder
+            </button>
+          )}
+          {session?.logPath && (
+            <button
+              className={MENU_ITEM}
+              onClick={() =>
+                void copied(async () => {
+                  await navigator.clipboard.writeText(session.logPath!)
+                  return 1
+                })
+              }
+            >
+              Copy log path
+            </button>
+          )}
+          <button
+            className={MENU_ITEM}
+            data-shortcut-hint="⇧K"
+            onClick={() => {
+              clearTerminal(id)
+              setMenuOpen(false)
+              focusTerminal(id)
+            }}
+          >
+            Clear terminal <kbd className={MENU_KBD}>⌘⇧K</kbd>
+          </button>
         </div>
       )}
       {session && inspectorOpen && <SessionInspector session={session} onClose={closeInspector} />}

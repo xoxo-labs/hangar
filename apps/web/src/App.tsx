@@ -175,10 +175,7 @@ export function App() {
   // A pane exists for every session that already has a terminal, plus the
   // active one — mounting it is what creates its terminal on first open.
   const paneIds = useMemo(
-    () =>
-      sessions
-        .filter((s) => s.id === activeId || terminalIds.includes(s.id))
-        .map((s) => s.id),
+    () => sessions.filter((s) => s.id === activeId || terminalIds.includes(s.id)).map((s) => s.id),
     [sessions, activeId, terminalIds],
   )
 
@@ -187,28 +184,31 @@ export function App() {
       className={`grid h-full grid-rows-[minmax(0,1fr)]${shortcutHintsEnabled && shortcutHintsVisible ? " shortcut-hints" : ""}`}
       style={{ gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr)` }}
     >
-      <Sidebar
-        onResizeStart={startSidebarResize}
-        onResizeBy={(delta) => resizeSidebar(sidebarWidth + delta)}
-      />
+      <Sidebar onResizeStart={startSidebarResize} onResizeBy={(delta) => resizeSidebar(sidebarWidth + delta)} />
       <main className="col-start-2 row-start-1 flex min-h-0 min-w-0 flex-col bg-surface-1">
         <TabBar />
         <div className="relative min-h-0 flex-1">
           {paneIds.map((id) => (
             <TerminalPane key={id} id={id} active={id === activeId} />
           ))}
-          {releaseNotesActive
-            ? <ReleaseNotesWorkspace />
-            : activeHistory !== null
-              ? <HistoryWorkspace runId={activeHistory === "overview" ? null : activeHistory} />
-              : waiting
-                ? <NotStarted project={waiting.project} process={waiting.process} />
-                : activeId === null && <Placeholder />}
+          {releaseNotesActive ? (
+            <ReleaseNotesWorkspace />
+          ) : activeHistory !== null ? (
+            <HistoryWorkspace runId={activeHistory === "overview" ? null : activeHistory} />
+          ) : waiting ? (
+            <NotStarted project={waiting.project} process={waiting.process} />
+          ) : (
+            activeId === null && <Placeholder />
+          )}
           {waiting && inspectingId === waiting.id && (
             <PendingSessionInspector
               project={waiting.project}
               process={waiting.process}
-              cmd={projects.find((project) => project.name === waiting.project)?.processes.find((process) => process.name === waiting.process)?.cmd ?? ""}
+              cmd={
+                projects
+                  .find((project) => project.name === waiting.project)
+                  ?.processes.find((process) => process.name === waiting.process)?.cmd ?? ""
+              }
               onClose={closeInspector}
             />
           )}

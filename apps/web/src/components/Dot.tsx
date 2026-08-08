@@ -11,9 +11,6 @@ const TONE: Record<Tone, string> = {
 
 export function Dot({ tone, small = false, title }: { tone: Tone; small?: boolean; title?: string }) {
   return (
-    <span
-      className={cx("flex-none rounded-full", small ? "size-[6px]" : "size-[8px]", TONE[tone])}
-      title={title}
-    />
+    <span className={cx("flex-none rounded-full", small ? "size-[6px]" : "size-[8px]", TONE[tone])} title={title} />
   )
 }
