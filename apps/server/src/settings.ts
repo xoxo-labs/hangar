@@ -31,6 +31,10 @@ export function loadSettings(): AppSettings {
         ...DEFAULT_SETTINGS.sessionHistory,
         ...(parsed.sessionHistory ?? {}),
       },
+      onboarding: {
+        ...DEFAULT_SETTINGS.onboarding,
+        ...(parsed.onboarding ?? {}),
+      },
     }
   } catch {
     return structuredClone(DEFAULT_SETTINGS)
@@ -105,4 +109,5 @@ function validateSettings(settings: AppSettings): void {
   const history = settings?.sessionHistory
   if (!history || typeof history.enabled !== "boolean") throw new Error("invalid session history settings")
   if (![7, 30, 90, null].includes(history.retentionDays)) throw new Error("invalid history retention")
+  if (typeof settings?.onboarding?.tutorialSeen !== "boolean") throw new Error("invalid onboarding settings")
 }

@@ -11,6 +11,8 @@ let backoff = MIN_BACKOFF
 let retry: ReturnType<typeof setTimeout> | null = null
 /** First attempt reads as "connecting"; every later one as "reconnecting". */
 let everConnected = false
+/** The tutorial decision waits for the first state so it reads real settings, not defaults. */
+let sawFirstState = false
 
 function url(): string {
   return `ws://127.0.0.1:${useStore.getState().port}/ws`
@@ -71,6 +73,10 @@ function handle(msg: ServerMsg): void {
       applyThemeSetting(msg.settings.appearance.theme)
       applyTerminalSettings(msg.settings.terminal)
       for (const session of gone) disposeTerminal(session.id)
+      if (!sawFirstState) {
+        sawFirstState = true
+        if (!msg.settings.onboarding.tutorialSeen) store.openTutorial()
+      }
       return
     }
     case "metrics":

@@ -70,6 +70,7 @@ export function SettingsDialog() {
 function SettingsForm({ initial }: { initial: AppSettings }) {
   const close = useStore((s) => s.closeSettings)
   const openReleaseNotes = useStore((s) => s.openReleaseNotes)
+  const openTutorial = useStore((s) => s.openTutorial)
   const [version, setVersion] = useState("development")
   const [settings, setSettings] = useState(() => structuredClone(initial))
   const appearance = settings.appearance
@@ -238,7 +239,10 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
           <Section title="About">
             <div className="flex items-center justify-between rounded-md border border-surface-5 p-[10px]">
               <div><strong className="block text-base font-book">Hangar</strong><span className="text-xs tabular-nums text-surface-9">Version {version}</span></div>
-              <Button onClick={() => { close(); openReleaseNotes() }}>Release notes</Button>
+              <div className="flex gap-1.5">
+                <Button onClick={() => { close(); openTutorial() }}>Replay tutorial</Button>
+                <Button onClick={() => { close(); openReleaseNotes() }}>Release notes</Button>
+              </div>
             </div>
           </Section>
           <Section title="Terminal logs">

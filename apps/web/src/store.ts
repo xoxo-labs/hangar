@@ -95,6 +95,8 @@ type Store = {
   port: number
   settings: AppSettings
   settingsOpen: boolean
+  /** Whether the welcome tutorial is up (first run, or replayed from Settings). */
+  tutorialOpen: boolean
   /** Whether the ⌘K command palette is up. */
   paletteOpen: boolean
   lastError: string | null
@@ -137,6 +139,8 @@ type Store = {
   closeEditor: () => void
   openSettings: () => void
   closeSettings: () => void
+  openTutorial: () => void
+  closeTutorial: () => void
   openPalette: () => void
   closePalette: () => void
   requestConfirm: (request: ConfirmRequest) => void
@@ -164,6 +168,7 @@ export const useStore = create<Store>((set) => ({
   port: readPort(),
   settings: structuredClone(DEFAULT_SETTINGS),
   settingsOpen: false,
+  tutorialOpen: false,
   paletteOpen: false,
   lastError: null,
   notice: null,
@@ -407,6 +412,10 @@ export const useStore = create<Store>((set) => ({
   openSettings: () => set({ settingsOpen: true }),
 
   closeSettings: () => set({ settingsOpen: false }),
+
+  openTutorial: () => set({ tutorialOpen: true }),
+
+  closeTutorial: () => set({ tutorialOpen: false }),
 
   // Purely additive: the palette floats over whatever tab is open, so it must
   // not touch activeId / activeHistory on the way in or out.

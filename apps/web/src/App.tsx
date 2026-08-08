@@ -11,6 +11,7 @@ import { Sidebar } from "./components/Sidebar"
 import { StatusBar } from "./components/StatusBar"
 import { TabBar } from "./components/TabBar"
 import { TerminalPane } from "./components/TerminalPane"
+import { TutorialDialog } from "./components/TutorialDialog"
 import { useStore } from "./store"
 import { Button } from "./ui/Button"
 
@@ -31,6 +32,7 @@ export function App() {
   const openPalette = useStore((s) => s.openPalette)
   const closePalette = useStore((s) => s.closePalette)
   const confirming = useStore((s) => s.confirming)
+  const tutorialOpen = useStore((s) => s.tutorialOpen)
   const toggleInspector = useStore((s) => s.toggleInspector)
 
   useEffect(() => window.hangarDesktop?.onOpenSettings(openSettings), [openSettings])
@@ -73,13 +75,13 @@ export function App() {
       if (event.key.toLowerCase() === "k" && !event.shiftKey) {
         event.preventDefault()
         if (paletteOpen) closePalette()
-        // A destructive confirm owns the keyboard until it is answered.
-        else if (confirming === null) openPalette()
+        // A destructive confirm (or the tour) owns the keyboard until it is answered.
+        else if (confirming === null && !tutorialOpen) openPalette()
       }
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [openSettings, openPalette, closePalette, paletteOpen, confirming, activeId, activeHistory, releaseNotesActive, toggleInspector])
+  }, [openSettings, openPalette, closePalette, paletteOpen, confirming, tutorialOpen, activeId, activeHistory, releaseNotesActive, toggleInspector])
 
   // A pane exists for every session that already has a terminal, plus the
   // active one — mounting it is what creates its terminal on first open.
@@ -120,6 +122,7 @@ export function App() {
       <StatusBar />
       <ProjectDialog />
       <SettingsDialog />
+      <TutorialDialog />
       <ConfirmDialog />
       {/* Mounted only while open: unmounting is what resets the query. */}
       {paletteOpen && <CommandPalette />}

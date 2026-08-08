@@ -61,6 +61,10 @@ export type AppSettings = {
     enabled: boolean
     retentionDays: 7 | 30 | 90 | null
   }
+  onboarding: {
+    /** The first-run tutorial was dismissed or finished; it can be replayed from Settings. */
+    tutorialSeen: boolean
+  }
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -88,6 +92,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sessionHistory: {
     enabled: false,
     retentionDays: 30,
+  },
+  onboarding: {
+    tutorialSeen: false,
   },
 }
 

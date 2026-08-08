@@ -61,6 +61,7 @@ export function CommandPalette() {
   const openHistoryRun = useStore((s) => s.openHistoryRun)
   const openReleaseNotes = useStore((s) => s.openReleaseNotes)
   const openSettings = useStore((s) => s.openSettings)
+  const openTutorial = useStore((s) => s.openTutorial)
   const closePalette = useStore((s) => s.closePalette)
 
   const byId = useMemo(() => new Map(sessions.map((s) => [s.id, s])), [sessions])
@@ -255,6 +256,9 @@ export function CommandPalette() {
             )}
             <Command.Item value="release notes" className={ITEM} onSelect={() => run(openReleaseNotes)}>
               <span className={GLYPH} aria-hidden="true">✦</span>Release notes
+            </Command.Item>
+            <Command.Item value="tutorial" keywords={["tour", "help", "welcome", "onboarding"]} className={ITEM} onSelect={() => run(openTutorial)}>
+              <span className={GLYPH} aria-hidden="true">?</span>Tutorial
             </Command.Item>
             {THEMES.map(([theme, label]) => (
               <Command.Item
