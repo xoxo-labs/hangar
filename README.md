@@ -4,6 +4,13 @@ Local project launcher for the Mac: register your dev projects once, then start
 them (and later, watch their terminals) from one place. Designed so coding
 agents can manage the registry through the CLI instead of you doing it by hand.
 
+## Install
+
+Download the latest DMG from the
+[releases page](https://github.com/xoxo-labs/hangar/releases/latest). Builds
+are unsigned for now: if Gatekeeper blocks the first launch, right-click
+`Hangar.app`, choose **Open**, then confirm **Open**.
+
 ## Architecture (t3code-inspired)
 
 1. **`apps/server`** — the brain. Owns the project registry and the PTY
@@ -71,3 +78,7 @@ No build step: Node ≥ 24 runs the TypeScript sources directly. To get the
 ```sh
 cd apps/server && pnpm link --global
 ```
+
+## License
+
+[MIT](LICENSE).

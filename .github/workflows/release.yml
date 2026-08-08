@@ -1,0 +1,33 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    env:
+      # The app ships unsigned (build.mac.identity is null); keep
+      # electron-builder from hunting for a certificate on the runner.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm dist:mac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hangar-mac
+          path: apps/desktop/release/*.dmg
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: apps/desktop/release/*.dmg
+          generate_release_notes: true
