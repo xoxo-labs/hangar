@@ -25,7 +25,8 @@ const METRICS_INTERVAL_MS = 2_000
 /** Historical charts need much less resolution than the live inspector. */
 const HISTORY_METRIC_INTERVAL_MS = METRICS_INTERVAL_MS
 /** Compact older samples instead of letting a long-running process grow without bound. */
-const MAX_HISTORY_METRIC_SAMPLES = 1_200
+// Six hours at the two-second sampling interval; older runs remain bounded on disk.
+const MAX_HISTORY_METRIC_SAMPLES = 10_800
 const MAX_HISTORY_REPLAY_BYTES = 10 * 1024 * 1024
 const RESTART_DIVIDER = "\r\n\x1b[2m— restarted —\x1b[0m\r\n"
 /** Inherit the full environment except vars that would confuse dev servers. */

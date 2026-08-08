@@ -252,7 +252,8 @@ export const useStore = create<Store>((set) => ({
         sessions: state.sessions.map((session) =>
           session.id === id ? { ...session, metrics } : session,
         ),
-        metricHistory: { ...state.metricHistory, [id]: [...previous, point].slice(-450) },
+        // Keep up to six hours at the server's two-second sampling interval.
+        metricHistory: { ...state.metricHistory, [id]: [...previous, point].slice(-10_800) },
       }
     }),
 

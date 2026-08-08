@@ -1,5 +1,6 @@
 import type { SessionHistoryEntry, SessionInfo, SessionMetrics } from "@hangar/contracts"
-import { useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent } from "react"
+import { Check, ChevronDown } from "lucide-react"
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import * as actions from "../actions"
 import { openLocalPort } from "../links"
 import { hasHighCpu, toneOf } from "../status"
@@ -193,12 +194,29 @@ function inspectorState(session: SessionInfo): string {
   return session.exitCode == null ? "Exited" : `Exited with code ${session.exitCode}`
 }
 
-function ResourceSection({ sessionId, metrics, history }: { sessionId: string; metrics: SessionMetrics; history: SessionMetricPoint[] }) {
+type MetricRange = "5m" | "15m" | "1h" | "session"
+const METRIC_RANGE_MS: Record<Exclude<MetricRange, "session">, number> = {
+  "5m": 5 * 60_000,
+  "15m": 15 * 60_000,
+  "1h": 60 * 60_000,
+}
+
+function ResourceSection({ sessionId, metrics, history: allHistory }: { sessionId: string; metrics: SessionMetrics; history: SessionMetricPoint[] }) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [selectedRange, setSelectedRange] = useState<[number, number] | null>(null)
   const [layout, setLayout] = useState<"grid" | "rows">("grid")
+  const [range, setRange] = useState<MetricRange>("15m")
   const showNotice = useStore((state) => state.showNotice)
+  const history = useMemo(() => {
+    if (range === "session" || allHistory.length === 0) return allHistory
+    const latest = allHistory[allHistory.length - 1]!.sampledAt
+    const cutoff = latest - METRIC_RANGE_MS[range]
+    return allHistory.filter((point) => point.sampledAt >= cutoff)
+  }, [allHistory, range])
   const hovered = hoveredIndex === null ? undefined : history[hoveredIndex]
+  const interval = history.length > 1
+    ? `${formatRangeTime(history[0]!.sampledAt)}–${formatRangeTime(history[history.length - 1]!.sampledAt)}`
+    : "Collecting data…"
 
   useEffect(() => subscribeToMetricSelection(sessionId, (range) => {
     if (range === null) {
@@ -220,17 +238,32 @@ function ResourceSection({ sessionId, metrics, history }: { sessionId: string; m
   const shared = { hoveredIndex, selectedRange, compact: layout === "rows", onHover: setHoveredIndex, onSelect: selectSample }
   return <section className={SECTION} onPointerLeave={() => setHoveredIndex(null)}>
     <div className="mb-[10px] flex items-center justify-between gap-2">
-      <h3 className="m-0 text-xs font-semibold uppercase tracking-caps text-surface-9" title="Hover to compare all metrics; click to jump to that point in the terminal">
-        Resources · {hovered ? formatTime(hovered.sampledAt) : "last 15 minutes"}
-      </h3>
-      <IconButton
+      <div className="min-w-0">
+        <h3 className="m-0 truncate text-xs font-semibold uppercase tracking-caps text-surface-9" title="Hover to compare all metrics; click to jump to that point in the terminal">
+          Resources{hovered ? ` · ${formatTime(hovered.sampledAt)}` : ""}
+        </h3>
+        <span className="mt-0.5 block truncate whitespace-nowrap text-2xs text-surface-8" title={`${interval} · Live · sampled every 2 seconds`}>
+          {interval} · Live · 2s samples
+        </span>
+      </div>
+      <div className="flex items-center gap-1">
+        <MetricRangeMenu
+          value={range}
+          onChange={(next) => {
+            setRange(next)
+            setHoveredIndex(null)
+            setSelectedRange(null)
+          }}
+        />
+        <IconButton
         className="size-[22px] rounded-sm text-[13px] text-surface-8"
         title={layout === "grid" ? "Switch to compact rows" : "Switch to card grid"}
         aria-label={layout === "grid" ? "Switch to compact rows" : "Switch to card grid"}
         onClick={() => setLayout((current) => current === "grid" ? "rows" : "grid")}
-      >
-        {layout === "grid" ? "⊞" : "☰"}
-      </IconButton>
+        >
+          {layout === "grid" ? "⊞" : "☰"}
+        </IconButton>
+      </div>
     </div>
     <div className={cx("grid gap-[7px]", layout === "grid" ? "grid-cols-2" : "grid-cols-1 gap-[4px]")}>
       <Metric label="CPU" value={formatCpu(metrics.cpuPercent)} hoverValue={hovered && formatCpu(hovered.cpuPercent)} peak={`peak ${formatCpu(metrics.peakCpuPercent)}`} values={history.map((point) => point.cpuPercent)} tone="accent" {...shared} />
@@ -239,6 +272,58 @@ function ResourceSection({ sessionId, metrics, history }: { sessionId: string; m
       <Metric label="Output" value={`${formatBytes(metrics.outputBytesPerSecond)}/s`} hoverValue={hovered && `${formatBytes(hovered.outputBytesPerSecond)}/s`} peak={`${formatBytes(metrics.outputBytes)} total`} values={history.map((point) => point.outputBytesPerSecond)} tone="warning" {...shared} />
     </div>
   </section>
+}
+
+const METRIC_RANGE_OPTIONS: Array<[MetricRange, string]> = [
+  ["5m", "Last 5 minutes"],
+  ["15m", "Last 15 minutes"],
+  ["1h", "Last hour"],
+  ["session", "Full session"],
+]
+
+function MetricRangeMenu({ value, onChange }: { value: MetricRange; onChange: (range: MetricRange) => void }) {
+  const details = useRef<HTMLDetailsElement>(null)
+  useEffect(() => {
+    const dismiss = (event: PointerEvent) => {
+      if (details.current && !details.current.contains(event.target as Node)) details.current.open = false
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && details.current?.open) {
+        details.current.open = false
+        details.current.querySelector("summary")?.focus()
+      }
+    }
+    window.addEventListener("pointerdown", dismiss)
+    window.addEventListener("keydown", onKey)
+    return () => {
+      window.removeEventListener("pointerdown", dismiss)
+      window.removeEventListener("keydown", onKey)
+    }
+  }, [])
+  return (
+    <details ref={details} className="relative">
+      <summary className="flex h-[24px] cursor-pointer list-none items-center gap-1 rounded-sm px-1.5 text-xs text-surface-9 hover:bg-surface-a4 hover:text-surface-12 [&::-webkit-details-marker]:hidden">
+        {value === "session" ? "Session" : value}
+        <ChevronDown className="size-[12px]" aria-hidden="true" />
+      </summary>
+      <div className="absolute top-[28px] right-0 z-20 flex min-w-[150px] flex-col rounded-md border border-surface-5 bg-surface-3 p-1 shadow-[0_10px_30px_#0008]">
+        {METRIC_RANGE_OPTIONS.map(([range, label]) => (
+          <button
+            key={range}
+            type="button"
+            className="flex items-center gap-2 rounded-sm px-2 py-1 text-left text-base text-surface-11 hover:bg-surface-a3 hover:text-surface-12"
+            onClick={() => {
+              onChange(range)
+              if (details.current) details.current.open = false
+            }}
+          >
+            <Check className={cx("size-[13px]", value === range ? "opacity-100" : "opacity-0")} aria-hidden="true" />
+            {label}
+          </button>
+        ))}
+      </div>
+    </details>
+  )
 }
 
 type MetricProps = {
@@ -390,6 +475,14 @@ function formatDuration(milliseconds: number): string {
   if (minutes < 60) return `${minutes}m`
   const hours = Math.floor(minutes / 60)
   return `${hours}h ${minutes % 60}m`
+}
+
+function formatRangeTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  })
 }
 
 function formatTime(timestamp: number): string {
