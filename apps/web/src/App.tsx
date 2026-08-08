@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import * as actions from "./actions"
 import { CommandPalette } from "./components/CommandPalette"
 import { ConfirmDialog } from "./components/ConfirmDialog"
@@ -15,6 +15,7 @@ import { useStore } from "./store"
 import { Button } from "./ui/Button"
 
 export function App() {
+  const [shortcutHintsVisible, setShortcutHintsVisible] = useState(false)
   const sessions = useStore((s) => s.sessions)
   const activeId = useStore((s) => s.activeId)
   const waiting = useStore((s) => s.pending.find((tab) => tab.id === s.activeId))
@@ -22,6 +23,7 @@ export function App() {
   const releaseNotesActive = useStore((s) => s.releaseNotesActive)
   const terminalIds = useStore((s) => s.terminalIds)
   const projects = useStore((s) => s.projects)
+  const shortcutHintsEnabled = useStore((s) => s.settings.appearance.shortcutHints)
   const inspectingId = useStore((s) => s.inspectingId)
   const closeInspector = useStore((s) => s.closeInspector)
   const openSettings = useStore((s) => s.openSettings)
@@ -33,6 +35,26 @@ export function App() {
 
   useEffect(() => window.hangarDesktop?.onOpenSettings(openSettings), [openSettings])
 
+  // Holding the platform shortcut modifier reveals the remaining keys directly
+  // on controls that have a shortcut. Capture makes this work over xterm too.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey) setShortcutHintsVisible(true)
+    }
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (!event.metaKey && !event.ctrlKey) setShortcutHintsVisible(false)
+    }
+    const hide = () => setShortcutHintsVisible(false)
+    window.addEventListener("keydown", onKeyDown, true)
+    window.addEventListener("keyup", onKeyUp, true)
+    window.addEventListener("blur", hide)
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true)
+      window.removeEventListener("keyup", onKeyUp, true)
+      window.removeEventListener("blur", hide)
+    }
+  }, [])
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey)) return
@@ -41,7 +63,7 @@ export function App() {
         openSettings()
         return
       }
-      if (event.shiftKey && event.key.toLowerCase() === "i" && activeId !== null && activeHistory === null && !releaseNotesActive) {
+      if (!event.shiftKey && event.key.toLowerCase() === "i" && activeId !== null && activeHistory === null && !releaseNotesActive) {
         event.preventDefault()
         toggleInspector(activeId)
         return
@@ -70,7 +92,7 @@ export function App() {
   )
 
   return (
-    <div className="grid h-full grid-cols-[280px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)]">
+    <div className={`grid h-full grid-cols-[280px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)]${shortcutHintsEnabled && shortcutHintsVisible ? " shortcut-hints" : ""}`}>
       <Sidebar />
       <main className="col-start-2 row-start-1 flex min-h-0 min-w-0 flex-col bg-surface-1">
         <TabBar />

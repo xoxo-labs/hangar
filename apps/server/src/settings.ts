@@ -72,6 +72,9 @@ function validateSettings(settings: AppSettings): void {
   if (!["system", "light", "dark"].includes(settings?.appearance?.theme)) {
     throw new Error("invalid theme setting")
   }
+  if (typeof settings.appearance.shortcutHints !== "boolean") {
+    throw new Error("invalid shortcut hints setting")
+  }
   if (!["system", "safari", "chrome", "arc", "firefox", "brave", "edge"].includes(settings?.links?.browser)) {
     throw new Error("invalid browser setting")
   }

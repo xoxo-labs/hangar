@@ -127,7 +127,9 @@ export function TabBar() {
           ? "border-accent-8 bg-accent-a3 text-accent-11"
           : "border-transparent bg-surface-3 text-surface-10 enabled:hover:border-surface-5 enabled:hover:bg-surface-a4 enabled:hover:text-surface-12 disabled:opacity-35",
       )}
-      title="Toggle session inspector (⌘⇧I)"
+      title="Toggle session inspector (⌘I)"
+      data-shortcut-hint="I"
+      data-shortcut-placement="inside-top-right"
       aria-label="Toggle session inspector"
       aria-pressed={inspectorOpen}
       disabled={activeTarget === undefined}

@@ -34,6 +34,8 @@ export type AppSettings = {
   appearance: {
     /** "system" follows the OS light/dark preference live. */
     theme: ThemeSetting
+    /** Reveal keycaps on shortcut-bearing controls while ⌘/Ctrl is held. */
+    shortcutHints: boolean
   }
   links: {
     /** Browser used for detected localhost ports. */
@@ -64,6 +66,7 @@ export type AppSettings = {
 export const DEFAULT_SETTINGS: AppSettings = {
   appearance: {
     theme: "system",
+    shortcutHints: true,
   },
   links: {
     browser: "system",

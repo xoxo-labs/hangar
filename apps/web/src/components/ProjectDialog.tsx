@@ -346,6 +346,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
             variant="primary"
             disabled={!valid}
             title={valid ? "Save (⌘↵)" : (problem ?? undefined)}
+            data-shortcut-hint="↵"
             onClick={save}
           >
             Save

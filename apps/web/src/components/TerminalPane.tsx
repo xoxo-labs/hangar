@@ -111,7 +111,7 @@ export function TerminalPane({ id, active }: { id: SessionId; active: boolean })
           {session && <button className={MENU_ITEM} onClick={() => { openInspector(id); setMenuOpen(false) }}>Session details</button>}
           {session?.logPath && window.hangarDesktop && <button className={MENU_ITEM} onClick={() => { void window.hangarDesktop?.revealPath(session.logPath!); setMenuOpen(false) }}>Reveal current log in Finder</button>}
           {session?.logPath && <button className={MENU_ITEM} onClick={() => void copied(async () => { await navigator.clipboard.writeText(session.logPath!); return 1 })}>Copy log path</button>}
-          <button className={MENU_ITEM} onClick={() => { clearTerminal(id); setMenuOpen(false); focusTerminal(id) }}>Clear terminal <kbd className={MENU_KBD}>⌘⇧K</kbd></button>
+          <button className={MENU_ITEM} data-shortcut-hint="⇧K" onClick={() => { clearTerminal(id); setMenuOpen(false); focusTerminal(id) }}>Clear terminal <kbd className={MENU_KBD}>⌘⇧K</kbd></button>
         </div>
       )}
       {session && inspectorOpen && <SessionInspector session={session} onClose={closeInspector} />}

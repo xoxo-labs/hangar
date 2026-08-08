@@ -1,8 +1,7 @@
-import type { SessionHistoryEntry, SessionInfo, SessionMetrics } from "@hangar/contracts"
-import { Check, ChevronDown, Copy, ExternalLink, Info } from "lucide-react"
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
+import type { SessionHistoryEntry, SessionInfo } from "@hangar/contracts"
+import { Copy, ExternalLink, Info } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
 import * as actions from "../actions"
-import { type MetricRange, useMetricTimeline } from "../hooks/useMetricTimeline"
 import { usePortLinks } from "../hooks/usePortLinks"
 import { openLocalPort } from "../links"
 import { hasHighCpu, toneOf } from "../status"
@@ -11,6 +10,7 @@ import { Button } from "../ui/Button"
 import { cx } from "../ui/cx"
 import { IconButton } from "../ui/IconButton"
 import { Dot } from "./Dot"
+import { ResourceMetrics } from "./ResourceMetrics"
 
 const NO_METRIC_HISTORY: SessionMetricPoint[] = []
 
@@ -158,7 +158,7 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
           </dl>
         </section>
 
-        {metrics && <ResourceSection sessionId={session.id} metrics={metrics} history={metricHistory} />}
+        {metrics && <ResourceMetrics sessionId={session.id} metrics={metrics} history={metricHistory} />}
 
         {metrics && metrics.ports.length > 0 && <section className={SECTION}>
           <h3 className={SECTION_TITLE}>Ports</h3>
@@ -204,192 +204,6 @@ function inspectorState(session: SessionInfo): string {
   if (hasHighCpu(session)) return `Running · high CPU (${formatCpu(session.metrics!.cpuPercent)})`
   if (session.status === "running") return "Running"
   return session.exitCode == null ? "Exited" : `Exited with code ${session.exitCode}`
-}
-
-function ResourceSection({ sessionId, metrics, history: allHistory }: { sessionId: string; metrics: SessionMetrics; history: SessionMetricPoint[] }) {
-  const [layout, setLayout] = useState<"grid" | "rows">("grid")
-  const { history, range, setRange, hoveredIndex, setHoveredIndex, selectedRange, selectSample } =
-    useMetricTimeline(sessionId, allHistory)
-  const hovered = hoveredIndex === null ? undefined : history[hoveredIndex]
-  const interval = history.length > 1
-    ? `${formatRangeTime(history[0]!.sampledAt)}–${formatRangeTime(history[history.length - 1]!.sampledAt)}`
-    : "Collecting data…"
-
-  const shared = { hoveredIndex, selectedRange, compact: layout === "rows", onHover: setHoveredIndex, onSelect: selectSample }
-  return <section className={SECTION} onPointerLeave={() => setHoveredIndex(null)}>
-    <div className="mb-[10px] flex items-center justify-between gap-2">
-      <div className="min-w-0">
-        <h3 className="m-0 truncate text-xs font-semibold uppercase tracking-caps text-surface-9" title="Hover to compare all metrics; click to jump to that point in the terminal">
-          Resources{hovered ? ` · ${formatTime(hovered.sampledAt)}` : ""}
-        </h3>
-        <span className="mt-0.5 block truncate whitespace-nowrap text-2xs text-surface-8" title={`${interval} · Live · sampled every 2 seconds`}>
-          {interval} · Live · 2s samples
-        </span>
-      </div>
-      <div className="flex items-center gap-1">
-        <MetricRangeMenu
-          value={range}
-          onChange={setRange}
-        />
-        <IconButton
-        className="size-[22px] rounded-sm text-[13px] text-surface-8"
-        title={layout === "grid" ? "Switch to compact rows" : "Switch to card grid"}
-        aria-label={layout === "grid" ? "Switch to compact rows" : "Switch to card grid"}
-        onClick={() => setLayout((current) => current === "grid" ? "rows" : "grid")}
-        >
-          {layout === "grid" ? "⊞" : "☰"}
-        </IconButton>
-      </div>
-    </div>
-    <div className={cx("grid gap-[7px]", layout === "grid" ? "grid-cols-2" : "grid-cols-1 gap-[4px]")}>
-      <Metric label="CPU" value={formatCpu(metrics.cpuPercent)} hoverValue={hovered && formatCpu(hovered.cpuPercent)} peak={`peak ${formatCpu(metrics.peakCpuPercent)}`} values={history.map((point) => point.cpuPercent)} tone="accent" {...shared} />
-      <Metric label="Memory" value={formatBytes(metrics.memoryBytes)} hoverValue={hovered && formatBytes(hovered.memoryBytes)} peak={`peak ${formatBytes(metrics.peakMemoryBytes)}`} values={history.map((point) => point.memoryBytes)} tone="success" {...shared} />
-      <Metric label="Processes" value={String(metrics.processCount)} hoverValue={hovered && String(hovered.processCount ?? metrics.processCount)} values={history.map((point) => point.processCount ?? metrics.processCount)} tone="accent" {...shared} />
-      <Metric label="Output" value={`${formatBytes(metrics.outputBytesPerSecond)}/s`} hoverValue={hovered && `${formatBytes(hovered.outputBytesPerSecond)}/s`} peak={`${formatBytes(metrics.outputBytes)} total`} values={history.map((point) => point.outputBytesPerSecond)} tone="warning" {...shared} />
-    </div>
-  </section>
-}
-
-const METRIC_RANGE_OPTIONS: Array<[MetricRange, string]> = [
-  ["5m", "Last 5 minutes"],
-  ["15m", "Last 15 minutes"],
-  ["1h", "Last hour"],
-  ["session", "Full session"],
-]
-
-function MetricRangeMenu({ value, onChange }: { value: MetricRange; onChange: (range: MetricRange) => void }) {
-  const details = useRef<HTMLDetailsElement>(null)
-  useEffect(() => {
-    const dismiss = (event: PointerEvent) => {
-      if (details.current && !details.current.contains(event.target as Node)) details.current.open = false
-    }
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && details.current?.open) {
-        details.current.open = false
-        details.current.querySelector("summary")?.focus()
-      }
-    }
-    window.addEventListener("pointerdown", dismiss)
-    window.addEventListener("keydown", onKey)
-    return () => {
-      window.removeEventListener("pointerdown", dismiss)
-      window.removeEventListener("keydown", onKey)
-    }
-  }, [])
-  return (
-    <details ref={details} className="relative">
-      <summary className="flex h-[24px] cursor-pointer list-none items-center gap-1 rounded-sm px-1.5 text-xs text-surface-9 hover:bg-surface-a4 hover:text-surface-12 [&::-webkit-details-marker]:hidden">
-        {value === "session" ? "Session" : value}
-        <ChevronDown className="size-[12px]" aria-hidden="true" />
-      </summary>
-      <div className="absolute top-[28px] right-0 z-20 flex min-w-[150px] flex-col rounded-md border border-surface-5 bg-surface-3 p-1 shadow-[0_10px_30px_#0008]">
-        {METRIC_RANGE_OPTIONS.map(([range, label]) => (
-          <button
-            key={range}
-            type="button"
-            className="flex items-center gap-2 rounded-sm px-2 py-1 text-left text-base text-surface-11 hover:bg-surface-a3 hover:text-surface-12"
-            onClick={() => {
-              onChange(range)
-              if (details.current) details.current.open = false
-            }}
-          >
-            <Check className={cx("size-[13px]", value === range ? "opacity-100" : "opacity-0")} aria-hidden="true" />
-            {label}
-          </button>
-        ))}
-      </div>
-    </details>
-  )
-}
-
-type MetricProps = {
-  label: string
-  value: string
-  hoverValue?: string
-  peak?: string
-  values: number[]
-  tone: "accent" | "success" | "warning"
-  hoveredIndex: number | null
-  selectedRange: [number, number] | null
-  compact: boolean
-  onHover: (index: number) => void
-  onSelect: (index: number) => void
-}
-
-function Metric({ label, value, hoverValue, peak, values, tone, hoveredIndex, selectedRange, compact, onHover, onSelect }: MetricProps) {
-  if (compact) return <div className="grid h-[42px] grid-cols-[48px_62px_minmax(60px,1fr)_auto] items-center gap-[6px] rounded-md border border-surface-5 bg-surface-a2 px-[8px]">
-    <span className="text-xs text-surface-9">{label}</span>
-    <strong className="text-base font-book tabular-nums text-surface-12">{hoverValue ?? value}</strong>
-    <Sparkline compact values={values} tone={tone} hoveredIndex={hoveredIndex} selectedRange={selectedRange} onHover={onHover} onSelect={onSelect} />
-    <small className="max-w-[82px] truncate text-right text-2xs text-surface-8" title={peak}>{peak}</small>
-  </div>
-
-  return <div className="flex min-h-[100px] flex-col rounded-md border border-surface-5 bg-surface-a2 p-[9px]">
-    <span className="text-xs text-surface-9">{label}</span>
-    <strong className="mt-[4px] text-xl font-book text-surface-12">{hoverValue ?? value}</strong>
-    <Sparkline values={values} tone={tone} hoveredIndex={hoveredIndex} selectedRange={selectedRange} onHover={onHover} onSelect={onSelect} />
-    {peak && <small className="mt-auto text-xs text-surface-8">{peak}</small>}
-  </div>
-}
-
-/** Ports of `.sparkline-accent` / `-success` / `-warning` — the polyline reads `currentColor`. */
-const SPARKLINE_TONE = {
-  accent: "text-accent-10",
-  success: "text-success-10",
-  warning: "text-warning-10",
-} as const
-
-function Sparkline({ values, tone, hoveredIndex, selectedRange, compact = false, onHover, onSelect }: {
-  values: number[]
-  tone: "accent" | "success" | "warning"
-  hoveredIndex: number | null
-  selectedRange: [number, number] | null
-  compact?: boolean
-  onHover: (index: number) => void
-  onSelect: (index: number) => void
-}) {
-  if (values.length < 2) return <span className={cx("text-2xs text-surface-7", compact ? "m-0" : "my-[10px]")}>collecting…</span>
-  const maximum = Math.max(1, ...values)
-  const points = values.map((value, index) => {
-    const x = index / (values.length - 1) * 100
-    const y = 27 - value / maximum * 25
-    return `${x.toFixed(2)},${y.toFixed(2)}`
-  }).join(" ")
-  const hoverX = hoveredIndex === null ? null : hoveredIndex / (values.length - 1) * 100
-  const selectionX = selectedRange === null ? null : {
-    start: selectedRange[0] / (values.length - 1) * 100,
-    end: selectedRange[1] / (values.length - 1) * 100,
-  }
-  const pointAt = (event: ReactPointerEvent<SVGSVGElement>) => {
-    const bounds = event.currentTarget.getBoundingClientRect()
-    const ratio = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width))
-    return Math.round(ratio * (values.length - 1))
-  }
-  return <svg
-    className={cx("w-full cursor-crosshair overflow-visible", compact ? "m-0 h-[22px]" : "mt-[5px] mb-[3px] h-[28px]", SPARKLINE_TONE[tone])}
-    viewBox="0 0 100 28"
-    preserveAspectRatio="none"
-    role="button"
-    aria-label="Metric history; click to jump to this point in terminal output"
-    onPointerMove={(event) => onHover(pointAt(event))}
-    onPointerDown={(event) => onSelect(pointAt(event))}
-  >
-    {selectionX !== null && <rect
-      className="pointer-events-none fill-surface-a5"
-      x={selectionX.start}
-      y="0"
-      width={Math.max(1.2, selectionX.end - selectionX.start)}
-      height="28"
-    />}
-    <polyline className="pointer-events-none fill-none stroke-current [stroke-width:1.5] [vector-effect:non-scaling-stroke]" points={points} />
-    {hoverX !== null && <line
-      className="pointer-events-none stroke-surface-11 opacity-45 [stroke-width:1] [vector-effect:non-scaling-stroke]"
-      x1={hoverX}
-      x2={hoverX}
-      y1="0"
-      y2="28"
-    />}
-  </svg>
 }
 
 function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
@@ -451,22 +265,6 @@ function formatDuration(milliseconds: number): string {
   if (minutes < 60) return `${minutes}m`
   const hours = Math.floor(minutes / 60)
   return `${hours}h ${minutes % 60}m`
-}
-
-function formatRangeTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  })
-}
-
-function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  })
 }
 
 function formatDate(timestamp: number): string {

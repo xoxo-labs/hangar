@@ -300,6 +300,47 @@
   }
 }
 
+/* Holding ⌘ (or Ctrl in a browser) reveals a small shadcn-style keycap at a
+ * control's corner. Placement is chosen by the control so edge chrome does not
+ * clip the keycap. The modifier is omitted because it is already held. */
+.shortcut-hints [data-shortcut-hint]:not(:disabled) {
+  position: relative;
+}
+
+.shortcut-hints [data-shortcut-hint]:not(:disabled)::after {
+  content: attr(data-shortcut-hint);
+  position: absolute;
+  z-index: 30;
+  top: -5px;
+  right: -5px;
+  display: grid;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  place-items: center;
+  border: 1px solid var(--color-surface-7);
+  border-radius: 4px;
+  background: var(--color-surface-2);
+  box-shadow: 0 1px 0 var(--color-surface-8), 0 2px 6px #0004;
+  color: var(--color-surface-12);
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: 0;
+  pointer-events: none;
+}
+
+.shortcut-hints [data-shortcut-placement="top-left"]::after {
+  right: auto;
+  left: -5px;
+}
+
+.shortcut-hints [data-shortcut-placement="inside-top-right"]::after {
+  top: 1px;
+  right: 1px;
+}
+
 /*
  * xterm internals. These stay unlayered and `!important` because they are
  * fighting xterm's own stylesheet over DOM this app never renders; no utility

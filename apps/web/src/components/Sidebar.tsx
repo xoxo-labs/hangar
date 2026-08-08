@@ -181,7 +181,7 @@ export function Sidebar() {
           <span className="flex-1 leading-[20px]">History</span>
           {historyCount > 0 && <span className="rounded-full bg-surface-a4 px-[6px] py-px text-2xs tabular-nums text-surface-9">{historyCount}</span>}
         </button>
-        <IconButton className="size-[30px]" title="Settings (⌘,)" aria-label="Settings" onClick={openSettings}>
+        <IconButton className="size-[30px]" title="Settings (⌘,)" data-shortcut-hint="," data-shortcut-placement="top-left" aria-label="Settings" onClick={openSettings}>
           <Settings className="size-[17px]" aria-hidden="true" />
         </IconButton>
       </div>

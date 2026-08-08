@@ -24,6 +24,13 @@ export function useMetricTimeline(sessionId: string, allHistory: SessionMetricPo
     return allHistory.filter((point) => point.sampledAt >= cutoff)
   }, [allHistory, range])
 
+  const coverage = useMemo(() => {
+    if (range === "session") return 1
+    if (history.length < 2) return 0
+    const elapsed = history[history.length - 1]!.sampledAt - history[0]!.sampledAt
+    return Math.min(1, elapsed / RANGE_MS[range])
+  }, [history, range])
+
   useEffect(() => subscribeToMetricSelection(sessionId, (selection) => {
     if (selection === null) {
       setSelectedRange(null)
@@ -50,6 +57,7 @@ export function useMetricTimeline(sessionId: string, allHistory: SessionMetricPo
 
   return {
     history,
+    coverage,
     range,
     setRange,
     hoveredIndex,

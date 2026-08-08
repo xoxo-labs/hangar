@@ -144,6 +144,14 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
                 <option value="dark">Dark</option>
               </Select>
             </Field>
+            <div className="mt-3">
+              <ToggleRow
+                checked={appearance.shortcutHints}
+                onChange={(shortcutHints) => patchAppearance({ shortcutHints })}
+                title="Show keyboard shortcut hints"
+                hint="Reveal keycaps on controls while holding Command."
+              />
+            </div>
           </Section>
           <Section title="Links">
             <div className="grid max-w-[420px] grid-cols-2 gap-2.5">
@@ -270,7 +278,7 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
         <DialogFooter>
           <span className="flex-1" />
           <Button onClick={close}>Cancel</Button>
-          <Button variant="primary" onClick={save}>Save</Button>
+          <Button variant="primary" data-shortcut-hint="↵" onClick={save}>Save</Button>
         </DialogFooter>
       </Dialog>
     </Overlay>
