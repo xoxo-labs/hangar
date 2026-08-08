@@ -22,6 +22,9 @@ pnpm dev            # server + web + Electron window
 pnpm dev:headless   # server + web only — open http://localhost:4790
 ```
 
+Development uses `~/.hangar-dev`, keeping its projects, settings, and history
+separate from the packaged application's `~/.hangar` data.
+
 To build a standalone macOS application (no separately installed Node runtime
 needed at launch):
 

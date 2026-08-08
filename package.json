@@ -6,8 +6,8 @@
   },
   "packageManager": "pnpm@10.8.0",
   "scripts": {
-    "dev": "concurrently -k -n server,web,desktop -c blue,magenta,yellow \"node apps/server/src/cli.ts serve\" \"pnpm --filter @hangar/web dev\" \"HANGAR_NO_SPAWN=1 pnpm --filter @hangar/desktop dev\"",
-    "dev:headless": "concurrently -k -n server,web -c blue,magenta \"node apps/server/src/cli.ts serve\" \"pnpm --filter @hangar/web dev\"",
+    "dev": "HANGAR_HOME=$HOME/.hangar-dev concurrently -k -n server,web,desktop -c blue,magenta,yellow \"node apps/server/src/cli.ts serve\" \"pnpm --filter @hangar/web dev\" \"HANGAR_NO_SPAWN=1 pnpm --filter @hangar/desktop dev\"",
+    "dev:headless": "HANGAR_HOME=$HOME/.hangar-dev concurrently -k -n server,web -c blue,magenta \"node apps/server/src/cli.ts serve\" \"pnpm --filter @hangar/web dev\"",
     "build": "pnpm --filter @hangar/desktop build",
     "package:mac": "pnpm --filter @hangar/desktop package:mac",
     "dist:mac": "pnpm --filter @hangar/desktop dist:mac",
