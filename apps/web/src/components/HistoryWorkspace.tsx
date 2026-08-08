@@ -8,7 +8,8 @@ import { currentTerminalTheme } from "../terminals"
 import { cx } from "../ui/cx"
 import { Dot } from "./Dot"
 
-const RESULT = {
+/** Exported so the command palette labels archived runs with the same glyph/tone. */
+export const RESULT = {
   completed: { icon: "✓", label: "Completed", tone: "text-success-10", dot: "done" },
   failed: { icon: "×", label: "Failed", tone: "text-danger-10", dot: "failed" },
   stopped: { icon: "■", label: "Stopped", tone: "text-surface-9 dark:text-surface-10", dot: "idle" },

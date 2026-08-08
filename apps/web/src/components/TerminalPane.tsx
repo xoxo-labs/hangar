@@ -58,8 +58,10 @@ export function TerminalPane({ id, active }: { id: SessionId; active: boolean })
 
   useEffect(() => {
     if (!active) return
+    // Shift is what separates this from the ⌘K palette: this listener captures,
+    // so without it the palette shortcut would never survive an active pane.
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "k") {
         event.preventDefault()
         clearTerminal(id)
       }
@@ -109,7 +111,7 @@ export function TerminalPane({ id, active }: { id: SessionId; active: boolean })
           {session && <button className={MENU_ITEM} onClick={() => { openInspector(id); setMenuOpen(false) }}>Session details</button>}
           {session?.logPath && window.hangarDesktop && <button className={MENU_ITEM} onClick={() => { void window.hangarDesktop?.revealPath(session.logPath!); setMenuOpen(false) }}>Reveal current log in Finder</button>}
           {session?.logPath && <button className={MENU_ITEM} onClick={() => void copied(async () => { await navigator.clipboard.writeText(session.logPath!); return 1 })}>Copy log path</button>}
-          <button className={MENU_ITEM} onClick={() => { clearTerminal(id); setMenuOpen(false); focusTerminal(id) }}>Clear terminal <kbd className={MENU_KBD}>⌘K</kbd></button>
+          <button className={MENU_ITEM} onClick={() => { clearTerminal(id); setMenuOpen(false); focusTerminal(id) }}>Clear terminal <kbd className={MENU_KBD}>⌘⇧K</kbd></button>
         </div>
       )}
       {session && inspectorOpen && <SessionInspector session={session} onClose={closeInspector} />}

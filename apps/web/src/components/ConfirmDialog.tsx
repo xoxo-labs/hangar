@@ -63,7 +63,7 @@ export function ConfirmDialog() {
 
   return (
     <Overlay onDismiss={closeConfirm}>
-      <Dialog label={title} role="alertdialog" className="w-[380px]">
+      <Dialog label={title} role="alertdialog" className="max-w-[384px]">
         <DialogHeader title={title} />
         <DialogBody>
           <p className="m-0 text-md leading-normal text-surface-11 [&_code]:text-surface-12">

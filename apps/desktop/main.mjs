@@ -29,6 +29,12 @@ const WEB_ENTRY = resolve(HERE, "dist/web/index.html")
 const PRELOAD_ENTRY = resolve(HERE, "preload.cjs")
 const RELEASE_NOTES_ENTRY = resolve(HERE, "RELEASE_NOTES.md")
 
+// Keep Electron's cache, cookies, and singleton state separate from the stable
+// app so a packaged Hangar can safely launch and supervise Hangar development.
+if (!app.isPackaged) {
+  app.setPath("userData", join(process.env.HANGAR_HOME ?? join(homedir(), ".hangar-dev"), "desktop"))
+}
+
 const PORT = Number(process.env.HANGAR_PORT ?? 4780)
 const WEB_URL = process.env.HANGAR_WEB_URL ?? "http://localhost:4790"
 

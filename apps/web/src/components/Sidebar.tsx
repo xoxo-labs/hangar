@@ -1,10 +1,12 @@
-import { type Project, type SessionInfo, sessionId } from "@hangar/contracts"
+import { type Project, type ProjectProcess, type SessionInfo, sessionId } from "@hangar/contracts"
+import { ChevronRight, History, Play, RotateCw, Settings, Square } from "lucide-react"
 import { type DragEvent, useMemo, useState } from "react"
 import * as actions from "../actions"
-import { describe, toneOf } from "../status"
+import { describe, hasHighCpu, toneOf } from "../status"
 import { useStore } from "../store"
 import { cx } from "../ui/cx"
 import { IconButton } from "../ui/IconButton"
+import { MENU_SEPARATOR, Menu } from "../ui/Menu"
 import { Dot } from "./Dot"
 
 /*
@@ -16,13 +18,12 @@ import { Dot } from "./Dot"
  * beat the base `px-`/`py-` utilities regardless of variant sort order.
  */
 const ROW = "flex items-center gap-1 rounded-md pr-1"
-/* py is 4px, not 5: the token ramp made both label lines 1px taller, so the
- * pre-token row height (37px head / 34px process) only survives with 1px less
- * padding above and below. */
+/* Every row is a single line now, so nothing here sets the height: at 4px the
+ * padded label is shorter than the 26px action buttons beside it, and those
+ * decide the row. Do not reintroduce the old two-line height math. */
 const ROW_MAIN = "flex min-w-0 flex-1 items-center gap-[7px] px-1.5! py-1! text-left"
-const ROW_LABEL = "flex min-w-0 flex-col"
 const ROW_ACTIONS =
-  "flex flex-none justify-end gap-[3px] opacity-[0.45] transition-opacity duration-[120ms] ease-[ease] group-hover:opacity-100 group-focus-within:opacity-100"
+  "flex flex-none justify-end gap-[3px] opacity-0 transition-opacity duration-[120ms] ease-[ease] group-hover:opacity-100 group-focus-within:opacity-100"
 
 export function Sidebar() {
   const projects = useStore((s) => s.projects)
@@ -30,20 +31,56 @@ export function Sidebar() {
   const openEditor = useStore((s) => s.openEditor)
   const openHistory = useStore((s) => s.openHistory)
   const closeHistory = useStore((s) => s.closeHistory)
-  const historyOpen = useStore((s) => s.historyOpen)
+  const activeHistory = useStore((s) => s.activeHistory)
   const historyCount = useStore((s) => s.history.length)
+  const openSettings = useStore((s) => s.openSettings)
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<{ name: string; side: "before" | "after" } | null>(null)
+  const [filter, setFilter] = useState("")
 
   const byId = useMemo(() => new Map(sessions.map((s) => [s.id, s])), [sessions])
 
+  const query = filter.trim().toLowerCase()
+  /* A project matched by name keeps all its processes; one matched only through
+   * a process narrows down to the processes that matched. */
+  const visible = useMemo(
+    () =>
+      projects.flatMap((project) => {
+        if (query === "" || project.name.toLowerCase().includes(query)) {
+          return [{ project, processes: project.processes }]
+        }
+        const processes = project.processes.filter((p) => p.name.toLowerCase().includes(query))
+        return processes.length === 0 ? [] : [{ project, processes }]
+      }),
+    [projects, query],
+  )
+
   return (
     <aside className="row-start-1 col-start-1 flex min-h-0 flex-col border-r border-surface-5 bg-surface-2 select-none">
-      <header className="flex min-h-[48px] flex-none items-center gap-[9px] border-b border-surface-5 bg-surface-3 px-3.5 py-[7px] electron:h-[48px] electron:py-0! electron:pr-3.5! electron:pl-[92px]! electron:[-webkit-app-region:drag]">
+      <header
+        className={cx(
+          "flex min-h-[48px] flex-none items-center gap-[9px] border-b px-3.5 py-[7px] electron:h-[48px] electron:py-0! electron:pr-3.5! electron:pl-[92px]! electron:[-webkit-app-region:drag]",
+          import.meta.env.DEV
+            ? "border-success-6 bg-success-3 text-success-12"
+            : "border-surface-5 bg-surface-3",
+        )}
+      >
         <span className="flex min-w-0 flex-col leading-none">
-          <h1 className="m-0 text-md font-strong tracking-label">hangar</h1>
-          <span className="mt-0.5 text-2xs font-book tracking-caps whitespace-nowrap text-surface-8 uppercase">
-            project workspace
+          <span className="flex items-center gap-1.5">
+            <h1 className="m-0 text-md font-strong tracking-label">hangar</h1>
+            {import.meta.env.DEV && (
+              <span className="rounded-sm border border-success-7 bg-success-3 px-1 py-px text-[8px] font-semibold tracking-caps text-success-11 uppercase">
+                dev
+              </span>
+            )}
+          </span>
+          <span
+            className={cx(
+              "mt-0.5 text-2xs font-book tracking-caps whitespace-nowrap uppercase",
+              import.meta.env.DEV ? "text-success-11" : "text-surface-8",
+            )}
+          >
+            {import.meta.env.DEV ? "development workspace" : "project workspace"}
           </span>
         </span>
       </header>
@@ -51,21 +88,45 @@ export function Sidebar() {
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-3">
         <div className="flex items-center justify-between px-1.5 pt-[7px] pb-2 text-xs font-semibold tracking-caps text-surface-9 uppercase">
           <span>Projects</span>
-          <span className="min-w-[17px] rounded-lg bg-surface-a3 px-[5px] py-px text-center text-2xs tracking-[0]">
-            {projects.length}
-          </span>
+          <button
+            type="button"
+            className="rounded-md px-1.5! py-0.5! text-xs! font-semibold! text-surface-9! hover:bg-surface-a3! hover:text-surface-12!"
+            onClick={() => openEditor()}
+          >
+            + Add
+          </button>
         </div>
+        {projects.length > 0 && (
+          <input
+            type="text"
+            className="mb-1.5 w-full min-w-0 rounded-md border border-surface-5 bg-surface-1 px-2 py-1 text-base text-surface-12 placeholder:text-surface-8 focus:border-accent-9 focus:shadow-[0_0_0_2px_var(--color-accent-a3)] focus:outline-none"
+            placeholder="Filter projects…"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            onKeyDown={(event) => {
+              // Escape is swallowed only when it clears something; otherwise it
+              // has to keep reaching the window listeners that close dialogs.
+              if (event.key !== "Escape" || filter === "") return
+              event.stopPropagation()
+              setFilter("")
+            }}
+          />
+        )}
         {projects.length === 0 ? (
           <p className="mx-1.5 my-3 text-base leading-relaxed text-surface-10">
             No projects registered yet.
             <br />
             Add one below, or run <code>hangar add</code>.
           </p>
+        ) : visible.length === 0 ? (
+          <p className="mx-1.5 my-3 text-sm text-surface-9">No matches</p>
         ) : (
-          projects.map((project) => (
+          visible.map(({ project, processes }) => (
             <ProjectRow
               key={project.name}
               project={project}
+              processes={processes}
+              filtering={query !== ""}
               byId={byId}
               dragging={dragging === project.name}
               dropSide={dropTarget?.name === project.name ? dropTarget.side : null}
@@ -96,28 +157,33 @@ export function Sidebar() {
           ))
         )}
 
-        <button
-          type="button"
-          className="mt-0.5 block w-full rounded-md border! border-dashed! border-surface-5! p-1.5! text-center text-base! text-surface-9! hover:border-surface-8! hover:bg-surface-a3! hover:text-surface-12!"
-          onClick={() => openEditor()}
-        >
-          + New project
-        </button>
+        {projects.length === 0 && (
+          <button
+            type="button"
+            className="mt-0.5 block w-full rounded-md border! border-dashed! border-surface-5! p-1.5! text-center text-base! text-surface-9! hover:border-surface-8! hover:bg-surface-a3! hover:text-surface-12!"
+            onClick={() => openEditor()}
+          >
+            + New project
+          </button>
+        )}
       </nav>
-      <div className="flex-none border-t border-surface-5 p-2">
+      <div className="flex flex-none items-center gap-1 border-t border-surface-5 p-2">
         <button
           type="button"
           className={cx(
-            "flex w-full items-center gap-[8px] rounded-md px-[9px]! py-[7px]! text-left text-base!",
-            historyOpen ? "text-surface-12!" : "text-surface-9! hover:text-surface-12!",
+            "flex h-[30px] min-w-0 flex-1 items-center gap-[8px] rounded-md px-[9px]! text-left text-base! leading-none",
+            activeHistory !== null ? "text-surface-12!" : "text-surface-9! hover:bg-surface-a3! hover:text-surface-12!",
           )}
-          aria-pressed={historyOpen}
-          onClick={historyOpen ? closeHistory : openHistory}
+          aria-pressed={activeHistory !== null}
+          onClick={activeHistory !== null ? closeHistory : openHistory}
         >
-          <span className="text-[14px]" aria-hidden="true">◷</span>
-          <span className="flex-1">History</span>
+          <History className="size-[18px] flex-none" aria-hidden="true" />
+          <span className="flex-1 leading-[20px]">History</span>
           {historyCount > 0 && <span className="rounded-full bg-surface-a4 px-[6px] py-px text-2xs tabular-nums text-surface-9">{historyCount}</span>}
         </button>
+        <IconButton className="size-[30px]" title="Settings (⌘,)" aria-label="Settings" onClick={openSettings}>
+          <Settings className="size-[17px]" aria-hidden="true" />
+        </IconButton>
       </div>
     </aside>
   )
@@ -125,6 +191,8 @@ export function Sidebar() {
 
 function ProjectRow({
   project,
+  processes,
+  filtering,
   byId,
   dragging,
   dropSide,
@@ -134,6 +202,9 @@ function ProjectRow({
   onDragEnd,
 }: {
   project: Project
+  /** The processes to list — a subset of the project's while a filter is on. */
+  processes: ProjectProcess[]
+  filtering: boolean
   byId: Map<string, SessionInfo>
   dragging: boolean
   dropSide: "before" | "after" | null
@@ -146,10 +217,18 @@ function ProjectRow({
   const toggleCollapsed = useStore((s) => s.toggleCollapsed)
   const openEditor = useStore((s) => s.openEditor)
   const requestConfirm = useStore((s) => s.requestConfirm)
+  const [menuOpen, setMenuOpen] = useState(false)
 
-  const running = project.processes.some(
+  // Counted over the whole project, not the filtered subset: the header's dot,
+  // counter and "all processes" actions all speak for the project as a whole.
+  const runningCount = project.processes.filter(
     (p) => byId.get(sessionId(project.name, p.name))?.status === "running",
+  ).length
+  const running = runningCount > 0
+  const warningProcesses = project.processes.filter((process) =>
+    hasHighCpu(byId.get(sessionId(project.name, process.name))),
   )
+  const expanded = !collapsed || filtering
 
   const dragOver = (event: DragEvent<HTMLElement>): void => {
     event.preventDefault()
@@ -176,9 +255,11 @@ function ProjectRow({
       }}
     >
       <div
-        className={cx(ROW, "group cursor-grab bg-surface-a2 hover:bg-surface-a3 active:cursor-grabbing")}
-        draggable
-        title="Drag to reorder project"
+        className={cx(ROW, "group hover:bg-surface-a3")}
+        /* Reordering a filtered list against the full registry order is
+         * ambiguous, so dragging waits until the filter is cleared. */
+        draggable={!filtering}
+        title={filtering ? undefined : "Drag to reorder project"}
         onDragStart={(event) => {
           event.dataTransfer.effectAllowed = "move"
           event.dataTransfer.setData("text/plain", project.name)
@@ -189,56 +270,57 @@ function ProjectRow({
         <button
           type="button"
           className={ROW_MAIN}
+          title={project.path}
           onClick={() => toggleCollapsed(project.name)}
-          aria-expanded={!collapsed}
+          aria-expanded={expanded}
         >
-          <span
+          <ChevronRight
             className={cx(
-              "w-2 text-[8px] text-surface-9 transition-transform duration-[120ms] ease-[ease]",
-              !collapsed && "rotate-90",
+              "size-[12px] flex-none text-surface-9 transition-transform duration-[120ms] ease-[ease]",
+              expanded && "rotate-90",
             )}
             aria-hidden="true"
-          >
-            ▶
-          </span>
-          <Dot tone={running ? "running" : "idle"} title={running ? "running" : "idle"} />
-          <span className={ROW_LABEL}>
-            <span className="truncate text-md font-semibold text-surface-12">{project.name}</span>
-            <span className="truncate text-sm text-surface-9 dark:text-surface-11" title={project.path}>
-              {project.path}
+          />
+          {warningProcesses.length > 0 && (
+            <Dot
+              tone="warning"
+              title={`High CPU: ${warningProcesses.map((process) => process.name).join(", ")}`}
+            />
+          )}
+          <span className="min-w-0 truncate text-md font-semibold text-surface-12">{project.name}</span>
+          {running && (
+            <span className="flex-none text-2xs tabular-nums text-surface-9">
+              {runningCount}/{project.processes.length}
             </span>
-          </span>
+          )}
         </button>
 
-        {/* 4 × 26px button + 3 × 3px gap */}
-        <div className={cx(ROW_ACTIONS, "min-w-[113px]")}>
-          <IconButton title={`Edit ${project.name}`} onClick={() => openEditor(project.name)}>
-            ✎
-          </IconButton>
-          <IconButton title="Start all processes" onClick={() => actions.start(project.name)}>
-            ▶
-          </IconButton>
-          {running && (
-            <IconButton
-              title="Restart all processes"
-              onClick={() => requestConfirm({ action: "restart", project: project.name })}
-            >
-              ↻
-            </IconButton>
-          )}
-          <IconButton
-            title="Stop all processes"
-            disabled={!running}
-            onClick={() => requestConfirm({ action: "stop", project: project.name })}
-          >
-            ■
-          </IconButton>
+        <div className={cx(ROW_ACTIONS, menuOpen && "opacity-100")}>
+          <Menu
+            title={`More actions for ${project.name}`}
+            onOpenChange={setMenuOpen}
+            items={[
+              { label: "Start all", onSelect: () => actions.start(project.name) },
+              {
+                label: "Restart all",
+                disabled: !running,
+                onSelect: () => requestConfirm({ action: "restart", project: project.name }),
+              },
+              {
+                label: "Stop all",
+                disabled: !running,
+                onSelect: () => requestConfirm({ action: "stop", project: project.name }),
+              },
+              MENU_SEPARATOR,
+              { label: "Edit project…", onSelect: () => openEditor(project.name) },
+            ]}
+          />
         </div>
       </div>
 
-      {!collapsed && (
+      {expanded && (
         <ul className="mt-[3px] mr-0 mb-0 ml-2.5 list-none border-l border-surface-5 py-0 pr-0 pl-2">
-          {project.processes.map((proc) => (
+          {processes.map((proc) => (
             <ProcessRow
               key={proc.name}
               project={project.name}
@@ -266,6 +348,7 @@ function ProcessRow({
 }) {
   const activeId = useStore((s) => s.activeId)
   const setActive = useStore((s) => s.setActive)
+  const openPending = useStore((s) => s.openPending)
   const requestConfirm = useStore((s) => s.requestConfirm)
 
   const id = sessionId(project, name)
@@ -277,25 +360,18 @@ function ProcessRow({
       // `.row.selected` sat after `.row:hover` in styles.css, so a selected row
       // kept surface-a4 while hovered — hence the either/or here.
       className={cx(ROW, "group", selected ? "bg-surface-a4" : "hover:bg-surface-a3")}
-      onClick={() => {
-        if (session) setActive(id)
-      }}
+      // Opening a row never launches anything: a process with no session gets a
+      // pending tab whose pane offers the start. Only ▶ below starts outright.
+      onClick={() => (session ? setActive(id) : openPending(project, name))}
     >
       <button
         type="button"
         className={cx(ROW_MAIN, selected ? "text-surface-12!" : "text-surface-10! group-hover:text-surface-12!")}
         title={cmd}
-        onClick={() => (session ? setActive(id) : actions.start(project, name))}
+        onClick={() => (session ? setActive(id) : openPending(project, name))}
       >
         <Dot tone={toneOf(session)} small title={describe(session)} />
-        <span className={ROW_LABEL}>
-          <span className="truncate text-base">{name}</span>
-          {/* 156px is all the row has to give (181px button − 12px padding −
-              dot − 7px gap); the old 150px cap clipped "node scripts/…" by 1px. */}
-          <span className="max-w-[156px] truncate font-mono text-xs text-surface-9 dark:text-surface-11" title={cmd}>
-            {cmd}
-          </span>
-        </span>
+        <span className="min-w-0 truncate text-base">{name}</span>
       </button>
 
       {/* 2 × 26px button + 1 × 3px gap */}
@@ -306,18 +382,18 @@ function ProcessRow({
               title={`Restart ${name}`}
               onClick={() => requestConfirm({ action: "restart", project, process: name })}
             >
-              ↻
+              <RotateCw className="size-[14px]" aria-hidden="true" />
             </IconButton>
             <IconButton
               title={`Stop ${name}`}
               onClick={() => requestConfirm({ action: "stop", project, process: name })}
             >
-              ■
+              <Square className="size-[12px] fill-current" aria-hidden="true" />
             </IconButton>
           </>
         ) : (
           <IconButton title={`Start ${name}`} onClick={() => actions.start(project, name)}>
-            ▶
+            <Play className="size-[14px] fill-current" aria-hidden="true" />
           </IconButton>
         )}
       </div>

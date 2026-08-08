@@ -23,6 +23,8 @@ export function Button({ variant = "default", className, type = "button", ...res
   return (
     <button
       type={type}
+      data-dialog-action=""
+      data-dialog-primary={variant === "primary" ? "" : undefined}
       className={cx("rounded-md px-[11px] py-[5px] text-base disabled:cursor-default", VARIANTS[variant], className)}
       {...rest}
     />

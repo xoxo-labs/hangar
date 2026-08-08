@@ -18,12 +18,13 @@ agents can manage the registry through the CLI instead of you doing it by hand.
 ## Run the app
 
 ```sh
-pnpm dev            # server + web + Electron window
+pnpm dev            # server :4781 + web :4790 + Electron window
 pnpm dev:headless   # server + web only — open http://localhost:4790
 ```
 
-Development uses `~/.hangar-dev`, keeping its projects, settings, and history
-separate from the packaged application's `~/.hangar` data.
+Development deliberately uses port `4781` and `~/.hangar-dev` (including a
+separate Electron profile), so the packaged app can keep running on `4780` and
+launch Hangar development without port, data, or profile collisions.
 
 To build a standalone macOS application (no separately installed Node runtime
 needed at launch):

@@ -1,9 +1,11 @@
 import type { SessionHistoryEntry, SessionInfo, SessionMetrics } from "@hangar/contracts"
 import { useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent } from "react"
+import * as actions from "../actions"
 import { openLocalPort } from "../links"
-import { describe, hasHighCpu, toneOf } from "../status"
+import { hasHighCpu, toneOf } from "../status"
 import { type SessionMetricPoint, useStore } from "../store"
 import { scrollToMetricPosition, subscribeToMetricSelection } from "../terminals"
+import { Button } from "../ui/Button"
 import { cx } from "../ui/cx"
 import { IconButton } from "../ui/IconButton"
 import { Dot } from "./Dot"
@@ -66,6 +68,35 @@ export function SessionStrip({ session, onInspect }: { session: SessionInfo; onI
   )
 }
 
+export function PendingSessionInspector({ project, process, cmd, onClose }: { project: string; process: string; cmd: string; onClose: () => void }) {
+  return (
+    <aside
+      className="absolute top-0 right-0 bottom-[28px] z-[8] flex w-[min(360px,calc(100%-32px))] animate-[inspector-in_140ms_ease-out] flex-col border-l border-surface-6 bg-surface-2/82 shadow-[-14px_0_36px_#0006] backdrop-blur-xl"
+      aria-label={`${process} session details`}
+    >
+      <header className="flex min-h-[58px] flex-none items-center justify-between border-b border-surface-5 px-[14px] py-[10px]">
+        <div>
+          <h2 className="m-0 text-lg font-semibold">{process}</h2>
+          <span className="text-xs text-surface-9">{project}</span>
+        </div>
+        <button className="grid size-[26px] place-items-center rounded-md text-[20px] leading-none text-surface-9 hover:bg-surface-a4 hover:text-surface-12" type="button" onClick={onClose} aria-label="Close inspector">×</button>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <section className={SECTION}>
+          <div className="mb-[12px] flex items-center gap-[7px] text-sm">
+            <Dot tone="idle" small />
+            <strong className="font-book">not started</strong>
+          </div>
+          <Button variant="primary" className="mb-[12px]" onClick={() => actions.start(project, process)}>Start</Button>
+          <dl className="m-0 grid grid-cols-[68px_minmax(0,1fr)] gap-x-[10px] gap-y-[7px] text-sm">
+            <Detail label="Command" value={cmd} mono />
+          </dl>
+        </section>
+      </div>
+    </aside>
+  )
+}
+
 export function SessionInspector({ session, onClose }: { session: SessionInfo; onClose: () => void }) {
   const now = useNow(session.status === "running")
   const allHistory = useStore((state) => state.history)
@@ -78,13 +109,15 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
   const metricHistory = useStore((state) => state.metricHistory[session.id] ?? NO_METRIC_HISTORY)
   const browser = useStore((state) => state.settings.links.browser)
   const showNotice = useStore((state) => state.showNotice)
+  const requestConfirm = useStore((state) => state.requestConfirm)
+  const running = session.status === "running"
   const openPort = (port: number) => {
     void openLocalPort(port, browser).catch(() => showNotice(`Could not open port ${port}`))
   }
 
   return (
     <aside
-      className="absolute top-0 right-0 bottom-[28px] z-[8] flex w-[min(360px,calc(100%-32px))] animate-[inspector-in_140ms_ease-out] flex-col border-l border-surface-6 bg-surface-2/97 shadow-[-14px_0_36px_#0006]"
+      className="absolute top-0 right-0 bottom-[28px] z-[8] flex w-[min(360px,calc(100%-32px))] animate-[inspector-in_140ms_ease-out] flex-col border-l border-surface-6 bg-surface-2/82 shadow-[-14px_0_36px_#0006] backdrop-blur-xl"
       aria-label={`${session.process} session details`}
     >
       <header className="flex min-h-[58px] flex-none items-center justify-between border-b border-surface-5 px-[14px] py-[10px]">
@@ -105,7 +138,19 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
         <section className={SECTION}>
           <div className="mb-[12px] flex items-center gap-[7px] text-sm">
             <Dot tone={toneOf(session)} small />
-            <strong className="font-book">{describe(session)}</strong>
+            <span className="text-surface-9">State</span>
+            <strong className="font-book">{inspectorState(session)}</strong>
+          </div>
+          <div className="mb-[12px] flex gap-2">
+            <Button variant={!running ? "primary" : "default"} disabled={running} onClick={() => actions.start(session.project, session.process)}>
+              Start
+            </Button>
+            <Button disabled={!running} onClick={() => requestConfirm({ action: "restart", project: session.project, process: session.process })}>
+              Restart
+            </Button>
+            <Button disabled={!running} onClick={() => requestConfirm({ action: "stop", project: session.project, process: session.process })}>
+              Stop
+            </Button>
           </div>
           <dl className="m-0 grid grid-cols-[68px_minmax(0,1fr)] gap-x-[10px] gap-y-[7px] text-sm">
             <Detail label="Uptime" value={formatDuration((session.endedAt ?? now) - session.startedAt)} />
@@ -140,6 +185,12 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
       </div>
     </aside>
   )
+}
+
+function inspectorState(session: SessionInfo): string {
+  if (hasHighCpu(session)) return `Running · high CPU (${formatCpu(session.metrics!.cpuPercent)})`
+  if (session.status === "running") return "Running"
+  return session.exitCode == null ? "Exited" : `Exited with code ${session.exitCode}`
 }
 
 function ResourceSection({ sessionId, metrics, history }: { sessionId: string; metrics: SessionMetrics; history: SessionMetricPoint[] }) {

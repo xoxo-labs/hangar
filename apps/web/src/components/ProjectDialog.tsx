@@ -45,13 +45,14 @@ function emptyRow(): Row {
 export function ProjectDialog() {
   const open = useStore((s) => s.editorOpen)
   const editing = useStore((s) => s.editingProject)
+  const initialPath = useStore((s) => s.newProjectPath)
 
   // Remounting per open keeps the form state fresh without an explicit reset.
   if (!open) return null
-  return <Editor key={editing ?? "__new__"} editing={editing} />
+  return <Editor key={editing ?? "__new__"} editing={editing} initialPath={initialPath} />
 }
 
-function Editor({ editing }: { editing: string | null }) {
+function Editor({ editing, initialPath }: { editing: string | null; initialPath: string }) {
   const closeEditor = useStore((s) => s.closeEditor)
   const existing = useStore((s) => s.projects.find((p) => p.name === editing))
   const running = useStore((s) =>
@@ -60,7 +61,7 @@ function Editor({ editing }: { editing: string | null }) {
   const port = useStore((s) => s.port)
 
   const [name, setName] = useState(existing?.name ?? "")
-  const [path, setPath] = useState(existing?.path ?? "")
+  const [path, setPath] = useState(existing?.path ?? initialPath)
   const [rows, setRows] = useState<Row[]>(() =>
     existing && existing.processes.length > 0
       ? existing.processes.map((p) => ({
@@ -191,35 +192,12 @@ function Editor({ editing }: { editing: string | null }) {
         <DialogHeader title={editing === null ? "New project" : "Edit project"} />
 
         <DialogBody>
-          <Field
-            label="Name"
-            hint={
-              editing === null
-                ? "No spaces or slashes."
-                : "The name identifies the project and can't change."
-            }
-          >
-            <TextInput
-              autoFocus={editing === null}
-              value={name}
-              readOnly={editing !== null}
-              spellCheck={false}
-              autoComplete="off"
-              placeholder="my-app"
-              onChange={(e) => {
-                nameEdited.current = true
-                setName(e.target.value)
-              }}
-            />
-          </Field>
-
           <div className={FIELD}>
             <label className={FIELD_LABEL} htmlFor="project-path">Path</label>
             <div className="flex w-full gap-1.5">
               <TextInput
                 mono
                 id="project-path"
-                autoFocus={editing !== null}
                 value={path}
                 spellCheck={false}
                 autoComplete="off"
@@ -240,6 +218,27 @@ function Editor({ editing }: { editing: string | null }) {
               {inspecting ? "Looking for package.json…" : <><code>~</code> expands to your home directory.</>}
             </span>
           </div>
+
+          <Field
+            label="Name"
+            hint={
+              editing === null
+                ? "Derived from the folder or package.json; no spaces or slashes."
+                : "The name identifies the project and can't change."
+            }
+          >
+            <TextInput
+              value={name}
+              readOnly={editing !== null}
+              spellCheck={false}
+              autoComplete="off"
+              placeholder="my-app"
+              onChange={(e) => {
+                nameEdited.current = true
+                setName(e.target.value)
+              }}
+            />
+          </Field>
 
           {projectInfo?.package && projectInfo.package.scripts.length > 0 && (
             <div className={cx(FIELD, "w-full")}>

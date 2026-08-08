@@ -1,6 +1,7 @@
 import {
   DEFAULT_PORT,
   DEFAULT_SETTINGS,
+  sessionId,
   type AppSettings,
   type HistoryOutputEvent,
   type Project,
@@ -26,6 +27,12 @@ export type SessionMetricPoint = {
   processCount: number
   outputBytesPerSecond: number
 }
+
+/**
+ * A tab opened for a process that has no session yet. Its id is the one the
+ * session will be given, so the tab keeps its slot when the process starts.
+ */
+export type PendingTab = { id: SessionId; project: string; process: string }
 
 /** A destructive action waiting for the user's OK in the confirm dialog. */
 export type ConfirmRequest = {
@@ -57,6 +64,8 @@ type Store = {
   projects: Project[]
   /** Live sessions, kept in a stable tab order (existing first, new appended). */
   sessions: SessionInfo[]
+  /** Tabs opened for processes that are not running yet. */
+  pending: PendingTab[]
   /** Persisted run summaries, newest first. */
   history: SessionHistoryEntry[]
   /** Recent live samples, kept in memory for session sparklines. */
@@ -86,12 +95,16 @@ type Store = {
   port: number
   settings: AppSettings
   settingsOpen: boolean
+  /** Whether the ⌘K command palette is up. */
+  paletteOpen: boolean
   lastError: string | null
   notice: string | null
   /** Whether the add/edit project dialog is up. */
   editorOpen: boolean
   /** Project the dialog is editing; null while it is creating a new one. */
   editingProject: string | null
+  /** Folder selected before opening the new-project dialog. */
+  newProjectPath: string
   /** Stop/restart waiting in the confirm dialog; null when it is closed. */
   confirming: ConfirmRequest | null
 
@@ -99,6 +112,9 @@ type Store = {
   updateMetrics: (id: SessionId, runId: string, metrics: SessionMetrics) => void
   setStatus: (status: ConnectionStatus) => void
   setActive: (id: SessionId | null) => void
+  /** Opens (and focuses) the tab of a process that has not been started. */
+  openPending: (project: string, process: string) => void
+  closePending: (id: SessionId) => void
   openHistory: () => void
   closeHistory: () => void
   openHistoryRun: (runId: string) => void
@@ -121,6 +137,8 @@ type Store = {
   closeEditor: () => void
   openSettings: () => void
   closeSettings: () => void
+  openPalette: () => void
+  closePalette: () => void
   requestConfirm: (request: ConfirmRequest) => void
   closeConfirm: () => void
 }
@@ -128,6 +146,7 @@ type Store = {
 export const useStore = create<Store>((set) => ({
   projects: [],
   sessions: [],
+  pending: [],
   history: [],
   metricHistory: {},
   activeId: null,
@@ -145,10 +164,12 @@ export const useStore = create<Store>((set) => ({
   port: readPort(),
   settings: structuredClone(DEFAULT_SETTINGS),
   settingsOpen: false,
+  paletteOpen: false,
   lastError: null,
   notice: null,
   editorOpen: false,
   editingProject: null,
+  newProjectPath: "",
   confirming: null,
 
   applyState: (projects, sessions, history, settings) =>
@@ -167,10 +188,24 @@ export const useStore = create<Store>((set) => ({
       const added = [...next.values()]
       ordered.push(...added)
 
+      // A pending tab is done once its session exists, or once the registry
+      // stops offering that process at all.
+      const live = new Set(sessions.map((session) => session.id))
+      const pending = state.pending.filter(
+        (tab) =>
+          !live.has(tab.id) &&
+          projects.some(
+            (project) =>
+              project.name === tab.project && project.processes.some((p) => p.name === tab.process),
+          ),
+      )
+
       // A session that just started grabs focus; on the very first state (the
       // page just loaded into a server with running sessions) take the first.
       const focus = state.sessions.length === 0 ? added[0] : added.at(-1)
-      const stillOpen = state.activeId !== null && ordered.some((s) => s.id === state.activeId)
+      const stillOpen =
+        state.activeId !== null &&
+        (ordered.some((s) => s.id === state.activeId) || pending.some((tab) => tab.id === state.activeId))
       const activeId =
         focus?.id ?? (stillOpen ? state.activeId : (ordered.at(-1)?.id ?? null))
 
@@ -189,6 +224,7 @@ export const useStore = create<Store>((set) => ({
           : state.activeHistory
       const validTabKeys = new Set([
         ...ordered.map((session) => `session:${session.id}`),
+        ...pending.map((tab) => `session:${tab.id}`),
         ...(state.historyOpen ? ["history"] : []),
         ...historyTabs.map((runId) => `history:${runId}`),
         ...(state.releaseNotesOpen ? ["release-notes"] : []),
@@ -197,7 +233,7 @@ export const useStore = create<Store>((set) => ({
       tabOrder.push(...validTabKeys)
       const releaseNotesActive = focus ? false : state.releaseNotesActive
       const nextActiveId = activeHistory === null && !releaseNotesActive ? activeId : null
-      return { projects, sessions: ordered, history, historyTabs, historyReplays, metricHistory, activeId: nextActiveId, activeHistory, releaseNotesActive, tabOrder, settings }
+      return { projects, sessions: ordered, pending, history, historyTabs, historyReplays, metricHistory, activeId: nextActiveId, activeHistory, releaseNotesActive, tabOrder, settings }
     }),
 
   updateMetrics: (id, runId, metrics) =>
@@ -223,6 +259,28 @@ export const useStore = create<Store>((set) => ({
   setStatus: (status) => set({ status }),
 
   setActive: (activeId) => set({ activeId, activeHistory: null, releaseNotesActive: false }),
+
+  openPending: (project, process) =>
+    set((state) => {
+      const id = sessionId(project, process)
+      const key = `session:${id}`
+      return {
+        activeId: id,
+        activeHistory: null,
+        releaseNotesActive: false,
+        pending: state.pending.some((tab) => tab.id === id)
+          ? state.pending
+          : [...state.pending, { id, project, process }],
+        tabOrder: state.tabOrder.includes(key) ? state.tabOrder : [...state.tabOrder, key],
+      }
+    }),
+
+  closePending: (id) =>
+    set((state) => ({
+      pending: state.pending.filter((tab) => tab.id !== id),
+      tabOrder: state.tabOrder.filter((key) => key !== `session:${id}`),
+      ...(state.activeId === id ? { activeId: state.sessions.at(-1)?.id ?? null } : {}),
+    })),
 
   openHistory: () => set((state) => ({
     activeId: null,
@@ -326,22 +384,44 @@ export const useStore = create<Store>((set) => ({
     }, 1800)
   },
 
-  openEditor: (project) => set({ editorOpen: true, editingProject: project ?? null }),
+  openEditor: (project) => {
+    if (project !== undefined) {
+      set({ editorOpen: true, editingProject: project, newProjectPath: "" })
+      return
+    }
 
-  closeEditor: () => set({ editorOpen: false, editingProject: null }),
+    const choose = window.hangarDesktop?.chooseDirectory
+    if (!choose) {
+      set({ editorOpen: true, editingProject: null, newProjectPath: "" })
+      return
+    }
+
+    void choose("Choose a project folder").then((path) => {
+      if (path !== null) set({ editorOpen: true, editingProject: null, newProjectPath: path })
+    })
+  },
+
+  closeEditor: () => set({ editorOpen: false, editingProject: null, newProjectPath: "" }),
 
   openSettings: () => set({ settingsOpen: true }),
 
   closeSettings: () => set({ settingsOpen: false }),
+
+  // Purely additive: the palette floats over whatever tab is open, so it must
+  // not touch activeId / activeHistory on the way in or out.
+  openPalette: () => set({ paletteOpen: true }),
+
+  closePalette: () => set({ paletteOpen: false }),
 
   requestConfirm: (confirming) => set({ confirming }),
 
   closeConfirm: () => set({ confirming: null }),
 }))
 
-/** `?port=` on the page URL wins over the contract's default port. */
+/** `?port=` wins, followed by the Vite dev port and the packaged default. */
 function readPort(): number {
-  const raw = new URLSearchParams(window.location.search).get("port")
-  const parsed = raw === null ? Number.NaN : Number.parseInt(raw, 10)
+  const queryPort = new URLSearchParams(window.location.search).get("port")
+  const raw = queryPort ?? import.meta.env.VITE_HANGAR_PORT
+  const parsed = raw === undefined ? Number.NaN : Number.parseInt(raw, 10)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_PORT
 }
