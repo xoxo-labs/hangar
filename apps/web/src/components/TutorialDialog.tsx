@@ -270,11 +270,11 @@ function Tour() {
 
   return (
     <Overlay onDismiss={finish}>
-      <Dialog label="Tutorial" className="w-[min(420px,100%)]" onKeyDown={onKeyDown}>
+      <Dialog label="Tutorial" className="w-[min(380px,100%)]" onKeyDown={onKeyDown}>
         <div className="flex flex-col gap-2.5 px-5 pt-5 pb-2">
           {current.visual}
           <h2 className="m-0 text-md font-semibold tracking-label">{current.title}</h2>
-          <p className="m-0 min-h-[54px] text-base leading-relaxed text-surface-10">{current.body}</p>
+          <p className="m-0 min-h-[78px] text-base leading-relaxed text-surface-10">{current.body}</p>
         </div>
         <DialogFooter>
           {!last && <Button onClick={finish}>Skip</Button>}
