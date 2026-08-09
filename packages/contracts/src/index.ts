@@ -5,6 +5,8 @@ export type ProjectProcess = {
   name: string
   /** Shell command run in the process's cwd, e.g. "pnpm dev". Empty for interactive shells. */
   cmd: string
+  /** What the process does and where it lives, shown in tooltips and the inspector. */
+  description?: string
   /** Start an interactive login shell instead of running `cmd`. */
   shell?: boolean
   /** Working directory relative to the project path; defaults to the project root */
@@ -217,4 +219,27 @@ export type ServerMsg =
 
 export function sessionId(project: string, process: string): SessionId {
   return `${project}/${process}`
+}
+
+/** Desktop auto-update state, pushed from the Electron main process to the renderer. */
+export type DesktopUpdateStatus =
+  | "disabled"
+  | "idle"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "downloaded"
+  | "error"
+
+export type DesktopUpdateState = {
+  status: DesktopUpdateStatus
+  currentVersion: string
+  /** Newer version found on the feed; survives a failed download so the UI can offer a retry. */
+  availableVersion: string | null
+  /** Version staged on disk, ready for "restart & install". */
+  downloadedVersion: string | null
+  /** 0–100 while downloading, null otherwise. */
+  downloadPercent: number | null
+  /** Why updates are disabled, or the last error. Null when everything is fine. */
+  message: string | null
 }

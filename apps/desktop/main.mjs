@@ -8,10 +8,10 @@
 // uses the bundled server and static renderer shipped inside the application.
 
 import { spawn } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from "electron"
 
 // When launched under a supervisor (concurrently, a dead terminal), stdout and
@@ -46,6 +46,8 @@ const LOAD_RETRY_TIMEOUT_MS = 30_000
 /** The server process we started, if we started one. Null means "not ours". */
 let serverChild = null
 let mainWindow = null
+let releaseNotesWindow = null
+let shortcutsWindow = null
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms))
 
@@ -181,12 +183,84 @@ function installApplicationMenu(window) {
         submenu: [
           {
             label: "Hangar Help & Shortcuts",
-            click: () => window.webContents.send("hangar:open-help"),
+            click: openShortcutsWindow,
+          },
+          {
+            label: "Release Notes",
+            click: openReleaseNotesWindow,
           },
         ],
       },
     ]),
   )
+}
+
+function openShortcutsWindow() {
+  if (shortcutsWindow && !shortcutsWindow.isDestroyed()) {
+    if (shortcutsWindow.isMinimized()) shortcutsWindow.restore()
+    shortcutsWindow.show()
+    shortcutsWindow.focus()
+    return
+  }
+
+  const window = new BrowserWindow({
+    width: 520,
+    height: 590,
+    minWidth: 420,
+    minHeight: 420,
+    title: "Hangar Help & Keyboard Shortcuts",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#121113" : "#fdfcfd",
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: PRELOAD_ENTRY,
+    },
+  })
+
+  shortcutsWindow = window
+  window.on("closed", () => {
+    if (shortcutsWindow === window) shortcutsWindow = null
+  })
+
+  const navigation = app.isPackaged
+    ? window.loadFile(WEB_ENTRY, { query: { window: "shortcuts" } })
+    : window.loadURL(`${WEB_URL}?window=shortcuts`)
+  navigation.catch((error) => console.error(`[hangar] failed to open shortcuts: ${error.message}`))
+}
+
+function openReleaseNotesWindow() {
+  if (releaseNotesWindow && !releaseNotesWindow.isDestroyed()) {
+    if (releaseNotesWindow.isMinimized()) releaseNotesWindow.restore()
+    releaseNotesWindow.show()
+    releaseNotesWindow.focus()
+    return
+  }
+
+  const window = new BrowserWindow({
+    width: 760,
+    height: 700,
+    minWidth: 520,
+    minHeight: 420,
+    title: "Hangar Release Notes",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#121113" : "#fdfcfd",
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: PRELOAD_ENTRY,
+    },
+  })
+
+  releaseNotesWindow = window
+  window.on("closed", () => {
+    if (releaseNotesWindow === window) releaseNotesWindow = null
+  })
+
+  const navigation = app.isPackaged
+    ? window.loadFile(WEB_ENTRY, { query: { window: "release-notes" } })
+    : window.loadURL(`${WEB_URL}?window=release-notes`)
+  navigation.catch((error) => console.error(`[hangar] failed to open release notes: ${error.message}`))
 }
 
 function createWindow() {
@@ -267,6 +341,8 @@ ipcMain.handle("hangar:app-info", () => ({
   version: app.getVersion(),
   releaseNotes: readFileSync(RELEASE_NOTES_ENTRY, "utf8"),
 }))
+ipcMain.handle("hangar:open-release-notes", openReleaseNotesWindow)
+ipcMain.handle("hangar:open-shortcuts", openShortcutsWindow)
 
 ipcMain.handle("hangar:choose-directory", async (_event, requestedTitle) => {
   const options = {
@@ -320,9 +396,74 @@ ipcMain.handle("hangar:reveal-path", (_event, path) => {
   if (typeof path === "string" && path.trim() !== "") shell.showItemInFolder(expandHome(path))
 })
 
+// --- auto-updates ------------------------------------------------------------
+// The real machinery lives in updater.mjs (bundled to dist/updater.cjs with
+// electron-updater inside). It only loads in packaged builds with a feed, so
+// development never touches electron-updater and the renderer still gets an
+// honest "disabled" state everywhere else.
+
+// Local testing: point the updater at scripts/mock-update-server.mjs instead
+// of the embedded GitHub feed. Works in dev too, though only a packaged build
+// can complete the install step.
+const MOCK_UPDATE_URL = process.env.HANGAR_MOCK_UPDATE_URL ?? null
+
+function updatesDisabledReason() {
+  if (process.env.HANGAR_DISABLE_AUTO_UPDATE) return "Automatic updates are disabled by HANGAR_DISABLE_AUTO_UPDATE."
+  if (MOCK_UPDATE_URL !== null) return null
+  if (!app.isPackaged) return "Automatic updates are only available in packaged builds."
+  if (!existsSync(join(process.resourcesPath, "app-update.yml"))) return "This build has no update feed configured."
+  return null
+}
+
+/** Null until startUpdater() succeeds; every IPC handler falls back to "disabled". */
+let updater = null
+
+function disabledUpdateState() {
+  return {
+    status: "disabled",
+    currentVersion: app.getVersion(),
+    availableVersion: null,
+    downloadedVersion: null,
+    downloadPercent: null,
+    message: updatesDisabledReason(),
+  }
+}
+
+ipcMain.handle("hangar:update-state", () => (updater ? updater.getState() : disabledUpdateState()))
+ipcMain.handle("hangar:update-check", () => (updater ? updater.check() : disabledUpdateState()))
+ipcMain.handle("hangar:update-download", () => (updater ? updater.download() : disabledUpdateState()))
+ipcMain.handle("hangar:update-install", () => (updater ? updater.install() : disabledUpdateState()))
+
+async function startUpdater() {
+  if (updatesDisabledReason() !== null) return
+  try {
+    // Packaged builds use the esbuild bundle; dev (only reachable in mock
+    // mode) imports the source, resolving electron-updater from node_modules.
+    const entry = app.isPackaged ? resolve(HERE, "dist/updater.cjs") : resolve(HERE, "updater.mjs")
+    const { createUpdater } = await import(pathToFileURL(entry).href)
+    updater = createUpdater({
+      currentVersion: app.getVersion(),
+      mockFeedUrl: MOCK_UPDATE_URL,
+      broadcast: (state) => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("hangar:update-state", state)
+      },
+      // quitAndInstall's app.quit() would hard-kill the server child before the
+      // will-quit handler runs; stop it here so it gets SIGTERM and grace.
+      prepareInstall: () => {
+        app.isQuitting = true
+        stopServer()
+      },
+    })
+    updater.start()
+  } catch (error) {
+    console.error(`[hangar] updater unavailable: ${error.message}`)
+  }
+}
+
 app.whenReady().then(async () => {
   await ensureServer()
   createWindow()
+  void startUpdater()
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

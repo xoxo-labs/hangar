@@ -12,6 +12,7 @@
     "package:mac": "pnpm --filter @hangar/desktop package:mac",
     "dist:mac": "pnpm --filter @hangar/desktop dist:mac",
     "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
     "format": "biome format --write .",
     "format:check": "biome format ."
   },

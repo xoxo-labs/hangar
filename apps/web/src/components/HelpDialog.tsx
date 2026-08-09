@@ -37,6 +37,46 @@ function Key({ keyName, shift = false }: { keyName?: string; shift?: boolean }) 
   )
 }
 
+function ShortcutGroups() {
+  return (
+    <>
+      {GROUPS.map((group) => (
+        <section key={group.title}>
+          <h3 className="mt-0 mb-1.5 text-2xs font-semibold tracking-caps text-surface-9 uppercase">{group.title}</h3>
+          <div className="overflow-hidden rounded-md border border-surface-5 bg-surface-1">
+            {group.shortcuts.map((shortcut) => (
+              <div
+                key={`${shortcut.shift ? "shift-" : ""}${shortcut.key}`}
+                className="flex min-h-[38px] items-center gap-4 border-b border-surface-4 px-3 py-1.5 last:border-b-0"
+              >
+                <span className="flex-1 text-base text-surface-11">{shortcut.description}</span>
+                <Key keyName={shortcut.key} shift={shortcut.shift} />
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+      <p className="m-0 flex items-center gap-1.5 text-xs leading-relaxed text-surface-9">
+        Hold <Key /> to reveal shortcut hints on controls that support them.
+      </p>
+    </>
+  )
+}
+
+export function ShortcutsWorkspace() {
+  return (
+    <main className="absolute inset-0 overflow-y-auto bg-surface-1 px-6 py-7">
+      <div className="mx-auto flex w-full max-w-[480px] flex-col gap-5">
+        <header className="border-b border-surface-5 pb-4">
+          <p className="m-0 text-xs font-semibold tracking-caps text-surface-8 uppercase">Hangar help</p>
+          <h1 className="mt-1 mb-0 text-2xl font-strong text-surface-12">Keyboard shortcuts</h1>
+        </header>
+        <ShortcutGroups />
+      </div>
+    </main>
+  )
+}
+
 export function HelpDialog() {
   const open = useStore((state) => state.helpOpen)
   const close = useStore((state) => state.closeHelp)
@@ -52,27 +92,7 @@ export function HelpDialog() {
       <Dialog label="Help and keyboard shortcuts" className="w-[min(480px,100%)]!" onKeyDown={onKeyDown}>
         <DialogHeader title="Help & keyboard shortcuts" />
         <DialogBody className="gap-5 py-4">
-          {GROUPS.map((group) => (
-            <section key={group.title}>
-              <h3 className="mt-0 mb-1.5 text-2xs font-semibold tracking-caps text-surface-9 uppercase">
-                {group.title}
-              </h3>
-              <div className="overflow-hidden rounded-md border border-surface-5 bg-surface-1">
-                {group.shortcuts.map((shortcut) => (
-                  <div
-                    key={`${shortcut.shift ? "shift-" : ""}${shortcut.key}`}
-                    className="flex min-h-[38px] items-center gap-4 border-b border-surface-4 px-3 py-1.5 last:border-b-0"
-                  >
-                    <span className="flex-1 text-base text-surface-11">{shortcut.description}</span>
-                    <Key keyName={shortcut.key} shift={shortcut.shift} />
-                  </div>
-                ))}
-              </div>
-            </section>
-          ))}
-          <p className="m-0 flex items-center gap-1.5 text-xs leading-relaxed text-surface-9">
-            Hold <Key /> to reveal shortcut hints on controls that support them.
-          </p>
+          <ShortcutGroups />
         </DialogBody>
         <DialogFooter>
           <Button

@@ -7,7 +7,9 @@ import {
 } from "@hangar/contracts"
 import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react"
 import * as actions from "../actions"
+import { useDesktopUpdate } from "../hooks/useDesktopUpdate"
 import { useStore } from "../store"
+import { resolveUpdateAction, type UpdateActionKind, updateStatusLine } from "./settingsUpdate.logic"
 import { Button } from "../ui/Button"
 import { cx } from "../ui/cx"
 import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/Dialog"
@@ -79,6 +81,8 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
   const openTutorial = useStore((s) => s.openTutorial)
   const [version, setVersion] = useState("development")
   const [settings, setSettings] = useState(() => structuredClone(initial))
+  const update = useDesktopUpdate()
+  const [confirmInstall, setConfirmInstall] = useState(false)
   const appearance = settings.appearance
   const links = settings.links
   const terminal = settings.terminal
@@ -86,8 +90,28 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
   const history = settings.sessionHistory
 
   useEffect(() => {
-    if (window.hangarDesktop) void window.hangarDesktop.appInfo().then((info) => setVersion(info.version))
+    if (window.hangarDesktop) {
+      void window.hangarDesktop.appInfo().then((info) => setVersion(info.version))
+      // Opening settings is a natural moment for a fresh check; the main
+      // process skips it while a download is running or staged.
+      void window.hangarDesktop.checkForUpdate()
+    }
   }, [])
+
+  const runUpdateAction = (kind: UpdateActionKind) => {
+    const desktop = window.hangarDesktop
+    if (!desktop) return
+    if (kind === "install" && !confirmInstall) {
+      setConfirmInstall(true)
+      return
+    }
+    setConfirmInstall(false)
+    if (kind === "check") void desktop.checkForUpdate()
+    else if (kind === "download") void desktop.downloadUpdate()
+    else void desktop.installUpdate()
+  }
+
+  const updateAction = update === null ? null : resolveUpdateAction(update)
 
   const patchAppearance = (next: Partial<AppSettings["appearance"]>) =>
     setSettings((current) => ({
@@ -308,6 +332,33 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
                 </Button>
               </div>
             </div>
+            {update !== null && update.status !== "disabled" && (
+              <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-surface-5 bg-surface-a2 p-[10px]">
+                <span className={cx("text-xs", update.status === "error" ? "text-danger-10" : "text-surface-9")}>
+                  {confirmInstall
+                    ? "Running processes will be stopped, then Hangar restarts on the new version."
+                    : updateStatusLine(update)}
+                </span>
+                {confirmInstall ? (
+                  <div className="flex shrink-0 gap-1.5">
+                    <Button onClick={() => setConfirmInstall(false)}>Cancel</Button>
+                    <Button variant="primary" onClick={() => runUpdateAction("install")}>
+                      Restart now
+                    </Button>
+                  </div>
+                ) : (
+                  updateAction !== null && (
+                    <Button
+                      className="shrink-0"
+                      variant={updateAction.kind === "check" ? "default" : "primary"}
+                      onClick={() => runUpdateAction(updateAction.kind)}
+                    >
+                      {updateAction.label}
+                    </Button>
+                  )
+                )}
+              </div>
+            )}
           </Section>
           <Section title="Terminal logs">
             <ToggleRow

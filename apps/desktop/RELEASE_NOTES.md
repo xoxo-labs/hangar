@@ -1,3 +1,18 @@
+# Hangar 0.3.0
+
+## Automatic updates
+
+- Hangar now checks GitHub Releases for new versions: a banner appears under the project list, and Settings → About gains download and install controls.
+- Nothing happens without you: you choose when to download and when to restart. Running processes are stopped cleanly before the app restarts into the new version.
+
+## Process descriptions
+
+- Every process can carry a note about what it does — edit it in the session inspector; it shows in tooltips and when editing the project.
+
+## Windows
+
+- Release notes and the help & shortcuts guide now open in their own windows instead of workspace tabs.
+
 # Hangar 0.2.0
 
 ## Smarter project setup

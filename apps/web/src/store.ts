@@ -351,14 +351,19 @@ export const useStore = create<Store>((set) => ({
         : {}),
     })),
 
-  openReleaseNotes: () =>
+  openReleaseNotes: () => {
+    if (window.hangarDesktop) {
+      void window.hangarDesktop.openReleaseNotes()
+      return
+    }
     set((state) => ({
       activeId: null,
       activeHistory: null,
       releaseNotesOpen: true,
       releaseNotesActive: true,
       tabOrder: state.tabOrder.includes("release-notes") ? state.tabOrder : [...state.tabOrder, "release-notes"],
-    })),
+    }))
+  },
 
   closeReleaseNotes: () =>
     set((state) => ({
@@ -427,7 +432,13 @@ export const useStore = create<Store>((set) => ({
 
   closeSettings: () => set({ settingsOpen: false }),
 
-  openHelp: () => set({ helpOpen: true }),
+  openHelp: () => {
+    if (window.hangarDesktop) {
+      void window.hangarDesktop.openShortcuts()
+      return
+    }
+    set({ helpOpen: true })
+  },
 
   closeHelp: () => set({ helpOpen: false }),
 

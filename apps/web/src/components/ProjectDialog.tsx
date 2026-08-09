@@ -24,8 +24,10 @@ const TEXT_BUTTON =
 const PROC_HEAD = "text-xs tracking-label text-surface-9"
 const ELLIPSIS = "overflow-hidden text-ellipsis whitespace-nowrap"
 
-/** A process being edited. `id` only keeps React keys stable across row removals. */
-type Row = { id: number; name: string; cmd: string; cwd: string; shell: boolean }
+/** A process being edited. `id` only keeps React keys stable across row removals.
+ * `description` is edited in the session inspector, not here; the row carries it
+ * through so saving the dialog doesn't drop it. */
+type Row = { id: number; name: string; cmd: string; cwd: string; shell: boolean; description?: string }
 type PackageScript = { name: string; value: string; cmd: string; cwd?: string; workspace?: string }
 type ProjectInfo = {
   path: string
@@ -85,6 +87,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
           cmd: p.cmd,
           cwd: p.cwd ?? "",
           shell: p.shell ?? false,
+          ...(p.description === undefined ? {} : { description: p.description }),
         }))
       : [emptyRow()],
   )
@@ -537,6 +540,7 @@ function toProject(name: string, path: string, rows: Row[], env: Record<string, 
       cmd: row.shell ? "" : row.cmd.trim(),
       ...(row.shell ? { shell: true } : {}),
       ...(cwd === "" ? {} : { cwd }),
+      ...(row.description === undefined ? {} : { description: row.description }),
     }
   })
   return { name: name.trim(), path: path.trim(), processes, ...(env === undefined ? {} : { env }) }

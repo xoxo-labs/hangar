@@ -1,6 +1,6 @@
 import type { SessionHistoryEntry, SessionInfo } from "@hangar/contracts"
 import { Copy, ExternalLink, Info } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import * as actions from "../actions"
 import { usePortLinks } from "../hooks/usePortLinks"
 import { openLocalPort } from "../links"
@@ -118,6 +118,7 @@ export function PendingSessionInspector({
           <dl className="m-0 grid grid-cols-[68px_minmax(0,1fr)] gap-x-[10px] gap-y-[7px] text-sm">
             <Detail label="Command" value={cmd} mono />
           </dl>
+          <ProcessDescription project={project} process={process} />
         </section>
       </div>
     </aside>
@@ -191,6 +192,7 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
             {session.pid !== undefined && <Detail label="PID" value={String(session.pid)} mono />}
             <Detail label="Command" value={session.cmd} mono />
           </dl>
+          <ProcessDescription project={session.project} process={session.process} />
         </section>
 
         {metrics && <ResourceMetrics sessionId={session.id} metrics={metrics} history={metricHistory} />}
@@ -262,6 +264,62 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
         </section>
       </div>
     </aside>
+  )
+}
+
+/**
+ * Editable note on the registry's process entry, saved on blur via a full
+ * project upsert. Uncontrolled with a `key` remount so a broadcast that
+ * changes the saved text refreshes the field without fighting live edits.
+ */
+function ProcessDescription({ project, process }: { project: string; process: string }) {
+  const registryProject = useStore((state) => state.projects.find((p) => p.name === project))
+  const cancelled = useRef(false)
+  const proc = registryProject?.processes.find((p) => p.name === process)
+  if (registryProject === undefined || proc === undefined) return null
+  const saved = proc.description ?? ""
+
+  const commit = (value: string): void => {
+    const next = value.trim()
+    if (next === saved) return
+    actions.upsertProject({
+      ...registryProject,
+      processes: registryProject.processes.map((p) => {
+        if (p.name !== process) return p
+        const { description: _, ...rest } = p
+        return next === "" ? rest : { ...rest, description: next }
+      }),
+    })
+  }
+
+  return (
+    <label className="mt-[12px] flex flex-col gap-[5px]">
+      <span className="text-sm text-surface-8">Description</span>
+      <textarea
+        key={saved}
+        rows={2}
+        defaultValue={saved}
+        spellCheck={false}
+        placeholder="What this runs and where it lives…"
+        className="w-full min-w-0 resize-none rounded-md border border-surface-5 bg-surface-1 px-2 py-[6px] font-sans text-sm leading-normal text-surface-11 placeholder:text-surface-7 focus:border-accent-9 focus:shadow-[0_0_0_2px_var(--color-accent-a3)] focus:outline-none"
+        onBlur={(event) => {
+          if (cancelled.current) cancelled.current = false
+          else commit(event.currentTarget.value)
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            // Swallowed so the window listener doesn't also close the inspector.
+            event.stopPropagation()
+            cancelled.current = true
+            event.currentTarget.value = saved
+            event.currentTarget.blur()
+          } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault()
+            event.currentTarget.blur()
+          }
+        }}
+      />
+    </label>
   )
 }
 

@@ -1,7 +1,8 @@
 import { type Project, type ProjectProcess, type SessionInfo, sessionId } from "@hangar/contracts"
-import { ChevronRight, CircleHelp, History, Play, RotateCw, Settings, Square } from "lucide-react"
+import { ChevronRight, CircleArrowUp, CircleHelp, History, Play, RotateCw, Settings, Square } from "lucide-react"
 import { type DragEvent, useMemo, useState } from "react"
 import * as actions from "../actions"
+import { useDesktopUpdate } from "../hooks/useDesktopUpdate"
 import { describe, hasHighCpu, toneOf } from "../status"
 import { useStore } from "../store"
 import { cx } from "../ui/cx"
@@ -55,6 +56,7 @@ export function Sidebar({
   const historyCount = useStore((s) => s.history.length)
   const openSettings = useStore((s) => s.openSettings)
   const openHelp = useStore((s) => s.openHelp)
+  const update = useDesktopUpdate()
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<{ name: string; side: "before" | "after" } | null>(null)
   const [filter, setFilter] = useState("")
@@ -202,6 +204,23 @@ export function Sidebar({
           </button>
         )}
       </nav>
+      {update !== null && (update.status === "available" || update.status === "downloaded") && (
+        <button
+          type="button"
+          className="mx-2 mb-2 flex flex-none items-center gap-[8px] rounded-md border! border-accent-7! bg-accent-a3 px-[9px]! py-[6px]! text-left text-sm! text-accent-11! hover:bg-accent-a4!"
+          title={
+            update.status === "downloaded"
+              ? `Version ${update.downloadedVersion} downloaded — open Settings to restart and install`
+              : `Version ${update.availableVersion} is available — open Settings to download`
+          }
+          onClick={openSettings}
+        >
+          <CircleArrowUp className="size-[15px] flex-none" aria-hidden="true" />
+          <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap mask-r-from-[calc(100%-8px)]">
+            {update.status === "downloaded" ? "Restart to update" : `Update ${update.availableVersion} available`}
+          </span>
+        </button>
+      )}
       <div className="flex flex-none items-center gap-1 border-t border-surface-5 p-2">
         <button
           type="button"
@@ -393,6 +412,7 @@ function ProjectRow({
               project={project.name}
               name={proc.name}
               cmd={proc.shell ? "Interactive shell" : proc.cmd}
+              description={proc.description}
               session={byId.get(sessionId(project.name, proc.name))}
             />
           ))}
@@ -406,11 +426,13 @@ function ProcessRow({
   project,
   name,
   cmd,
+  description,
   session,
 }: {
   project: string
   name: string
   cmd: string
+  description: string | undefined
   session: SessionInfo | undefined
 }) {
   const activeId = useStore((s) => s.activeId)
@@ -434,7 +456,7 @@ function ProcessRow({
       <button
         type="button"
         className={cx(ROW_MAIN, selected ? "text-surface-12!" : "text-surface-10! group-hover:text-surface-12!")}
-        title={cmd}
+        title={description === undefined ? cmd : `${description}\n${cmd}`}
         onClick={() => (session ? setActive(id) : openPending(project, name))}
       >
         <Dot tone={toneOf(session)} small title={describe(session)} />

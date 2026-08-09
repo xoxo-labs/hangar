@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client"
 import "@xterm/xterm/css/xterm.css"
 import "./styles.css"
 import { App } from "./App"
+import { ShortcutsWorkspace } from "./components/HelpDialog"
+import { ReleaseNotesWorkspace } from "./components/ReleaseNotesWorkspace"
 import { initTheme } from "./theme"
 import { connect } from "./ws"
 
@@ -17,10 +19,15 @@ const root = document.getElementById("root")
 if (!root) throw new Error("missing #root")
 
 initTheme()
-connect()
+const windowKind = new URLSearchParams(window.location.search).get("window")
+if (windowKind === null) connect()
 
-createRoot(root).render(
-  <StrictMode>
+const content =
+  windowKind === "release-notes" ? (
+    <ReleaseNotesWorkspace />
+  ) : windowKind === "shortcuts" ? (
+    <ShortcutsWorkspace />
+  ) : (
     <App />
-  </StrictMode>,
-)
+  )
+createRoot(root).render(<StrictMode>{content}</StrictMode>)
