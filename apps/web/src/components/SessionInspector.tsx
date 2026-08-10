@@ -27,8 +27,9 @@ const EMPTY = "m-0 text-sm leading-normal text-surface-8"
 export function SessionStrip({ session, onInspect }: { session: SessionInfo; onInspect: () => void }) {
   const now = useNow(session.status === "running")
   const metrics = session.metrics
+  const running = session.status === "running"
   const highCpu = metrics !== undefined && hasHighCpu(session)
-  const primaryPort = metrics?.ports[0]
+  const primaryPort = running ? metrics?.ports[0] : undefined
   const browser = useStore((state) => {
     const project = state.projects.find((item) => item.name === session.project)
     return (
@@ -61,8 +62,9 @@ export function SessionStrip({ session, onInspect }: { session: SessionInfo; onI
           <Dot tone={toneOf(session)} small />
         )}
         <strong className="text-sm font-book text-surface-11">{session.process}</strong>
+        {!running && <span className="font-book text-surface-11">{exitedState(session)}</span>}
         <span>{formatDuration((session.endedAt ?? now) - session.startedAt)}</span>
-        {metrics && (
+        {running && metrics && (
           <>
             <i className="mx-[1px] h-[12px] w-[1px] bg-surface-5 max-[760px]:hidden" />
             {!highCpu && <span className="max-[760px]:hidden">CPU {formatCpu(metrics.cpuPercent)}</span>}
@@ -208,9 +210,17 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
           <ProcessDescription project={session.project} process={session.process} />
         </section>
 
-        {metrics && <ResourceMetrics sessionId={session.id} metrics={metrics} history={metricHistory} />}
+        {metrics && (
+          <ResourceMetrics
+            sessionId={session.id}
+            metrics={metrics}
+            history={metricHistory}
+            running={running}
+            endedAt={session.endedAt}
+          />
+        )}
 
-        {metrics && metrics.ports.length > 0 && (
+        {running && metrics && metrics.ports.length > 0 && (
           <section className={SECTION}>
             <h3 className={SECTION_TITLE}>Ports</h3>
             <div className={STACK}>
@@ -375,6 +385,10 @@ function ProcessAdvancedSettings({ project, process }: { project: string; proces
       </section>
     </>
   )
+}
+
+function exitedState(session: SessionInfo): string {
+  return session.exitCode == null ? "Exited" : `Exited · code ${session.exitCode}`
 }
 
 function inspectorState(session: SessionInfo): string {

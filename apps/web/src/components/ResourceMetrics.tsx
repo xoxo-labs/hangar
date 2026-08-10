@@ -18,10 +18,14 @@ export function ResourceMetrics({
   sessionId,
   metrics,
   history: allHistory,
+  running,
+  endedAt,
 }: {
   sessionId: string
   metrics: SessionMetrics
   history: SessionMetricPoint[]
+  running: boolean
+  endedAt?: number
 }) {
   const [layout, setLayout] = useState<"grid" | "rows">("grid")
   const { history, coverage, range, setRange, hoveredIndex, setHoveredIndex, selectedRange, selectSample } =
@@ -44,13 +48,20 @@ export function ResourceMetrics({
             className="m-0 truncate text-xs font-semibold uppercase tracking-caps text-surface-9"
             title="Hover to compare all metrics; click to jump to that point in the terminal"
           >
-            Resources{hovered ? ` · ${formatTime(hovered.sampledAt)}` : ""}
+            Resources{running ? "" : " · ended"}
+            {hovered ? ` · ${formatTime(hovered.sampledAt)}` : ""}
           </h3>
           <span
             className="mt-0.5 block truncate whitespace-nowrap text-2xs text-surface-8"
-            title="Live · sampled every 2 seconds"
+            title={
+              running
+                ? "Live · sampled every 2 seconds"
+                : `Sampling stopped${endedAt === undefined ? "" : ` at ${formatTime(endedAt)}`}; showing the last recorded values`
+            }
           >
-            Live · 2s samples
+            {running
+              ? "Live · 2s samples"
+              : `Last samples · stopped${endedAt === undefined ? "" : ` ${formatTime(endedAt)}`}`}
           </span>
         </div>
         <div className="flex items-center gap-1">

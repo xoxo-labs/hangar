@@ -109,6 +109,14 @@ export function TabBar() {
                   >
                     <Dot tone={toneOf(session)} small title={describe(session)} />
                     <span className="truncate text-base">{session.id}</span>
+                    {session.status === "exited" && (
+                      <span
+                        className="flex-none rounded-sm bg-surface-a4 px-1 py-px text-2xs tabular-nums text-surface-9"
+                        title={describe(session)}
+                      >
+                        {session.exitCode == null ? "exited" : `exit ${session.exitCode}`}
+                      </span>
+                    )}
                   </button>
                   <button
                     type="button"

@@ -210,11 +210,10 @@ function clearMetricPositions(entry: Entry): void {
   for (const listener of entry.metricSelectionListeners) listener(null)
 }
 
-export function noteExit(id: SessionId, exitCode: number | null): void {
+/** Starts a fresh resource-to-output mapping while preserving terminal scrollback. */
+export function resetMetricPositions(id: SessionId): void {
   const entry = entries.get(id)
-  if (!entry) return
-  const label = exitCode === null ? "signal" : `code ${exitCode}`
-  entry.term.write(`\r\n\x1b[90m[hangar] process exited (${label})\x1b[0m\r\n`)
+  if (entry) clearMetricPositions(entry)
 }
 
 /** Mounts the session's terminal into `el` and keeps it fitted. */

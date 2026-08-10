@@ -31,10 +31,18 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: hangar-mac
-          path: apps/desktop/release/*.dmg
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/latest-mac.yml
+      # electron-updater needs the ZIP and latest-mac.yml in addition to the
+      # human-facing DMG; without them installed copies cannot discover/install.
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: apps/desktop/release/*.dmg
+          files: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/latest-mac.yml
           generate_release_notes: true

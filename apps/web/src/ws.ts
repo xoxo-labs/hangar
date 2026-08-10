@@ -3,8 +3,8 @@ import { takeCloseOnExit, useStore } from "./store"
 import {
   applyTerminalSettings,
   disposeTerminal,
-  noteExit,
   recordMetricPosition,
+  resetMetricPositions,
   writeOutput,
   writeSnapshot,
 } from "./terminals"
@@ -76,10 +76,14 @@ function handle(msg: ServerMsg): void {
   switch (msg.type) {
     case "state": {
       const gone = store.sessions.filter((s) => !msg.sessions.some((next) => next.id === s.id))
+      const restarted = store.sessions.filter((session) =>
+        msg.sessions.some((next) => next.id === session.id && next.runId !== session.runId),
+      )
       store.applyState(msg.projects, msg.sessions, msg.history, msg.settings)
       applyThemeSetting(msg.settings.appearance.theme)
       applyTerminalSettings(msg.settings.terminal)
       for (const session of gone) disposeTerminal(session.id)
+      for (const session of restarted) resetMetricPositions(session.id)
       if (!sawFirstState) {
         sawFirstState = true
         // `=== false` (not `!`): an older server that predates the onboarding
@@ -102,7 +106,6 @@ function handle(msg: ServerMsg): void {
       store.setHistoryReplay(msg.runId, msg.events, msg.truncated)
       return
     case "exit":
-      noteExit(msg.id, msg.exitCode)
       // A "stop & close" confirmed from the tab finishes here, once the
       // session is actually dead and the server will accept the dismiss.
       if (takeCloseOnExit(msg.id)) send({ type: "dismiss", id: msg.id })

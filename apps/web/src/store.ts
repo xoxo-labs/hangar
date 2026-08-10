@@ -222,8 +222,16 @@ export const useStore = create<Store>((set) => ({
         (ordered.some((s) => s.id === state.activeId) || pending.some((tab) => tab.id === state.activeId))
       const activeId = focus?.id ?? (stillOpen ? state.activeId : (ordered.at(-1)?.id ?? null))
 
+      const previousById = new Map(state.sessions.map((session) => [session.id, session]))
+      const orderedById = new Map(ordered.map((session) => [session.id, session]))
       const metricHistory = Object.fromEntries(
-        Object.entries(state.metricHistory).filter(([id]) => ordered.some((session) => session.id === id)),
+        Object.entries(state.metricHistory).filter(([id]) => {
+          const previous = previousById.get(id)
+          const fresh = orderedById.get(id)
+          // A restart keeps the same session id and terminal scrollback, but its
+          // resource timeline belongs to the new run and must begin at zero.
+          return previous !== undefined && fresh !== undefined && previous.runId === fresh.runId
+        }),
       )
       const validRuns = new Set(history.map((entry) => entry.runId))
       const historyTabs = state.historyTabs.filter((runId) => validRuns.has(runId))

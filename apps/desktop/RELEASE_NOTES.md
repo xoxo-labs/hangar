@@ -1,3 +1,17 @@
+# Hangar 0.3.1
+
+## Clearer session endings
+
+- Exited tabs and the terminal status strip now show the exit code explicitly.
+- Every exit writes a persistent status line to the terminal, including after reconnecting.
+- Resource charts clearly switch from live sampling to their last recorded values; stale ports and live metrics are hidden after exit.
+- Restarted processes begin a fresh resource timeline without losing their terminal scrollback.
+
+## Project actions and links
+
+- Projects and processes now have context menus for common start, stop, restart, edit, and rename actions.
+- Browser preferences can be overridden per project or process when opening detected local ports.
+
 # Hangar 0.3.0
 
 ## Automatic updates

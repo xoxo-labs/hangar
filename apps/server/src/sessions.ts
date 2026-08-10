@@ -29,6 +29,10 @@ const HISTORY_METRIC_INTERVAL_MS = METRICS_INTERVAL_MS
 const MAX_HISTORY_METRIC_SAMPLES = 10_800
 const MAX_HISTORY_REPLAY_BYTES = 10 * 1024 * 1024
 const RESTART_DIVIDER = "\r\n\x1b[2m— restarted —\x1b[0m\r\n"
+function exitNotice(exitCode: number | null): string {
+  const result = exitCode === null ? "after a signal" : `with code ${exitCode}`
+  return `\r\n\x1b[90m[hangar] process exited ${result}\x1b[0m\r\n`
+}
 /** Inherit the full environment except vars that would confuse dev servers. */
 const ENV_BLOCKLIST = new Set(["PORT", "ELECTRON_RUN_AS_NODE", "HANGAR_PORT"])
 
@@ -336,6 +340,11 @@ export class SessionManager {
         session.exitCode = exitCode
         session.endedAt = Date.now()
         session.pty = null
+        // This is part of the server buffer, not renderer-only chrome, so it is
+        // visible immediately and still present in snapshots after reconnect.
+        const notice = exitNotice(exitCode)
+        session.buffer = (session.buffer + notice).slice(-MAX_BUFFER_CHARS)
+        this.broadcast({ type: "output", id, data: notice })
         session.logStream?.end()
         session.logStream = null
         session.replayStream?.end()
