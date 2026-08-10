@@ -1,4 +1,4 @@
-import type { Project, ProjectProcess } from "@hangar/contracts"
+import type { BrowserChoice, Project, ProjectProcess } from "@hangar/contracts"
 import { FolderOpen } from "lucide-react"
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
 import * as actions from "../actions"
@@ -8,6 +8,7 @@ import { cx } from "../ui/cx"
 import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/Dialog"
 import { Field, TextInput } from "../ui/Field"
 import { IconButton } from "../ui/IconButton"
+import { BrowserSelect } from "./BrowserSelect"
 
 /* Ports of the retired `.field` / `.text-button` rules. The `Field` primitive
  * covers the plain label-wrapped case; these two fields need a `<div>` (a
@@ -27,7 +28,15 @@ const ELLIPSIS = "overflow-hidden text-ellipsis whitespace-nowrap"
 /** A process being edited. `id` only keeps React keys stable across row removals.
  * `description` is edited in the session inspector, not here; the row carries it
  * through so saving the dialog doesn't drop it. */
-type Row = { id: number; name: string; cmd: string; cwd: string; shell: boolean; description?: string }
+type Row = {
+  id: number
+  name: string
+  cmd: string
+  cwd: string
+  shell: boolean
+  description?: string
+  browser?: BrowserChoice
+}
 type PackageScript = { name: string; value: string; cmd: string; cwd?: string; workspace?: string }
 type ProjectInfo = {
   path: string
@@ -88,9 +97,11 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
           cwd: p.cwd ?? "",
           shell: p.shell ?? false,
           ...(p.description === undefined ? {} : { description: p.description }),
+          ...(p.browser === undefined ? {} : { browser: p.browser }),
         }))
       : [emptyRow()],
   )
+  const [browser, setBrowser] = useState<BrowserChoice | "">(existing?.browser ?? "")
   const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null)
   const [inspecting, setInspecting] = useState(false)
@@ -150,7 +161,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
 
   const save = (): void => {
     if (!valid) return
-    actions.upsertProject(toProject(name, path, rows, existing?.env))
+    actions.upsertProject(toProject(name, path, rows, existing?.env, browser))
     closeEditor()
   }
 
@@ -385,6 +396,14 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
             </div>
           )}
 
+          <Field label="Browser used" hint="Overrides the global setting for every action in this project.">
+            <BrowserSelect
+              value={browser}
+              inheritLabel="Use global setting"
+              onChange={(event) => setBrowser(event.target.value as BrowserChoice | "")}
+            />
+          </Field>
+
           <div className={FIELD}>
             <span className={FIELD_LABEL}>Processes</span>
             <div className="grid w-full grid-cols-[1.1fr_2fr_1.2fr_24px] items-center gap-1">
@@ -532,7 +551,13 @@ function validate(name: string, path: string, rows: Row[]): string | null {
   return null
 }
 
-function toProject(name: string, path: string, rows: Row[], env: Record<string, string> | undefined): Project {
+function toProject(
+  name: string,
+  path: string,
+  rows: Row[],
+  env: Record<string, string> | undefined,
+  browser: BrowserChoice | "",
+): Project {
   const processes: ProjectProcess[] = rows.map((row) => {
     const cwd = row.cwd.trim()
     return {
@@ -541,9 +566,16 @@ function toProject(name: string, path: string, rows: Row[], env: Record<string, 
       ...(row.shell ? { shell: true } : {}),
       ...(cwd === "" ? {} : { cwd }),
       ...(row.description === undefined ? {} : { description: row.description }),
+      ...(row.browser === undefined ? {} : { browser: row.browser }),
     }
   })
-  return { name: name.trim(), path: path.trim(), processes, ...(env === undefined ? {} : { env }) }
+  return {
+    name: name.trim(),
+    path: path.trim(),
+    processes,
+    ...(env === undefined ? {} : { env }),
+    ...(browser === "" ? {} : { browser }),
+  }
 }
 
 function uniqueTerminalName(rows: Row[]): string {

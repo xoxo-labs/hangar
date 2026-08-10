@@ -11,6 +11,8 @@ export type ProjectProcess = {
   shell?: boolean
   /** Working directory relative to the project path; defaults to the project root */
   cwd?: string
+  /** Browser override for ports opened from this process. */
+  browser?: BrowserChoice
 }
 
 export type Project = {
@@ -20,6 +22,8 @@ export type Project = {
   processes: ProjectProcess[]
   /** Extra environment variables applied to every process of this project */
   env?: Record<string, string>
+  /** Browser override for ports opened from this project. */
+  browser?: BrowserChoice
 }
 
 export type Registry = {

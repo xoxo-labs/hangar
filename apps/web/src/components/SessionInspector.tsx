@@ -1,15 +1,16 @@
-import type { SessionHistoryEntry, SessionInfo } from "@hangar/contracts"
+import type { BrowserChoice, SessionHistoryEntry, SessionInfo } from "@hangar/contracts"
 import { Copy, ExternalLink, Info } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import * as actions from "../actions"
 import { usePortLinks } from "../hooks/usePortLinks"
-import { openLocalPort } from "../links"
+import { browserLabel, openLocalPort } from "../links"
 import { hasHighCpu, toneOf } from "../status"
 import { type SessionMetricPoint, useStore } from "../store"
 import { Button } from "../ui/Button"
 import { cx } from "../ui/cx"
 import { IconButton } from "../ui/IconButton"
 import { Dot } from "./Dot"
+import { BrowserSelect } from "./BrowserSelect"
 import { ResourceMetrics } from "./ResourceMetrics"
 
 const NO_METRIC_HISTORY: SessionMetricPoint[] = []
@@ -28,7 +29,14 @@ export function SessionStrip({ session, onInspect }: { session: SessionInfo; onI
   const metrics = session.metrics
   const highCpu = metrics !== undefined && hasHighCpu(session)
   const primaryPort = metrics?.ports[0]
-  const browser = useStore((state) => state.settings.links.browser)
+  const browser = useStore((state) => {
+    const project = state.projects.find((item) => item.name === session.project)
+    return (
+      project?.processes.find((item) => item.name === session.process)?.browser ??
+      project?.browser ??
+      state.settings.links.browser
+    )
+  })
   const showNotice = useStore((state) => state.showNotice)
   const openPort = (port: number) => {
     void openLocalPort(port, browser).catch(() => showNotice(`Could not open port ${port}`))
@@ -67,7 +75,7 @@ export function SessionStrip({ session, onInspect }: { session: SessionInfo; onI
           className="self-center rounded-sm px-[5px] py-[3px] font-sans text-sm leading-[inherit] tabular-nums text-accent-10 hover:text-accent-11 focus:outline-none"
           type="button"
           onClick={() => openPort(primaryPort)}
-          title={`Open localhost:${primaryPort}`}
+          title={`Open localhost:${primaryPort} in ${browserLabel(browser)}`}
         >
           :{primaryPort}
         </button>
@@ -106,7 +114,7 @@ export function PendingSessionInspector({
           ×
         </button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <section className={SECTION}>
           <div className="mb-[12px] flex items-center gap-[7px] text-sm">
             <Dot tone="idle" small />
@@ -120,6 +128,7 @@ export function PendingSessionInspector({
           </dl>
           <ProcessDescription project={project} process={process} />
         </section>
+        <ProcessAdvancedSettings project={project} process={process} />
       </div>
     </aside>
   )
@@ -137,7 +146,11 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
   const metricHistory = useStore((state) => state.metricHistory[session.id] ?? NO_METRIC_HISTORY)
   const requestConfirm = useStore((state) => state.requestConfirm)
   const running = session.status === "running"
-  const { openPort, copyPort, linkForPort, isLoopbackOnly } = usePortLinks(metrics)
+  const browser = useStore((state) => {
+    const project = state.projects.find((item) => item.name === session.project)
+    return project?.processes.find((item) => item.name === session.process)?.browser ?? project?.browser
+  })
+  const { openPort, copyPort, linkForPort, isLoopbackOnly, browser: resolvedBrowser } = usePortLinks(metrics, browser)
 
   return (
     <aside
@@ -158,7 +171,7 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
           ×
         </button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <section className={SECTION}>
           <div className="mb-[12px] flex items-center gap-[7px] text-sm">
             <Dot tone={toneOf(session)} small />
@@ -227,8 +240,8 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
                       </IconButton>
                       <IconButton
                         className="size-[28px]"
-                        title={`Open localhost:${port}`}
-                        aria-label={`Open port ${port} in browser`}
+                        title={`Open localhost:${port} in ${browserLabel(resolvedBrowser)}`}
+                        aria-label={`Open port ${port} in ${browserLabel(resolvedBrowser)}`}
                         onClick={() => openPort(port)}
                       >
                         <ExternalLink className="size-[14px]" aria-hidden="true" />
@@ -262,6 +275,7 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
             </div>
           )}
         </section>
+        <ProcessAdvancedSettings project={session.project} process={session.process} />
       </div>
     </aside>
   )
@@ -320,6 +334,46 @@ function ProcessDescription({ project, process }: { project: string; process: st
         }}
       />
     </label>
+  )
+}
+
+function ProcessAdvancedSettings({ project, process }: { project: string; process: string }) {
+  const registryProject = useStore((state) => state.projects.find((item) => item.name === project))
+  const proc = registryProject?.processes.find((item) => item.name === process)
+  if (registryProject === undefined || proc === undefined) return null
+
+  const setBrowser = (browser: BrowserChoice | ""): void => {
+    actions.upsertProject({
+      ...registryProject,
+      processes: registryProject.processes.map((item) => {
+        if (item.name !== process) return item
+        const { browser: _, ...rest } = item
+        return browser === "" ? rest : { ...rest, browser }
+      }),
+    })
+  }
+
+  return (
+    <>
+      <div className="min-h-4 w-full flex-1" aria-hidden="true" />
+      <section className="w-full flex-none border-t border-surface-4 p-[14px]">
+        <details>
+          <summary className="cursor-pointer text-xs font-semibold tracking-caps text-surface-8 uppercase">
+            Advanced
+          </summary>
+          <label className="mt-2 flex flex-col gap-[5px]">
+            <span className="text-sm text-surface-8">Browser used</span>
+            <BrowserSelect
+              value={proc.browser ?? ""}
+              inheritLabel={
+                registryProject.browser === undefined ? "Use project/global setting" : "Use project setting"
+              }
+              onChange={(event) => setBrowser(event.target.value as BrowserChoice | "")}
+            />
+          </label>
+        </details>
+      </section>
+    </>
   )
 }
 

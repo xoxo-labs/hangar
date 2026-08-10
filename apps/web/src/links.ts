@@ -28,6 +28,20 @@ export function shareUrl(
   return { url: `http://localhost:${port}`, kind: "local" }
 }
 
+const BROWSER_LABELS: Record<BrowserChoice, string> = {
+  system: "system default browser",
+  safari: "Safari",
+  chrome: "Google Chrome",
+  arc: "Arc",
+  firefox: "Firefox",
+  brave: "Brave",
+  edge: "Microsoft Edge",
+}
+
+export function browserLabel(browser: BrowserChoice): string {
+  return BROWSER_LABELS[browser]
+}
+
 /** Opens a detected localhost service in the configured browser. */
 export async function openLocalPort(port: number, browser: BrowserChoice): Promise<void> {
   const url = `http://localhost:${port}`

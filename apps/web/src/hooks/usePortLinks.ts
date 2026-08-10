@@ -1,4 +1,4 @@
-import type { SessionMetrics } from "@hangar/contracts"
+import type { BrowserChoice, SessionMetrics } from "@hangar/contracts"
 import { useCallback, useEffect, useState } from "react"
 import { loadNetworkInfo, openLocalPort, shareUrl, type NetworkInfo } from "../links"
 import { useStore } from "../store"
@@ -7,10 +7,11 @@ const EMPTY_NETWORK: NetworkInfo = { lan: [], tailscale: [] }
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]", "::1", "localhost"])
 
 /** Network discovery and open/copy actions for the inspector's detected ports. */
-export function usePortLinks(metrics: SessionMetrics | undefined) {
+export function usePortLinks(metrics: SessionMetrics | undefined, browserOverride?: BrowserChoice) {
   const links = useStore((state) => state.settings.links)
   const serverPort = useStore((state) => state.port)
   const showNotice = useStore((state) => state.showNotice)
+  const browser = browserOverride ?? links.browser
   const [network, setNetwork] = useState<NetworkInfo>(EMPTY_NETWORK)
 
   useEffect(() => {
@@ -25,9 +26,9 @@ export function usePortLinks(metrics: SessionMetrics | undefined) {
 
   const openPort = useCallback(
     (port: number) => {
-      void openLocalPort(port, links.browser).catch(() => showNotice(`Could not open port ${port}`))
+      void openLocalPort(port, browser).catch(() => showNotice(`Could not open port ${port}`))
     },
-    [links.browser, showNotice],
+    [browser, showNotice],
   )
 
   const copyPort = useCallback(
@@ -59,5 +60,5 @@ export function usePortLinks(metrics: SessionMetrics | undefined) {
     [metrics?.portBindings],
   )
 
-  return { openPort, copyPort, linkForPort, isLoopbackOnly }
+  return { openPort, copyPort, linkForPort, isLoopbackOnly, browser }
 }

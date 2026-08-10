@@ -4,6 +4,7 @@ import { isAbsolute, join, resolve } from "node:path"
 import type { Project, Registry } from "@hangar/contracts"
 
 const EMPTY: Registry = { version: 1, projects: [] }
+const BROWSERS = new Set(["system", "safari", "chrome", "arc", "firefox", "brave", "edge"])
 
 export function hangarHome(): string {
   return process.env.HANGAR_HOME ?? join(homedir(), ".hangar")
@@ -51,12 +52,18 @@ export function validateProject(project: Project): string[] {
   if (!path || !isAbsolute(resolve(path))) {
     errors.push(`invalid path: ${JSON.stringify(project.path)}`)
   }
+  if (project.browser !== undefined && !BROWSERS.has(project.browser)) {
+    errors.push(`invalid project browser: ${JSON.stringify(project.browser)}`)
+  }
   if (!Array.isArray(project.processes) || project.processes.length === 0) {
     errors.push("a project needs at least one process")
   } else {
     for (const proc of project.processes) {
       if (!proc.name || (!proc.shell && !proc.cmd)) {
         errors.push(`process needs a name and either cmd or shell: ${JSON.stringify(proc)}`)
+      }
+      if (proc.browser !== undefined && !BROWSERS.has(proc.browser)) {
+        errors.push(`invalid process browser: ${JSON.stringify(proc.browser)}`)
       }
     }
     const names = new Set(project.processes.map((p) => p.name))
