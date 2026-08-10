@@ -21,15 +21,21 @@ export function Menu({
   title,
   items,
   onOpenChange,
+  contextPosition,
+  showTrigger = true,
   children = "⋯",
 }: {
   title: string
   items: MenuItem[]
   onOpenChange?: (open: boolean) => void
+  /** When supplied, opens the same menu at a right-click position. */
+  contextPosition?: { x: number; y: number } | null
+  showTrigger?: boolean
   children?: ReactNode
 }) {
   const [open, setOpen] = useState(false)
-  const [position, setPosition] = useState({ top: 0, right: 0 })
+  const [position, setPosition] = useState({ top: 0, left: 0 })
+  const anchor = useRef<"right-edge" | "point">("right-edge")
   const trigger = useRef<HTMLButtonElement | null>(null)
   const popup = useRef<HTMLDivElement>(null)
 
@@ -37,6 +43,14 @@ export function Menu({
     setOpen(false)
     onOpenChange?.(false)
   }
+
+  useEffect(() => {
+    if (contextPosition === null || contextPosition === undefined) return
+    anchor.current = "point"
+    setPosition({ top: contextPosition.y, left: contextPosition.x })
+    setOpen(true)
+    onOpenChange?.(true)
+  }, [contextPosition, onOpenChange])
 
   useEffect(() => {
     if (!open) return
@@ -60,32 +74,40 @@ export function Menu({
 
   useLayoutEffect(() => {
     if (!open || popup.current === null) return
-    // Nothing reflows a fixed box back into view: a project near the foot of
-    // the sidebar would otherwise open a menu running off the bottom edge.
-    const overflow = popup.current.getBoundingClientRect().bottom + GAP - window.innerHeight
-    if (overflow > 0) setPosition((current) => ({ ...current, top: current.top - overflow }))
-  }, [open])
+    // Fixed popups get no collision handling from the browser. Align dropdowns
+    // to their trigger's right edge, then clamp both kinds of menu to the
+    // viewport (the same basic behavior as Radix/shadcn menus).
+    const rect = popup.current.getBoundingClientRect()
+    const anchoredLeft = anchor.current === "right-edge" ? position.left - rect.width : position.left
+    setPosition({
+      left: Math.max(GAP, Math.min(anchoredLeft, window.innerWidth - rect.width - GAP)),
+      top: Math.max(GAP, Math.min(position.top, window.innerHeight - rect.height - GAP)),
+    })
+  }, [open, contextPosition])
 
   return (
     <>
-      <IconButton
-        title={title}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          if (open) return dismiss()
-          // IconButton takes no ref, so the click supplies both the anchor rect
-          // and the element Escape hands focus back to.
-          trigger.current = event.currentTarget
-          const rect = event.currentTarget.getBoundingClientRect()
-          setPosition({ top: rect.bottom + GAP, right: window.innerWidth - rect.right })
-          setOpen(true)
-          onOpenChange?.(true)
-        }}
-      >
-        {children}
-      </IconButton>
+      {showTrigger && (
+        <IconButton
+          title={title}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            if (open) return dismiss()
+            // IconButton takes no ref, so the click supplies both the anchor rect
+            // and the element Escape hands focus back to.
+            trigger.current = event.currentTarget
+            const rect = event.currentTarget.getBoundingClientRect()
+            anchor.current = "right-edge"
+            setPosition({ top: rect.bottom + GAP, left: rect.right })
+            setOpen(true)
+            onOpenChange?.(true)
+          }}
+        >
+          {children}
+        </IconButton>
+      )}
 
       {open && (
         <div
@@ -93,8 +115,9 @@ export function Menu({
           role="menu"
           aria-label={title}
           className="fixed z-20 flex min-w-[160px] flex-col rounded-md border border-surface-5 bg-surface-3 p-1 shadow-[0_10px_30px_#0008]"
-          style={{ top: position.top, right: position.right }}
+          style={{ top: position.top, left: position.left }}
           onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
         >
           {items.map((item, index) =>
             item === MENU_SEPARATOR ? (

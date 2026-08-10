@@ -6,6 +6,21 @@ export function start(project: string, process?: string): void {
   send({ type: "start", project, ...(process === undefined ? {} : { process }) })
 }
 
+/** Adds and starts a uniquely named interactive shell at the project root. */
+export function openEmptyTerminal(project: Project): void {
+  const names = new Set(project.processes.map((process) => process.name))
+  let name = "terminal"
+  for (let suffix = 2; names.has(name); suffix += 1) name = `terminal-${suffix}`
+
+  upsertProject({
+    ...project,
+    processes: [...project.processes, { name, cmd: "", shell: true }],
+  })
+  // WebSocket messages are ordered, so the registry update is handled before
+  // this start request reaches the server.
+  start(project.name, name)
+}
+
 export function stop(project: string, process?: string): void {
   send({ type: "stop", project, ...(process === undefined ? {} : { process }) })
 }

@@ -1,13 +1,16 @@
 import { type Project, type ProjectProcess, type SessionInfo, sessionId } from "@hangar/contracts"
 import { ChevronRight, CircleArrowUp, CircleHelp, History, Play, RotateCw, Settings, Square } from "lucide-react"
-import { type DragEvent, useMemo, useState } from "react"
+import { type DragEvent, type FormEvent, useMemo, useState } from "react"
+import { createPortal } from "react-dom"
 import * as actions from "../actions"
 import { useDesktopUpdate } from "../hooks/useDesktopUpdate"
 import { describe, hasHighCpu, toneOf } from "../status"
 import { useStore } from "../store"
+import { Button } from "../ui/Button"
 import { cx } from "../ui/cx"
+import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/Dialog"
 import { IconButton } from "../ui/IconButton"
-import { MENU_SEPARATOR, Menu } from "../ui/Menu"
+import { MENU_SEPARATOR, Menu, type MenuItem } from "../ui/Menu"
 import { Dot } from "./Dot"
 
 /*
@@ -291,6 +294,7 @@ function ProjectRow({
   const openEditor = useStore((s) => s.openEditor)
   const requestConfirm = useStore((s) => s.requestConfirm)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
 
   // Counted over the whole project, not the filtered subset: the header's dot,
   // counter and "all processes" actions all speak for the project as a whole.
@@ -309,6 +313,23 @@ function ProjectRow({
     const rect = event.currentTarget.getBoundingClientRect()
     onDragOver(event.clientY < rect.top + rect.height / 2 ? "before" : "after")
   }
+
+  const menuItems: MenuItem[] = [
+    { label: "Start all", onSelect: () => actions.start(project.name) },
+    { label: "Open empty terminal", onSelect: () => actions.openEmptyTerminal(project) },
+    {
+      label: "Restart all",
+      disabled: !running,
+      onSelect: () => requestConfirm({ action: "restart", project: project.name }),
+    },
+    {
+      label: "Stop all",
+      disabled: !running,
+      onSelect: () => requestConfirm({ action: "stop", project: project.name }),
+    },
+    MENU_SEPARATOR,
+    { label: "Edit project…", onSelect: () => openEditor(project.name) },
+  ]
 
   return (
     <section
@@ -339,6 +360,10 @@ function ProjectRow({
           onDragStart()
         }}
         onDragEnd={onDragEnd}
+        onContextMenu={(event) => {
+          event.preventDefault()
+          setContextMenuPosition({ x: event.clientX, y: event.clientY })
+        }}
       >
         <button
           type="button"
@@ -384,22 +409,12 @@ function ProjectRow({
         <div className={cx(ROW_ACTIONS, menuOpen && "opacity-100")}>
           <Menu
             title={`More actions for ${project.name}`}
-            onOpenChange={setMenuOpen}
-            items={[
-              { label: "Start all", onSelect: () => actions.start(project.name) },
-              {
-                label: "Restart all",
-                disabled: !running,
-                onSelect: () => requestConfirm({ action: "restart", project: project.name }),
-              },
-              {
-                label: "Stop all",
-                disabled: !running,
-                onSelect: () => requestConfirm({ action: "stop", project: project.name }),
-              },
-              MENU_SEPARATOR,
-              { label: "Edit project…", onSelect: () => openEditor(project.name) },
-            ]}
+            contextPosition={contextMenuPosition}
+            onOpenChange={(open) => {
+              setMenuOpen(open)
+              if (!open) setContextMenuPosition(null)
+            }}
+            items={menuItems}
           />
         </div>
       </div>
@@ -439,6 +454,8 @@ function ProcessRow({
   const setActive = useStore((s) => s.setActive)
   const openPending = useStore((s) => s.openPending)
   const requestConfirm = useStore((s) => s.requestConfirm)
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
+  const [renameOpen, setRenameOpen] = useState(false)
 
   const id = sessionId(project, name)
   const running = session?.status === "running"
@@ -452,6 +469,10 @@ function ProcessRow({
       // Opening a row never launches anything: a process with no session gets a
       // pending tab whose pane offers the start. Only ▶ below starts outright.
       onClick={() => (session ? setActive(id) : openPending(project, name))}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        setContextMenuPosition({ x: event.clientX, y: event.clientY })
+      }}
     >
       <button
         type="button"
@@ -463,18 +484,52 @@ function ProcessRow({
         <span className={cx(LABEL, "text-base", FADE, running ? FADE_HOVER_TWO : FADE_HOVER_ONE)}>{name}</span>
       </button>
 
+      <Menu
+        title={`Actions for ${name}`}
+        showTrigger={false}
+        contextPosition={contextMenuPosition}
+        onOpenChange={(open) => {
+          if (!open) setContextMenuPosition(null)
+        }}
+        items={[
+          running
+            ? {
+                label: "Restart",
+                onSelect: () => requestConfirm({ action: "restart", project, process: name }),
+              }
+            : { label: "Start", onSelect: () => actions.start(project, name) },
+          ...(running
+            ? [{ label: "Stop", onSelect: () => requestConfirm({ action: "stop", project, process: name }) }]
+            : []),
+          MENU_SEPARATOR,
+          { label: "Rename…", disabled: running, onSelect: () => setRenameOpen(true) },
+        ]}
+      />
+
+      {renameOpen && (
+        <RenameProcessDialog projectName={project} processName={name} onClose={() => setRenameOpen(false)} />
+      )}
+
       <div className={ROW_ACTIONS}>
         {running ? (
           <>
             <IconButton
-              title={`Restart ${name}`}
-              onClick={() => requestConfirm({ action: "restart", project, process: name })}
+              title={`Restart ${name} (Shift-click to skip confirmation)`}
+              onClick={(event) =>
+                event.shiftKey
+                  ? actions.restart(project, name)
+                  : requestConfirm({ action: "restart", project, process: name })
+              }
             >
               <RotateCw className="size-[14px]" aria-hidden="true" />
             </IconButton>
             <IconButton
-              title={`Stop ${name}`}
-              onClick={() => requestConfirm({ action: "stop", project, process: name })}
+              title={`Stop ${name} (Shift-click to skip confirmation)`}
+              onClick={(event) =>
+                event.shiftKey
+                  ? actions.stop(project, name)
+                  : requestConfirm({ action: "stop", project, process: name })
+              }
             >
               <Square className="size-[12px] fill-current" aria-hidden="true" />
             </IconButton>
@@ -486,5 +541,72 @@ function ProcessRow({
         )}
       </div>
     </li>
+  )
+}
+
+function RenameProcessDialog({
+  projectName,
+  processName,
+  onClose,
+}: {
+  projectName: string
+  processName: string
+  onClose: () => void
+}) {
+  const project = useStore((state) => state.projects.find((item) => item.name === projectName))
+  const [name, setName] = useState(processName)
+  const trimmed = name.trim()
+  const duplicate =
+    project?.processes.some((process) => process.name === trimmed && process.name !== processName) ?? false
+  const valid = trimmed !== "" && !duplicate
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (!project || !valid || trimmed === processName) return
+    actions.upsertProject({
+      ...project,
+      processes: project.processes.map((process) =>
+        process.name === processName ? { ...process, name: trimmed } : process,
+      ),
+    })
+    onClose()
+  }
+
+  return createPortal(
+    <Overlay onDismiss={onClose}>
+      <Dialog
+        label={`Rename ${processName}`}
+        className="max-w-[360px]"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onClose()
+        }}
+      >
+        <form onSubmit={submit}>
+          <DialogHeader title="Rename action" />
+          <DialogBody>
+            <label className="flex flex-col gap-1.5 text-sm text-surface-10">
+              Name
+              <input
+                autoFocus
+                className="w-full rounded-md border border-surface-5 bg-surface-1 px-2.5 py-1.5 text-md text-surface-12 focus:border-accent-9 focus:outline-none"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            </label>
+            {duplicate && <p className="m-0 text-sm text-danger-11">An action with this name already exists.</p>}
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={!valid || trimmed === processName}>
+              Rename
+            </Button>
+          </DialogFooter>
+        </form>
+      </Dialog>
+    </Overlay>,
+    document.body,
   )
 }

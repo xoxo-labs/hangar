@@ -275,6 +275,9 @@ function createWindow() {
     titleBarStyle: "hiddenInset",
     // Centers the lights on the 48px title strip shared by sidebar and tabs.
     trafficLightPosition: { x: 18, y: 18 },
+    // Held back until the renderer's first paint (ready-to-show below), so a
+    // cold start never flashes seconds of empty window while React boots.
+    show: false,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -282,6 +285,14 @@ function createWindow() {
       preload: PRELOAD_ENTRY,
     },
   })
+
+  const showWindow = () => {
+    if (!window.isDestroyed() && !window.isVisible()) window.show()
+  }
+  window.once("ready-to-show", showWindow)
+  // In dev a failed load never fires ready-to-show while Vite boots; without a
+  // deadline the app would look like it never launched.
+  const showDeadline = setTimeout(showWindow, 4_000)
 
   installApplicationMenu(window)
 
@@ -321,6 +332,7 @@ function createWindow() {
   load()
   mainWindow = window
   window.on("closed", () => {
+    clearTimeout(showDeadline)
     if (retryTimer !== null) clearTimeout(retryTimer)
     retryTimer = null
     if (mainWindow === window) mainWindow = null
@@ -461,9 +473,12 @@ async function startUpdater() {
 }
 
 app.whenReady().then(async () => {
-  await ensureServer()
+  // Window first, server in parallel: the renderer is a local file and paints
+  // fast, then its own "connecting…" state honestly covers the server boot.
+  // Blocking the window on /health meant seconds of nothing on cold start.
   createWindow()
   void startUpdater()
+  await ensureServer()
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
