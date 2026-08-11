@@ -13,9 +13,15 @@ jobs:
   mac:
     runs-on: macos-latest
     env:
-      # The app ships unsigned (build.mac.identity is null); keep
-      # electron-builder from hunting for a certificate on the runner.
-      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      # Developer ID signing + notarization. electron-builder imports the
+      # certificate from CSC_LINK into a temporary keychain, and notarizes
+      # when the APPLE_* credentials are present (skips with a warning when
+      # they are not, so forks and secretless runs still produce a build).
+      CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
+      CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_P12_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -25,6 +31,16 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm dist:mac
+      # Fail the release if the produced app is not signed, notarized, and
+      # stapled — a silent fallback to an unsigned build must not ship.
+      - name: Verify signature and notarization
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          APP="apps/desktop/release/mac-arm64/Hangar.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign --display --requirements - "$APP" 2>&1 | grep "Developer ID"
+          xcrun stapler validate "$APP"
+          spctl --assess --type execute --verbose=2 "$APP"
       # A version-free alias so the site can deep-link the newest build
       # directly: /releases/latest/download/Hangar-arm64.dmg
       - run: cp apps/desktop/release/Hangar-*-arm64.dmg apps/desktop/release/Hangar-arm64.dmg
