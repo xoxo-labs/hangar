@@ -1,5 +1,8 @@
 {
-  "app": { "name": "Hangar" },
+  "app": {
+    "name": "Hangar",
+    "storage": { "appGroup": "group.works.xoxo.hangar" }
+  },
   "linking": { "scheme": "hangar" },
   "entities": [
     {
@@ -60,13 +63,15 @@
       "name": "StartProcess",
       "title": "Start Process",
       "description": "Starts a process in Hangar.",
-      "implementationDescription": "Write a start command to the shared command directory. If Hangar is running it picks the command up immediately; otherwise launch Hangar and the command executes once the server is up. The entity query should suggest only stopped processes — starting is the only exposed verb, so a running process has no valid action here.",
+      "implementationDescription": "Write a start command to the shared command directory. If Hangar is running it picks the command up immediately; otherwise launch Hangar and the command executes once the server is up. Return the process record with its post-start state.",
       "parameters": [
         { "name": "process", "entity": "Process", "requestDialog": "Which process?" }
       ],
       "behavior": {
-        "kind": "dialog",
-        "dialog": "Starting ${process.name} in ${process.project}."
+        "kind": "custom",
+        "dialog": "Starting ${result.name} in ${result.project}.",
+        "result": { "entity": "Process" },
+        "errorFallback": "Couldn't start ${process.name}. Open Hangar to see why."
       },
       "execution": "background",
       "shortcut": {
@@ -79,13 +84,15 @@
       "name": "StartProject",
       "title": "Start Project",
       "description": "Starts every process in a Hangar project.",
-      "implementationDescription": "Same command-directory contract as StartProcess, with a start-all command for the project. Launch Hangar if it is not running.",
+      "implementationDescription": "Same command-directory contract as StartProcess, with a start-all command for the project. Launch Hangar if it is not running. Return how many processes the command actually started.",
       "parameters": [
         { "name": "project", "entity": "Project", "requestDialog": "Which project?" }
       ],
       "behavior": {
-        "kind": "dialog",
-        "dialog": "Starting all processes in ${project.name}."
+        "kind": "custom",
+        "dialog": "Starting ${result.started} processes in ${project.name}.",
+        "result": { "fields": [{ "name": "started", "type": "integer" }] },
+        "errorFallback": "Couldn't start ${project.name}. Open Hangar to see why."
       },
       "execution": "background",
       "shortcut": {
