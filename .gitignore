@@ -5,3 +5,7 @@ apps/desktop/release/
 .DS_Store
 *.log
 .tmp/
+
+# Xcode (regenerate with xcodegen from project.yml)
+apps/desktop/appintents/HangarIntents.xcodeproj/
+apps/desktop/appintents/DevHost/Info.plist
