@@ -23,6 +23,7 @@ import {
 } from "./auth.ts"
 import { expandHome, findProject, hangarHome, loadRegistry, saveRegistry, validateProject } from "./registry.ts"
 import { exportAppIntentsState, watchAppIntentsCommands } from "./appintents.ts"
+import { gitRemoteFor } from "./git.ts"
 import { loadHistory, loadHistoryReplay } from "./history.ts"
 import { SessionManager } from "./sessions.ts"
 import { loadSettings, saveSettings } from "./settings.ts"
@@ -252,7 +253,8 @@ export function serve(port: number): void {
     }
     return {
       type: "state",
-      projects,
+      // Git identity is computed for the wire only; the registry objects stay untouched.
+      projects: projects.map((project) => ({ ...project, gitRemote: gitRemoteFor(project.path) })),
       sessions: manager.list(),
       history: loadHistory(settings),
       settings,
@@ -436,12 +438,14 @@ export function serve(port: number): void {
         manager.dismiss(msg.id)
         return
       case "upsertProject": {
-        const errors = validateProject(msg.project)
+        // gitRemote is a server-computed view; never let it round-trip into projects.json.
+        const { gitRemote: _computed, ...project } = msg.project
+        const errors = validateProject(project)
         if (errors.length > 0) throw new Error(errors.join("; "))
         const registry = loadRegistry()
-        const existingIndex = registry.projects.findIndex((p) => p.name === msg.project.name)
-        if (existingIndex === -1) registry.projects.push(msg.project)
-        else registry.projects[existingIndex] = msg.project
+        const existingIndex = registry.projects.findIndex((p) => p.name === project.name)
+        if (existingIndex === -1) registry.projects.push(project)
+        else registry.projects[existingIndex] = project
         saveRegistry(registry)
         broadcastState()
         return

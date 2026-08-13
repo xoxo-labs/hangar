@@ -1,6 +1,5 @@
+import { type ConnectionConfig, LOCAL_CONN_ID } from "@hangar/client-core"
 import type { BrowserChoice, ShareHostChoice } from "@hangar/contracts"
-import { LOCAL_CONN_ID } from "./connections/scope"
-import type { ConnectionConfig } from "./connections/types"
 
 export type NetworkInfo = { lan: string[]; tailscale: string[] }
 

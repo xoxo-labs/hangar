@@ -1,7 +1,6 @@
+import { connIdOf, LOCAL_CONN_ID, routeOutbound } from "@hangar/client-core"
 import type { ClientMsg, ServerMsg } from "@hangar/contracts"
 import { sendTo, startConnections } from "./connections/manager"
-import { routeOutbound } from "./connections/route"
-import { connIdOf, LOCAL_CONN_ID } from "./connections/scope"
 import { takeCloseOnExit, useStore } from "./store"
 import {
   applyTerminalSettings,

@@ -1,5 +1,6 @@
-import type { ClientMsg, ServerMsg, WsTicketResponse } from "@hangar/contracts"
-import type { ConnectionConfig, ConnectionStatus } from "./types"
+import type { ClientMsg, ServerMsg } from "@hangar/contracts"
+import { fetchWsTicket, isBlocked, wsUrl } from "./connect.ts"
+import type { ConnectionConfig, ConnectionStatus } from "./types.ts"
 
 const BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000]
 /** A connection that stayed up this long starts its next retry ladder from the bottom. */
@@ -15,18 +16,19 @@ export type Supervisor = {
   configure: (config: ConnectionConfig) => void
   /** Explicit user action: clears `blocked`, resets the backoff, connects now. */
   retry: () => void
-  /** Ambient wakeup (online / tab visible): only revives a blocked connection. */
+  /** Ambient wakeup (back online, tab visible, app foregrounded): only revives a blocked connection. */
   wake: () => void
   send: (msg: ClientMsg) => boolean
   dispose: () => void
 }
 
-/** A 401/403 from the ticket endpoint: the saved token is gone, retrying cannot help. */
-class RejectedError extends Error {}
-
 /**
  * Single retry owner for one machine: it holds the socket, the backoff ladder
  * and the transient-vs-blocked decision. Nothing else may open a socket.
+ *
+ * Platform-free by construction: it touches `WebSocket`, `fetch` and timers and
+ * nothing else. Ambient wakeups (browser `online`/`visibilitychange`, RN
+ * `AppState`) belong to the platform's manager, which calls `wake()`.
  */
 export function createSupervisor(initial: ConnectionConfig, hooks: SupervisorHooks): Supervisor {
   const id = initial.id
@@ -77,37 +79,20 @@ export function createSupervisor(initial: ConnectionConfig, hooks: SupervisorHoo
     }, delay)
   }
 
-  const httpBase = (): string => `${config.secure ? "https" : "http"}://${config.host}:${config.port}`
-
-  const fetchTicket = async (): Promise<string> => {
-    const response = await fetch(`${httpBase()}/api/auth/ws-ticket`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${config.token}` },
-    })
-    if (response.status === 401 || response.status === 403) {
-      throw new RejectedError("This machine rejected the saved pairing. Pair again to reconnect.")
-    }
-    if (!response.ok) throw new Error(`Ticket request failed (${response.status})`)
-    const body = (await response.json()) as WsTicketResponse
-    if (typeof body.ticket !== "string" || body.ticket === "") throw new Error("Malformed ticket response")
-    return body.ticket
-  }
-
   const open = async (): Promise<void> => {
     if (disposed || blocked || opening || socket !== null) return
     opening = true
     const mine = generation
     status(everConnected ? "reconnecting" : "connecting", null)
 
-    let url = `${config.secure ? "wss" : "ws"}://${config.host}:${config.port}/ws`
+    let url = wsUrl(config)
     if (config.token !== undefined) {
       try {
-        const ticket = await fetchTicket()
-        url += `?ticket=${encodeURIComponent(ticket)}`
+        url = wsUrl(config, await fetchWsTicket(config))
       } catch (error) {
         if (disposed || mine !== generation) return
         opening = false
-        if (error instanceof RejectedError) {
+        if (isBlocked(error)) {
           blocked = true
           status("blocked", error.message)
           return

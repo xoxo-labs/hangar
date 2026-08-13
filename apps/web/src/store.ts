@@ -1,3 +1,4 @@
+import { connIdOf, type ConnectionConfig, type ConnectionStatus, LOCAL_CONN_ID } from "@hangar/client-core"
 import {
   DEFAULT_PORT,
   DEFAULT_SETTINGS,
@@ -12,8 +13,6 @@ import {
   type SessionMetrics,
 } from "@hangar/contracts"
 import { create } from "zustand"
-import { connIdOf, LOCAL_CONN_ID } from "./connections/scope"
-import type { ConnectionConfig, ConnectionStatus } from "./connections/types"
 import { disposeTerminal } from "./terminals"
 
 export type { ConnectionStatus }

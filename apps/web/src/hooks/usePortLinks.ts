@@ -1,6 +1,6 @@
+import { LOCAL_CONN_ID } from "@hangar/client-core"
 import type { BrowserChoice, SessionMetrics } from "@hangar/contracts"
 import { useCallback, useEffect, useState } from "react"
-import { LOCAL_CONN_ID } from "../connections/scope"
 import { loadNetworkInfo, openPortUrl, portUrl, shareUrl, type NetworkInfo } from "../links"
 import { connectionOf, useStore } from "../store"
 

@@ -19,6 +19,12 @@ export type Project = {
   name: string
   /** Absolute path; "~" is expanded on use */
   path: string
+  /**
+   * Normalized git origin identity ("host/owner/repo"), computed by the server
+   * at broadcast time so clients can match the same repo across machines.
+   * Never persisted in the registry.
+   */
+  gitRemote?: string
   processes: ProjectProcess[]
   /** Extra environment variables applied to every process of this project */
   env?: Record<string, string>

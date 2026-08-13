@@ -1,6 +1,6 @@
+import { LOCAL_CONN_ID } from "@hangar/client-core"
 import type { AppSettings, PairingInfo, Project, SessionInfo } from "@hangar/contracts"
 import { requestPairingToken, sendTo } from "./connections/manager"
-import { LOCAL_CONN_ID } from "./connections/scope"
 import { useStore } from "./store"
 import { send } from "./ws"
 

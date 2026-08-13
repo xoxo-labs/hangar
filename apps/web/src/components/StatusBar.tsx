@@ -1,6 +1,6 @@
+import { LOCAL_CONN_ID } from "@hangar/client-core"
 import { useEffect, useState } from "react"
 import { retryConnection } from "../connections"
-import { LOCAL_CONN_ID } from "../connections/scope"
 import { CONNECTION_LABEL } from "../status"
 import { type ConnectionState, type ConnectionStatus, machineLabel, useStore } from "../store"
 import { cx } from "../ui/cx"

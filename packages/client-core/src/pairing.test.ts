@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
-import { countdown, pairingString, parsePairingString } from "./pairing.logic.ts"
+import { countdown, pairingString, parsePairingString } from "./pairing.ts"
 
 describe("parsePairingString", () => {
   it("reads the string the pairing panel hands out", () => {

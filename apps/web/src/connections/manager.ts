@@ -1,9 +1,12 @@
+import {
+  type ConnectionConfig,
+  createSupervisor,
+  LOCAL_CONN_ID,
+  scopeInbound,
+  type Supervisor,
+} from "@hangar/client-core"
 import type { ClientMsg, PairingInfo, ServerMsg } from "@hangar/contracts"
 import { useStore } from "../store"
-import { scopeInbound } from "./route"
-import { LOCAL_CONN_ID } from "./scope"
-import { createSupervisor, type Supervisor } from "./supervisor"
-import type { ConnectionConfig } from "./types"
 
 const STORAGE_KEY = "hangar.connections.v1"
 /** A machine that does not answer `createPairingToken` this fast is not going to. */
@@ -25,6 +28,8 @@ export function startConnections(handler: (connId: string, msg: ServerMsg) => vo
   if (started) return
   started = true
 
+  // The browser half of the wakeup wiring: the shared supervisor only exposes
+  // `wake()`, each platform decides what counts as a wakeup.
   window.addEventListener("online", wakeAll)
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") wakeAll()

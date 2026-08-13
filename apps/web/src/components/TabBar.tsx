@@ -1,7 +1,7 @@
+import { displayName } from "@hangar/client-core"
 import { PanelRight } from "lucide-react"
 import { type DragEvent, type ReactNode, useState } from "react"
 import * as actions from "../actions"
-import { displayName } from "../connections/scope"
 import { describe, toneOf } from "../status"
 import { useStore } from "../store"
 import { cx } from "../ui/cx"

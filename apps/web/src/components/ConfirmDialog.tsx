@@ -1,7 +1,7 @@
+import { displayName } from "@hangar/client-core"
 import { sessionId } from "@hangar/contracts"
 import { useEffect } from "react"
 import * as actions from "../actions"
-import { displayName } from "../connections/scope"
 import { markCloseOnExit, useStore } from "../store"
 import { Button } from "../ui/Button"
 import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/Dialog"

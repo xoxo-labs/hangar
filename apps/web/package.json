@@ -7,9 +7,10 @@
     "dev": "vite --port 4790",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "node --test src/components/settingsUpdate.logic.test.ts src/components/pairing.logic.test.ts src/connections/scope.test.ts"
+    "test": "node --test src/components/settingsUpdate.logic.test.ts src/components/sidebarGroups.logic.test.ts"
   },
   "dependencies": {
+    "@hangar/client-core": "workspace:*",
     "@hangar/contracts": "workspace:*",
     "@radix-ui/colors": "^3.0.0",
     "@xterm/addon-fit": "^0.11.0",
