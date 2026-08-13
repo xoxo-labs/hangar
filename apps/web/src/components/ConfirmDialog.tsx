@@ -1,6 +1,7 @@
 import { sessionId } from "@hangar/contracts"
 import { useEffect } from "react"
 import * as actions from "../actions"
+import { displayName } from "../connections/scope"
 import { markCloseOnExit, useStore } from "../store"
 import { Button } from "../ui/Button"
 import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/Dialog"
@@ -43,9 +44,8 @@ export function ConfirmDialog() {
   if (!confirming) return null
 
   const copy = COPY[confirming.action]
-  const target = confirming.process
-    ? `${confirming.project}/${confirming.process}`
-    : `every process of ${confirming.project}`
+  const project = displayName(confirming.project)
+  const target = confirming.process ? `${project}/${confirming.process}` : `every process of ${project}`
 
   const run = () => {
     if (confirming.action === "restart") {

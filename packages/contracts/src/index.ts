@@ -55,6 +55,10 @@ export type AppSettings = {
     fontFamily: string
     fontSize: number
   }
+  connections: {
+    /** Accept paired connections from other machines (LAN/Tailscale). Off = loopback only. */
+    acceptRemote: boolean
+  }
   terminalLogging: {
     enabled: boolean
     directory: string
@@ -87,6 +91,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     copyOnSelect: true,
     fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
     fontSize: 12,
+  },
+  connections: {
+    acceptRemote: false,
   },
   terminalLogging: {
     enabled: false,
@@ -182,6 +189,31 @@ export type SessionHistoryEntry = {
   logPath?: string
 }
 
+/** A client from another machine that holds a session token for this server. */
+export type AuthSessionInfo = {
+  id: string
+  /** Human label chosen at pairing time, e.g. the connecting machine's hostname. */
+  label: string
+  createdAt: number
+  lastSeenAt: number
+}
+
+/** One-time pairing code, minted on demand and shown as code, URL, and QR. */
+export type PairingInfo = {
+  token: string
+  expiresAt: number
+  port: number
+  /** Candidate addresses another machine can reach this server on. */
+  hosts: { lan: string[]; tailscale: string[] }
+}
+
+/** Body of POST /api/auth/pair — exchanges a pairing code for a session token. */
+export type PairRequest = { token: string; label: string }
+export type PairResponse = { sessionToken: string; sessionId: string; serverName: string }
+
+/** Response of POST /api/auth/ws-ticket; the ticket goes in `/ws?ticket=`. */
+export type WsTicketResponse = { ticket: string; expiresAt: number }
+
 /** Messages the UI sends to the server. */
 export type ClientMsg =
   | { type: "start"; project: string; process?: string }
@@ -201,6 +233,10 @@ export type ClientMsg =
   | { type: "updateSettings"; settings: AppSettings }
   /** Load timestamped output for one retained historical run. */
   | { type: "getHistoryReplay"; runId: string }
+  /** Mint a one-time pairing code so a client on another machine can connect. */
+  | { type: "createPairingToken" }
+  /** Revoke a paired client's session token. */
+  | { type: "revokeAuthSession"; id: string }
 
 /** Messages the server broadcasts to every connected UI. */
 export type ServerMsg =
@@ -211,6 +247,10 @@ export type ServerMsg =
       sessions: SessionInfo[]
       history: SessionHistoryEntry[]
       settings: AppSettings
+      /** This machine's hostname, shown when the server is a paired machine. Absent on older servers. */
+      serverName?: string
+      /** Paired clients, for the connections settings UI. Absent on older servers. */
+      authSessions?: AuthSessionInfo[]
     }
   /** Lightweight resource updates, kept out of full state broadcasts. */
   | { type: "metrics"; id: SessionId; runId: string; metrics: SessionMetrics }
@@ -219,6 +259,8 @@ export type ServerMsg =
   | { type: "output"; id: SessionId; data: string }
   | { type: "exit"; id: SessionId; exitCode: number | null }
   | { type: "historyReplay"; runId: string; events: HistoryOutputEvent[]; truncated: boolean }
+  /** Reply to createPairingToken, sent only to the requesting client. */
+  | { type: "pairingToken"; pairing: PairingInfo }
   | { type: "error"; message: string }
 
 export function sessionId(project: string, process: string): SessionId {

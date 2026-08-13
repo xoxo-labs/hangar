@@ -1,14 +1,70 @@
-import { createServer } from "node:http"
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { existsSync, globSync, mkdirSync, readFileSync, statSync, watch } from "node:fs"
 import { basename, dirname, join, resolve } from "node:path"
-import { networkInterfaces } from "node:os"
+import { hostname, networkInterfaces } from "node:os"
 import { WebSocketServer, WebSocket } from "ws"
-import type { AppSettings, ClientMsg, Project, ServerMsg } from "@hangar/contracts"
+import type {
+  AppSettings,
+  ClientMsg,
+  PairResponse,
+  PairingInfo,
+  Project,
+  ServerMsg,
+  WsTicketResponse,
+} from "@hangar/contracts"
+import {
+  consumeTicket,
+  createPairingToken,
+  issueTicket,
+  listSessions,
+  redeemPairingToken,
+  revokeSession,
+  verifyBearer,
+} from "./auth.ts"
 import { expandHome, findProject, hangarHome, loadRegistry, saveRegistry, validateProject } from "./registry.ts"
 import { exportAppIntentsState, watchAppIntentsCommands } from "./appintents.ts"
 import { loadHistory, loadHistoryReplay } from "./history.ts"
 import { SessionManager } from "./sessions.ts"
 import { loadSettings, saveSettings } from "./settings.ts"
+
+const LOOPBACK_ADDRESSES = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"])
+/** Auth (bearer or loopback) is the security boundary here, not the origin check. */
+const CORS_HEADERS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "authorization, content-type",
+  "access-control-allow-methods": "GET, POST",
+}
+const MAX_BODY_BYTES = 64 * 1024
+
+function isLoopback(req: IncomingMessage): boolean {
+  return LOOPBACK_ADDRESSES.has(req.socket.remoteAddress ?? "")
+}
+
+/** Loopback clients stay trusted; anyone else needs a paired session token. */
+function authorize(req: IncomingMessage): string | null {
+  if (isLoopback(req)) return "local"
+  return verifyBearer(req.headers.authorization)
+}
+
+function bindHost(settings: AppSettings): string {
+  return process.env.HANGAR_HOST ?? (settings.connections?.acceptRemote ? "0.0.0.0" : "127.0.0.1")
+}
+
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = []
+  let size = 0
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length
+    if (size > MAX_BODY_BYTES) throw new Error("body too large")
+    chunks.push(chunk as Buffer)
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown
+}
+
+function sendJson(res: ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { "content-type": "application/json", ...CORS_HEADERS })
+  res.end(JSON.stringify(body))
+}
 
 function networkInfo(): { lan: string[]; tailscale: string[] } {
   const lan: string[] = []
@@ -155,6 +211,26 @@ function inspectProject(inputPath: string): object {
 
 export function serve(port: number): void {
   const clients = new Set<WebSocket>()
+  let host = bindHost(loadSettings())
+
+  const listen = (): void => {
+    // Two quick acceptRemote flips queue two close callbacks; only the first listen may run.
+    if (httpServer.listening) return
+    httpServer.listen(port, host, () => {
+      process.stdout.write(`hangar server listening on http://${host}:${port} (ws: /ws)\n`)
+    })
+  }
+
+  /** Re-binds after the acceptRemote toggle. PTY sessions survive; UIs reconnect on their own. */
+  const applyBindHost = (): void => {
+    const next = bindHost(loadSettings())
+    if (next === host) return
+    host = next
+    for (const client of clients) client.close(1012, "rebinding")
+    clients.clear()
+    httpServer.close(listen)
+    httpServer.closeAllConnections()
+  }
 
   const broadcast = (msg: ServerMsg): void => {
     const json = JSON.stringify(msg)
@@ -174,7 +250,15 @@ export function serve(port: number): void {
       projects = []
       settings = loadSettings()
     }
-    return { type: "state", projects, sessions: manager.list(), history: loadHistory(settings), settings }
+    return {
+      type: "state",
+      projects,
+      sessions: manager.list(),
+      history: loadHistory(settings),
+      settings,
+      serverName: hostname(),
+      authSessions: listSessions(),
+    }
   }
   const broadcastState = (): void => {
     broadcast(stateMsg())
@@ -210,41 +294,94 @@ export function serve(port: number): void {
     }
   })
 
-  const httpServer = createServer((req, res) => {
+  const handleHttp = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "127.0.0.1"}`)
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, CORS_HEADERS)
+      res.end()
+      return
+    }
     if (url.pathname === "/health") {
-      res.writeHead(200, { "content-type": "text/plain" })
+      res.writeHead(200, { "content-type": "text/plain", "access-control-allow-origin": "*" })
       res.end("ok")
       return
     }
+    if (req.method === "POST" && url.pathname === "/api/auth/pair") {
+      let body: { token?: unknown; label?: unknown }
+      try {
+        body = ((await readJsonBody(req)) ?? {}) as { token?: unknown; label?: unknown }
+      } catch {
+        sendJson(res, 400, { error: "invalid JSON body" })
+        return
+      }
+      const result = redeemPairingToken(body.token, body.label)
+      if (!result.ok) {
+        if (result.reason === "locked") sendJson(res, 429, { error: "too many pairing attempts" })
+        else sendJson(res, 401, { error: "invalid or expired pairing code" })
+        return
+      }
+      sendJson(res, 200, {
+        sessionToken: result.sessionToken,
+        sessionId: result.sessionId,
+        serverName: hostname(),
+      } satisfies PairResponse)
+      broadcastState()
+      return
+    }
+    if (req.method === "POST" && url.pathname === "/api/auth/ws-ticket") {
+      const sessionId = authorize(req)
+      if (!sessionId) {
+        sendJson(res, 401, { error: "unauthorized" })
+        return
+      }
+      sendJson(res, 200, issueTicket(sessionId) satisfies WsTicketResponse)
+      return
+    }
     if (req.method === "GET" && url.pathname === "/network-info") {
-      res.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*" })
-      res.end(JSON.stringify(networkInfo()))
+      if (!authorize(req)) {
+        sendJson(res, 401, { error: "unauthorized" })
+        return
+      }
+      sendJson(res, 200, networkInfo())
       return
     }
     if (req.method === "GET" && url.pathname === "/project-info") {
+      if (!authorize(req)) {
+        sendJson(res, 401, { error: "unauthorized" })
+        return
+      }
       try {
         const path = url.searchParams.get("path") ?? ""
         if (path.trim() === "") throw new Error("path is required")
-        res.writeHead(200, {
-          "content-type": "application/json",
-          "access-control-allow-origin": "*",
-        })
-        res.end(JSON.stringify(inspectProject(path)))
+        sendJson(res, 200, inspectProject(path))
       } catch (error) {
-        res.writeHead(400, {
-          "content-type": "application/json",
-          "access-control-allow-origin": "*",
-        })
-        res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
+        sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) })
       }
       return
     }
     res.writeHead(404)
     res.end()
+  }
+
+  const httpServer = createServer((req, res) => {
+    handleHttp(req, res).catch(() => {
+      if (!res.headersSent) sendJson(res, 500, { error: "internal error" })
+      else res.end()
+    })
   })
 
-  const wss = new WebSocketServer({ server: httpServer, path: "/ws" })
+  const wss = new WebSocketServer({ noServer: true })
+
+  httpServer.on("upgrade", (req, socket, head) => {
+    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "127.0.0.1"}`)
+    const ticket = url.searchParams.get("ticket")
+    if (url.pathname !== "/ws" || (!isLoopback(req) && (!ticket || !consumeTicket(ticket)))) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n")
+      socket.destroy()
+      return
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req))
+  })
 
   wss.on("connection", (socket) => {
     clients.add(socket)
@@ -328,6 +465,16 @@ export function serve(port: number): void {
       case "updateSettings":
         saveSettings(msg.settings)
         broadcastState()
+        applyBindHost()
+        return
+      case "createPairingToken": {
+        const pairing: PairingInfo = { ...createPairingToken(), port, hosts: networkInfo() }
+        socket.send(JSON.stringify({ type: "pairingToken", pairing } satisfies ServerMsg))
+        return
+      }
+      case "revokeAuthSession":
+        revokeSession(msg.id)
+        broadcastState()
         return
       case "getHistoryReplay": {
         const replay = loadHistoryReplay(msg.runId, loadSettings())
@@ -371,9 +518,7 @@ export function serve(port: number): void {
   process.on("SIGINT", () => void shutdown())
   process.on("SIGTERM", () => void shutdown())
 
-  httpServer.listen(port, "127.0.0.1", () => {
-    process.stdout.write(`hangar server listening on http://127.0.0.1:${port} (ws: /ws)\n`)
-  })
+  listen()
   httpServer.on("error", (error) => {
     process.stderr.write(`failed to listen on ${port}: ${error.message}\n`)
     process.exit(1)

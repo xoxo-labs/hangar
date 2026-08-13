@@ -3,8 +3,9 @@ import { Command } from "cmdk"
 import { BookOpen, CircleHelp } from "lucide-react"
 import { useMemo } from "react"
 import * as actions from "../actions"
+import { connIdOf, displayName } from "../connections/scope"
 import { describe, toneOf } from "../status"
-import { useStore } from "../store"
+import { machineLabel, useStore } from "../store"
 import { focusTerminal } from "../terminals"
 import { Overlay } from "../ui/Dialog"
 import { Dot } from "./Dot"
@@ -65,6 +66,19 @@ export function CommandPalette() {
   const openHelp = useStore((s) => s.openHelp)
   const openTutorial = useStore((s) => s.openTutorial)
   const closePalette = useStore((s) => s.closePalette)
+  const connections = useStore((s) => s.connections)
+
+  /* cmdk keys every item by its `value`, and two machines can hold projects with
+   * the same name — so with more than one machine the label goes into the value
+   * (and into the row, so the duplicates are told apart on screen too). */
+  const multi = Object.keys(connections).length > 1
+  const machineOf = (scopedValue: string): string => {
+    const connection = connections[connIdOf(scopedValue)]
+    return connection === undefined ? "" : machineLabel(connection)
+  }
+  const tagged = (value: string, machine: string): string => (multi ? `${value} ${machine}` : value)
+  const machineChip = (machine: string) =>
+    multi ? <span className="ml-auto flex-none text-2xs text-surface-8">{machine}</span> : null
 
   const byId = useMemo(() => new Map(sessions.map((s) => [s.id, s])), [sessions])
   /* The store already keeps history newest-first, so the head of the list is
@@ -106,18 +120,21 @@ export function CommandPalette() {
               {projects.flatMap((project) =>
                 project.processes.map((proc) => {
                   const id = sessionId(project.name, proc.name)
+                  const label = displayName(id)
+                  const machine = machineOf(project.name)
                   const session = byId.get(id)
                   return (
                     <Command.Item
                       key={id}
-                      value={id}
-                      keywords={[project.name, proc.name]}
+                      value={tagged(label, machine)}
+                      keywords={[displayName(project.name), proc.name, machine]}
                       className={ITEM}
                       onSelect={() => run(() => (session ? setActive(id) : openPending(project.name, proc.name)))}
                     >
                       <Dot tone={toneOf(session)} small title={describe(session)} />
                       <span className="truncate">{proc.name}</span>
-                      <span className="truncate text-sm text-surface-9">{project.name}</span>
+                      <span className="truncate text-sm text-surface-9">{displayName(project.name)}</span>
+                      {machineChip(machine)}
                     </Command.Item>
                   )
                 }),
@@ -131,15 +148,17 @@ export function CommandPalette() {
                 const anyRunning = project.processes.some(
                   (p) => byId.get(sessionId(project.name, p.name))?.status === "running",
                 )
+                const machine = machineOf(project.name)
                 const perProcess = project.processes.flatMap((proc) => {
                   const id = sessionId(project.name, proc.name)
-                  const keywords = [project.name, proc.name]
+                  const label = displayName(id)
+                  const keywords = [displayName(project.name), proc.name, machine]
                   const running = byId.get(id)?.status === "running"
                   if (!running) {
                     return [
                       <Command.Item
                         key={`start ${id}`}
-                        value={`start ${id}`}
+                        value={tagged(`start ${label}`, machine)}
                         keywords={keywords}
                         className={ITEM}
                         onSelect={() => run(() => actions.start(project.name, proc.name))}
@@ -147,14 +166,15 @@ export function CommandPalette() {
                         <span className={GLYPH} aria-hidden="true">
                           ▶
                         </span>
-                        Start {id}
+                        Start {label}
+                        {machineChip(machine)}
                       </Command.Item>,
                     ]
                   }
                   return [
                     <Command.Item
                       key={`restart ${id}`}
-                      value={`restart ${id}`}
+                      value={tagged(`restart ${label}`, machine)}
                       keywords={keywords}
                       className={ITEM}
                       onSelect={() =>
@@ -164,11 +184,12 @@ export function CommandPalette() {
                       <span className={GLYPH} aria-hidden="true">
                         ↻
                       </span>
-                      Restart {id}
+                      Restart {label}
+                      {machineChip(machine)}
                     </Command.Item>,
                     <Command.Item
                       key={`stop ${id}`}
-                      value={`stop ${id}`}
+                      value={tagged(`stop ${label}`, machine)}
                       keywords={keywords}
                       className={ITEM}
                       onSelect={() =>
@@ -178,7 +199,8 @@ export function CommandPalette() {
                       <span className={GLYPH} aria-hidden="true">
                         ■
                       </span>
-                      Stop {id}
+                      Stop {label}
+                      {machineChip(machine)}
                     </Command.Item>,
                   ]
                 })
@@ -187,41 +209,44 @@ export function CommandPalette() {
                   ...perProcess,
                   <Command.Item
                     key={`start-all ${project.name}`}
-                    value={`start all ${project.name}`}
-                    keywords={[project.name]}
+                    value={tagged(`start all ${displayName(project.name)}`, machine)}
+                    keywords={[displayName(project.name), machine]}
                     className={ITEM}
                     onSelect={() => run(() => actions.start(project.name))}
                   >
                     <span className={GLYPH} aria-hidden="true">
                       ▶
                     </span>
-                    Start all in {project.name}
+                    Start all in {displayName(project.name)}
+                    {machineChip(machine)}
                   </Command.Item>,
                   ...(anyRunning
                     ? [
                         <Command.Item
                           key={`restart-all ${project.name}`}
-                          value={`restart all ${project.name}`}
-                          keywords={[project.name]}
+                          value={tagged(`restart all ${displayName(project.name)}`, machine)}
+                          keywords={[displayName(project.name), machine]}
                           className={ITEM}
                           onSelect={() => run(() => requestConfirm({ action: "restart", project: project.name }))}
                         >
                           <span className={GLYPH} aria-hidden="true">
                             ↻
                           </span>
-                          Restart all in {project.name}
+                          Restart all in {displayName(project.name)}
+                          {machineChip(machine)}
                         </Command.Item>,
                         <Command.Item
                           key={`stop-all ${project.name}`}
-                          value={`stop all ${project.name}`}
-                          keywords={[project.name]}
+                          value={tagged(`stop all ${displayName(project.name)}`, machine)}
+                          keywords={[displayName(project.name), machine]}
                           className={ITEM}
                           onSelect={() => run(() => requestConfirm({ action: "stop", project: project.name }))}
                         >
                           <span className={GLYPH} aria-hidden="true">
                             ■
                           </span>
-                          Stop all in {project.name}
+                          Stop all in {displayName(project.name)}
+                          {machineChip(machine)}
                         </Command.Item>,
                       ]
                     : []),
@@ -241,8 +266,8 @@ export function CommandPalette() {
                 return (
                   <Command.Item
                     key={entry.runId}
-                    value={`history ${entry.runId}`}
-                    keywords={[entry.project, entry.process, entry.reason, date]}
+                    value={`history ${displayName(entry.runId)}`}
+                    keywords={[displayName(entry.project), entry.process, entry.reason, date, machineOf(entry.project)]}
                     className={ITEM}
                     onSelect={() => run(() => openHistoryRun(entry.runId))}
                   >
@@ -250,7 +275,7 @@ export function CommandPalette() {
                       ◷
                     </span>
                     <span className="truncate">
-                      {entry.project}/{entry.process}
+                      {displayName(entry.project)}/{entry.process}
                     </span>
                     <span className="flex-none text-sm text-surface-9">
                       {date}{" "}
@@ -346,20 +371,23 @@ export function CommandPalette() {
               </span>
               Add project…
             </Command.Item>
-            {projects.map((project) => (
-              <Command.Item
-                key={`edit ${project.name}`}
-                value={`edit ${project.name}`}
-                keywords={[project.name]}
-                className={ITEM}
-                onSelect={() => run(() => openEditor(project.name))}
-              >
-                <span className={GLYPH} aria-hidden="true">
-                  ✎
-                </span>
-                Edit {project.name}…
-              </Command.Item>
-            ))}
+            {projects.map((project) => {
+              const machine = machineOf(project.name)
+              return (
+                <Command.Item
+                  key={`edit ${project.name}`}
+                  value={tagged(`edit ${displayName(project.name)}`, machine)}
+                  keywords={[displayName(project.name), machine]}
+                  className={ITEM}
+                  onSelect={() => run(() => openEditor(project.name))}
+                >
+                  <span className={GLYPH} aria-hidden="true">
+                    ✎
+                  </span>
+                  Edit {displayName(project.name)}…{machineChip(machine)}
+                </Command.Item>
+              )
+            })}
           </Command.Group>
         </Command.List>
       </Command>

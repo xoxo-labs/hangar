@@ -1,6 +1,15 @@
-import type { AppSettings, Project, SessionInfo } from "@hangar/contracts"
+import type { AppSettings, PairingInfo, Project, SessionInfo } from "@hangar/contracts"
+import { requestPairingToken, sendTo } from "./connections/manager"
+import { LOCAL_CONN_ID } from "./connections/scope"
 import { useStore } from "./store"
 import { send } from "./ws"
+
+/*
+ * Every argument below carries a scoped `project.name` / `session.id`, exactly
+ * as the store holds it; `send` parses the scope out and routes the message to
+ * the machine that owns it. Only connection-wide messages (settings, pairing),
+ * which carry no id at all, name their connection explicitly.
+ */
 
 export function start(project: string, process?: string): void {
   send({ type: "start", project, ...(process === undefined ? {} : { process }) })
@@ -46,12 +55,13 @@ export function removeProject(project: string): void {
   send({ type: "removeProject", project })
 }
 
+/** Names may span machines; each server is told about its own projects only. */
 export function reorderProjects(projects: string[]): void {
   send({ type: "reorderProjects", projects })
 }
 
-export function updateSettings(settings: AppSettings): void {
-  send({ type: "updateSettings", settings })
+export function updateSettings(settings: AppSettings, connId: string = LOCAL_CONN_ID): void {
+  sendTo(connId, { type: "updateSettings", settings })
 }
 
 export function loadHistoryReplay(runId: string): void {
@@ -59,4 +69,14 @@ export function loadHistoryReplay(runId: string): void {
   if (existing?.loading || existing?.events.length) return
   useStore.getState().beginHistoryReplay(runId)
   send({ type: "getHistoryReplay", runId })
+}
+
+/** Mints a one-time pairing code on the given machine, for another Mac to redeem. */
+export function createPairingToken(connId: string): Promise<PairingInfo> {
+  return requestPairingToken(connId)
+}
+
+/** Revokes a paired client's session token on the given machine. */
+export function revokeAuthSession(connId: string, id: string): void {
+  sendTo(connId, { type: "revokeAuthSession", id })
 }

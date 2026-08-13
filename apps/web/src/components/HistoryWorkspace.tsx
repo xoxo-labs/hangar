@@ -3,6 +3,7 @@ import { FitAddon } from "@xterm/addon-fit"
 import { Terminal } from "@xterm/xterm"
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import * as actions from "../actions"
+import { displayName } from "../connections/scope"
 import { type HistoryReplay, useStore } from "../store"
 import { currentTerminalTheme } from "../terminals"
 import { cx } from "../ui/cx"
@@ -34,7 +35,7 @@ function HistoryOverview() {
     return history.filter(
       (entry) =>
         (result === "all" || entry.reason === result) &&
-        (needle === "" || `${entry.project} ${entry.process} ${entry.cmd}`.toLowerCase().includes(needle)),
+        (needle === "" || `${displayName(entry.project)} ${entry.process} ${entry.cmd}`.toLowerCase().includes(needle)),
     )
   }, [history, query, result])
   const groups = useMemo(() => groupByDay(filtered), [filtered])
@@ -152,7 +153,7 @@ function HistoryRow({ entry, last, onOpen }: { entry: SessionHistoryEntry; last:
         </span>
         <span className="flex min-w-0 flex-col">
           <strong className="truncate text-base font-book text-surface-12">
-            {entry.project} <span className="font-normal text-surface-8">/</span> {entry.process}
+            {displayName(entry.project)} <span className="font-normal text-surface-8">/</span> {entry.process}
           </strong>
           <code className="truncate text-xs text-surface-8">{entry.cmd}</code>
         </span>
@@ -202,7 +203,7 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
             <div className="mb-[5px] flex items-center gap-[9px]">
               <Dot tone={result.dot} />
               <h2 className="m-0 truncate text-xl font-strong">
-                {entry.project} <span className="font-normal text-surface-8">/</span> {entry.process}
+                {displayName(entry.project)} <span className="font-normal text-surface-8">/</span> {entry.process}
               </h2>
               <span className="px-[3px] py-[2px] text-2xs font-semibold tracking-wider text-surface-9 uppercase">
                 Historical
@@ -320,7 +321,7 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
               <Detail label="Started" value={formatFullDate(entry.startedAt)} />
               <Detail label="Ended" value={formatFullDate(entry.endedAt)} />
               <Detail label="Exit code" value={entry.exitCode === null ? "—" : String(entry.exitCode)} />
-              <Detail label="Run ID" value={entry.runId} mono />
+              <Detail label="Run ID" value={displayName(entry.runId)} mono />
             </dl>
           </section>
           <section className="rounded-lg border border-surface-5 bg-surface-2 p-[16px]">

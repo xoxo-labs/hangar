@@ -3,6 +3,7 @@ import {
   DEFAULT_SETTINGS,
   sessionId,
   type AppSettings,
+  type AuthSessionInfo,
   type HistoryOutputEvent,
   type Project,
   type SessionHistoryEntry,
@@ -11,8 +12,54 @@ import {
   type SessionMetrics,
 } from "@hangar/contracts"
 import { create } from "zustand"
+import { connIdOf, LOCAL_CONN_ID } from "./connections/scope"
+import type { ConnectionConfig, ConnectionStatus } from "./connections/types"
+import { disposeTerminal } from "./terminals"
 
-export type ConnectionStatus = "connecting" | "connected" | "reconnecting"
+export type { ConnectionStatus }
+
+/** One machine's slice of the world, plus how the socket to it is doing. */
+export type ConnectionState = {
+  config: ConnectionConfig
+  status: ConnectionStatus
+  /** Why the connection is blocked or failing; null while it is healthy. */
+  error: string | null
+  serverName: string | null
+  settings: AppSettings
+  authSessions: AuthSessionInfo[]
+  /** A `state` has landed at least once, so the next one is a reconnect snapshot. */
+  hasState: boolean
+  /** Set while a reconnect snapshot is pending: its new sessions must not grab focus. */
+  suppressFocus: boolean
+}
+
+/**
+ * The connection an id belongs to. A scoped id whose machine was just removed
+ * falls back to the local connection, which the store always holds.
+ */
+export function connectionOf(connections: Record<string, ConnectionState>, connId: string): ConnectionState {
+  return connections[connId] ?? connections[LOCAL_CONN_ID] ?? FALLBACK_CONNECTION
+}
+
+/** What the UI calls a machine: the local one is always "This Mac". */
+export function machineLabel(connection: ConnectionState): string {
+  if (connection.config.id === LOCAL_CONN_ID) return "This Mac"
+  return connection.config.label.trim() || connection.serverName || connection.config.host
+}
+
+/** The state of a connection nothing has been received from yet. */
+function freshConnection(config: ConnectionConfig): ConnectionState {
+  return {
+    config,
+    status: "connecting",
+    error: null,
+    serverName: null,
+    settings: structuredClone(DEFAULT_SETTINGS),
+    authSessions: [],
+    hasState: false,
+    suppressFocus: false,
+  }
+}
 
 export type HistoryReplay = {
   loading: boolean
@@ -91,8 +138,12 @@ type Store = {
   inspectingId: SessionId | null
   /** Projects the user collapsed in the sidebar. */
   collapsed: Record<string, boolean>
+  /** Every machine the UI talks to, keyed by connection id; local is always first. */
+  connections: Record<string, ConnectionState>
+  /** Alias of the local connection's status — the reconnect banner reads this. */
   status: ConnectionStatus
   port: number
+  /** Alias of the local connection's settings — theme, terminal and global UI. */
   settings: AppSettings
   settingsOpen: boolean
   /** Whether the keyboard-shortcuts help dialog is up. */
@@ -112,14 +163,24 @@ type Store = {
   /** Stop/restart waiting in the confirm dialog; null when it is closed. */
   confirming: ConfirmRequest | null
 
+  /** Merges one connection's slice; every other connection's items are left alone. */
   applyState: (
-    projects: Project[],
-    sessions: SessionInfo[],
-    history: SessionHistoryEntry[],
-    settings: AppSettings,
+    connId: string,
+    state: {
+      projects: Project[]
+      sessions: SessionInfo[]
+      history: SessionHistoryEntry[]
+      settings: AppSettings
+      serverName?: string
+      authSessions?: AuthSessionInfo[]
+    },
   ) => void
   updateMetrics: (id: SessionId, runId: string, metrics: SessionMetrics) => void
-  setStatus: (status: ConnectionStatus) => void
+  /** Adds a connection, or replaces its config while keeping what it has received. */
+  upsertConnection: (config: ConnectionConfig) => void
+  setConnectionStatus: (connId: string, status: ConnectionStatus, error?: string | null) => void
+  /** Removes a connection and purges everything scoped to it. */
+  dropConnection: (connId: string) => void
   setActive: (id: SessionId | null) => void
   /** Opens (and focuses) the tab of a process that has not been started. */
   openPending: (project: string, process: string) => void
@@ -156,7 +217,7 @@ type Store = {
   closeConfirm: () => void
 }
 
-export const useStore = create<Store>((set) => ({
+export const useStore = create<Store>((set, get) => ({
   projects: [],
   sessions: [],
   pending: [],
@@ -173,6 +234,15 @@ export const useStore = create<Store>((set) => ({
   terminalIds: [],
   inspectingId: null,
   collapsed: {},
+  connections: {
+    [LOCAL_CONN_ID]: freshConnection({
+      id: LOCAL_CONN_ID,
+      label: "This Mac",
+      host: "127.0.0.1",
+      port: readPort(),
+      secure: false,
+    }),
+  },
   status: "connecting",
   port: readPort(),
   settings: structuredClone(DEFAULT_SETTINGS),
@@ -187,12 +257,34 @@ export const useStore = create<Store>((set) => ({
   newProjectPath: "",
   confirming: null,
 
-  applyState: (projects, sessions, history, settings) =>
+  applyState: (connId, incoming) =>
     set((state) => {
+      const { projects, sessions, history, settings } = incoming
+      const mine = (value: string): boolean => connIdOf(value) === connId
+      const connection = state.connections[connId] ?? freshConnection(unknownConfig(connId))
+
+      // Projects stay grouped by machine, in connection order.
+      const byConn = new Map<string, Project[]>([[connId, projects]])
+      for (const project of state.projects) {
+        const owner = connIdOf(project.name)
+        if (owner === connId) continue
+        const known = byConn.get(owner)
+        if (known) known.push(project)
+        else byConn.set(owner, [project])
+      }
+      const connOrder = Object.keys(state.connections)
+      const nextProjects = (connOrder.includes(connId) ? connOrder : [...connOrder, connId]).flatMap(
+        (id) => byConn.get(id) ?? [],
+      )
+
       const next = new Map(sessions.map((s) => [s.id, s]))
       const ordered: SessionInfo[] = []
       // Preserve the order of sessions we already knew about…
       for (const known of state.sessions) {
+        if (!mine(known.id)) {
+          ordered.push(known)
+          continue
+        }
         const fresh = next.get(known.id)
         if (fresh) {
           ordered.push(fresh)
@@ -208,15 +300,18 @@ export const useStore = create<Store>((set) => ({
       const live = new Set(sessions.map((session) => session.id))
       const pending = state.pending.filter(
         (tab) =>
-          !live.has(tab.id) &&
-          projects.some(
-            (project) => project.name === tab.project && project.processes.some((p) => p.name === tab.process),
-          ),
+          !mine(tab.id) ||
+          (!live.has(tab.id) &&
+            projects.some(
+              (project) => project.name === tab.project && project.processes.some((p) => p.name === tab.process),
+            )),
       )
 
-      // A session that just started grabs focus; on the very first state (the
-      // page just loaded into a server with running sessions) take the first.
-      const focus = state.sessions.length === 0 ? added[0] : added.at(-1)
+      // A session that just started grabs focus; on this connection's very first
+      // state (the page just loaded into a server with running sessions) take the
+      // first. A reconnect snapshot never steals focus.
+      const knownBefore = state.sessions.filter((session) => mine(session.id))
+      const focus = connection.suppressFocus ? undefined : knownBefore.length === 0 ? added[0] : added.at(-1)
       const stillOpen =
         state.activeId !== null &&
         (ordered.some((s) => s.id === state.activeId) || pending.some((tab) => tab.id === state.activeId))
@@ -226,6 +321,7 @@ export const useStore = create<Store>((set) => ({
       const orderedById = new Map(ordered.map((session) => [session.id, session]))
       const metricHistory = Object.fromEntries(
         Object.entries(state.metricHistory).filter(([id]) => {
+          if (!mine(id)) return true
           const previous = previousById.get(id)
           const fresh = orderedById.get(id)
           // A restart keeps the same session id and terminal scrollback, but its
@@ -233,14 +329,19 @@ export const useStore = create<Store>((set) => ({
           return previous !== undefined && fresh !== undefined && previous.runId === fresh.runId
         }),
       )
+      // Newest first across machines, matching the order each server sends.
+      const nextHistory = [...state.history.filter((entry) => !mine(entry.runId)), ...history].sort(
+        (a, b) => b.startedAt - a.startedAt,
+      )
       const validRuns = new Set(history.map((entry) => entry.runId))
-      const historyTabs = state.historyTabs.filter((runId) => validRuns.has(runId))
+      const staleRun = (runId: string): boolean => mine(runId) && !validRuns.has(runId)
+      const historyTabs = state.historyTabs.filter((runId) => !staleRun(runId))
       const historyReplays = Object.fromEntries(
-        Object.entries(state.historyReplays).filter(([runId]) => validRuns.has(runId)),
+        Object.entries(state.historyReplays).filter(([runId]) => !staleRun(runId)),
       )
       const activeHistory = focus
         ? null
-        : state.activeHistory !== null && state.activeHistory !== "overview" && !validRuns.has(state.activeHistory)
+        : state.activeHistory !== null && state.activeHistory !== "overview" && staleRun(state.activeHistory)
           ? state.historyOpen
             ? "overview"
             : null
@@ -257,10 +358,10 @@ export const useStore = create<Store>((set) => ({
       const releaseNotesActive = focus ? false : state.releaseNotesActive
       const nextActiveId = activeHistory === null && !releaseNotesActive ? activeId : null
       return {
-        projects,
+        projects: nextProjects,
         sessions: ordered,
         pending,
-        history,
+        history: nextHistory,
         historyTabs,
         historyReplays,
         metricHistory,
@@ -268,7 +369,19 @@ export const useStore = create<Store>((set) => ({
         activeHistory,
         releaseNotesActive,
         tabOrder,
-        settings,
+        connections: {
+          ...state.connections,
+          [connId]: {
+            ...connection,
+            settings,
+            serverName: incoming.serverName ?? connection.serverName,
+            authSessions: incoming.authSessions ?? [],
+            hasState: true,
+            suppressFocus: false,
+          },
+        },
+        // The top-level aliases follow the local machine only.
+        ...(connId === LOCAL_CONN_ID ? { settings } : {}),
       }
     }),
 
@@ -291,7 +404,72 @@ export const useStore = create<Store>((set) => ({
       }
     }),
 
-  setStatus: (status) => set({ status }),
+  upsertConnection: (config) =>
+    set((state) => {
+      const existing = state.connections[config.id]
+      return {
+        connections: {
+          ...state.connections,
+          [config.id]: existing ? { ...existing, config } : freshConnection(config),
+        },
+      }
+    }),
+
+  setConnectionStatus: (connId, status, error = null) =>
+    set((state) => {
+      const connection = state.connections[connId]
+      if (!connection) return state
+      return {
+        connections: {
+          ...state.connections,
+          [connId]: {
+            ...connection,
+            status,
+            error,
+            // Leaving "connected" arms the focus guard: whatever state arrives
+            // next is a reconnect snapshot, not live news.
+            suppressFocus: status === "connected" ? connection.suppressFocus : connection.hasState,
+          },
+        },
+        ...(connId === LOCAL_CONN_ID ? { status } : {}),
+        ...(connId === LOCAL_CONN_ID && status === "connected" ? { lastError: null } : {}),
+      }
+    }),
+
+  dropConnection: (connId) => {
+    if (connId === LOCAL_CONN_ID) return
+    const mine = (value: string): boolean => connIdOf(value) === connId
+    // Terminals are disposed first: each disposal writes `terminalIds` itself.
+    for (const id of get().terminalIds.filter(mine)) disposeTerminal(id)
+    set((state) => {
+      const sessions = state.sessions.filter((session) => !mine(session.id))
+      const pending = state.pending.filter((tab) => !mine(tab.id))
+      const historyTabs = state.historyTabs.filter((runId) => !mine(runId))
+      const { [connId]: _dropped, ...connections } = state.connections
+      const dropsActiveHistory =
+        state.activeHistory !== null && state.activeHistory !== "overview" && mine(state.activeHistory)
+      return {
+        connections,
+        projects: state.projects.filter((project) => !mine(project.name)),
+        sessions,
+        pending,
+        history: state.history.filter((entry) => !mine(entry.runId)),
+        historyTabs,
+        historyReplays: Object.fromEntries(Object.entries(state.historyReplays).filter(([runId]) => !mine(runId))),
+        metricHistory: Object.fromEntries(Object.entries(state.metricHistory).filter(([id]) => !mine(id))),
+        terminalIds: state.terminalIds.filter((id) => !mine(id)),
+        collapsed: Object.fromEntries(Object.entries(state.collapsed).filter(([project]) => !mine(project))),
+        tabOrder: state.tabOrder.filter((key) => {
+          const at = key.indexOf(":")
+          return at === -1 || !mine(key.slice(at + 1))
+        }),
+        activeId: state.activeId !== null && mine(state.activeId) ? (sessions.at(-1)?.id ?? null) : state.activeId,
+        activeHistory: dropsActiveHistory ? (state.historyOpen ? "overview" : null) : state.activeHistory,
+        inspectingId: state.inspectingId !== null && mine(state.inspectingId) ? null : state.inspectingId,
+        confirming: state.confirming !== null && mine(state.confirming.project) ? null : state.confirming,
+      }
+    })
+  },
 
   setActive: (activeId) => set({ activeId, activeHistory: null, releaseNotesActive: false }),
 
@@ -464,6 +642,14 @@ export const useStore = create<Store>((set) => ({
 
   closeConfirm: () => set({ confirming: null }),
 }))
+
+/** Placeholder for a connection that sent state before its config was registered. */
+function unknownConfig(connId: string): ConnectionConfig {
+  return { id: connId, label: connId, host: "", port: 0, secure: false }
+}
+
+/** Stable stand-in so `connectionOf` never manufactures a fresh object per render. */
+const FALLBACK_CONNECTION = freshConnection(unknownConfig(LOCAL_CONN_ID))
 
 /** `?port=` wins, followed by the Vite dev port and the packaged default. */
 function readPort(): number {

@@ -23,6 +23,10 @@ export function loadSettings(): AppSettings {
         ...DEFAULT_SETTINGS.terminal,
         ...(parsed.terminal ?? {}),
       },
+      connections: {
+        ...DEFAULT_SETTINGS.connections,
+        ...(parsed.connections ?? {}),
+      },
       terminalLogging: {
         ...DEFAULT_SETTINGS.terminalLogging,
         ...(parsed.terminalLogging ?? {}),
@@ -42,10 +46,13 @@ export function loadSettings(): AppSettings {
 }
 
 export function saveSettings(settings: AppSettings): void {
-  validateSettings(settings)
+  // Older clients send payloads without the connections section; keep what is saved rather than reset it.
+  const connections = (settings as Partial<AppSettings>).connections ?? loadSettings().connections
+  const merged: AppSettings = { ...settings, connections }
+  validateSettings(merged)
   mkdirSync(hangarHome(), { recursive: true })
-  writeFileSync(settingsPath(), JSON.stringify(settings, null, 2) + "\n")
-  pruneLogs(settings)
+  writeFileSync(settingsPath(), JSON.stringify(merged, null, 2) + "\n")
+  pruneLogs(merged)
 }
 
 function pruneLogs(settings: AppSettings): void {
@@ -96,6 +103,9 @@ function validateSettings(settings: AppSettings): void {
   }
   if (!Number.isFinite(terminal.fontSize) || terminal.fontSize < 8 || terminal.fontSize > 32) {
     throw new Error("terminal font size must be between 8 and 32 px")
+  }
+  if (typeof settings?.connections?.acceptRemote !== "boolean") {
+    throw new Error("invalid connections settings")
   }
   const log = settings?.terminalLogging
   if (!log || typeof log.enabled !== "boolean" || !log.directory?.trim()) {

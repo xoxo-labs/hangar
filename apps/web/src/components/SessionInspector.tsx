@@ -2,10 +2,11 @@ import type { BrowserChoice, SessionHistoryEntry, SessionInfo } from "@hangar/co
 import { Copy, ExternalLink, Info } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import * as actions from "../actions"
+import { connIdOf, displayName } from "../connections/scope"
 import { usePortLinks } from "../hooks/usePortLinks"
-import { browserLabel, openLocalPort } from "../links"
+import { browserLabel, openPortUrl, portUrl } from "../links"
 import { hasHighCpu, toneOf } from "../status"
-import { type SessionMetricPoint, useStore } from "../store"
+import { type SessionMetricPoint, connectionOf, useStore } from "../store"
 import { Button } from "../ui/Button"
 import { cx } from "../ui/cx"
 import { IconButton } from "../ui/IconButton"
@@ -30,17 +31,20 @@ export function SessionStrip({ session, onInspect }: { session: SessionInfo; onI
   const running = session.status === "running"
   const highCpu = metrics !== undefined && hasHighCpu(session)
   const primaryPort = running ? metrics?.ports[0] : undefined
+  const connId = connIdOf(session.id)
+  // The machine that runs the session owns the browser preference and the address.
+  const config = useStore((state) => connectionOf(state.connections, connId).config)
   const browser = useStore((state) => {
     const project = state.projects.find((item) => item.name === session.project)
     return (
       project?.processes.find((item) => item.name === session.process)?.browser ??
       project?.browser ??
-      state.settings.links.browser
+      connectionOf(state.connections, connId).settings.links.browser
     )
   })
   const showNotice = useStore((state) => state.showNotice)
   const openPort = (port: number) => {
-    void openLocalPort(port, browser).catch(() => showNotice(`Could not open port ${port}`))
+    void openPortUrl(portUrl(config, port), browser).catch(() => showNotice(`Could not open port ${port}`))
   }
   return (
     <div className="absolute bottom-0 left-[8px] z-[1] flex h-[28px] w-max items-center gap-[8px] whitespace-nowrap pr-[4px] text-left text-sm leading-tight text-surface-9">
@@ -77,7 +81,7 @@ export function SessionStrip({ session, onInspect }: { session: SessionInfo; onI
           className="self-center rounded-sm px-[5px] py-[3px] font-sans text-sm leading-[inherit] tabular-nums text-accent-10 hover:text-accent-11 focus:outline-none"
           type="button"
           onClick={() => openPort(primaryPort)}
-          title={`Open localhost:${primaryPort} in ${browserLabel(browser)}`}
+          title={`Open ${address(portUrl(config, primaryPort))} in ${browserLabel(browser)}`}
         >
           :{primaryPort}
         </button>
@@ -105,7 +109,7 @@ export function PendingSessionInspector({
       <header className="flex min-h-[58px] flex-none items-center justify-between border-b border-surface-5 px-[14px] py-[10px]">
         <div>
           <h2 className="m-0 text-lg font-semibold">{process}</h2>
-          <span className="text-xs text-surface-9">{project}</span>
+          <span className="text-xs text-surface-9">{displayName(project)}</span>
         </div>
         <button
           className="grid size-[26px] place-items-center rounded-md text-[20px] leading-none text-surface-9 hover:bg-surface-a4 hover:text-surface-12"
@@ -152,7 +156,15 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
     const project = state.projects.find((item) => item.name === session.project)
     return project?.processes.find((item) => item.name === session.process)?.browser ?? project?.browser
   })
-  const { openPort, copyPort, linkForPort, isLoopbackOnly, browser: resolvedBrowser } = usePortLinks(metrics, browser)
+  const connId = connIdOf(session.id)
+  const config = useStore((state) => connectionOf(state.connections, connId).config)
+  const {
+    openPort,
+    copyPort,
+    linkForPort,
+    isLoopbackOnly,
+    browser: resolvedBrowser,
+  } = usePortLinks(connId, metrics, browser)
 
   return (
     <aside
@@ -162,7 +174,7 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
       <header className="flex min-h-[58px] flex-none items-center justify-between border-b border-surface-5 px-[14px] py-[10px]">
         <div>
           <h2 className="m-0 text-lg font-semibold">{session.process}</h2>
-          <span className="text-xs text-surface-9">{session.project}</span>
+          <span className="text-xs text-surface-9">{displayName(session.project)}</span>
         </div>
         <button
           className="grid size-[26px] place-items-center rounded-md text-[20px] leading-none text-surface-9 hover:bg-surface-a4 hover:text-surface-12"
@@ -226,8 +238,9 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
             <div className={STACK}>
               {metrics.ports.map((port) => {
                 const link = linkForPort(port)
-                const address = link.url.replace(/^https?:\/\//, "")
-                const kind = { local: "Local", lan: "LAN", tailscale: "Tailscale", custom: "Custom" }[link.kind]
+                const kind = { local: "Local", lan: "LAN", tailscale: "Tailscale", custom: "Custom", direct: "Direct" }[
+                  link.kind
+                ]
                 return (
                   <div
                     key={port}
@@ -236,7 +249,7 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
                     <div className="min-w-0 flex-1">
                       <div className="font-mono text-base font-medium tabular-nums text-surface-12">:{port}</div>
                       <div className="mt-0.5 truncate text-2xs text-surface-8" title={link.url}>
-                        {kind} · {address}
+                        {kind} · {address(link.url)}
                       </div>
                     </div>
                     <div className="flex flex-none items-center gap-0.5">
@@ -250,7 +263,7 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
                       </IconButton>
                       <IconButton
                         className="size-[28px]"
-                        title={`Open localhost:${port} in ${browserLabel(resolvedBrowser)}`}
+                        title={`Open ${address(portUrl(config, port))} in ${browserLabel(resolvedBrowser)}`}
                         aria-label={`Open port ${port} in ${browserLabel(resolvedBrowser)}`}
                         onClick={() => openPort(port)}
                       >
@@ -385,6 +398,11 @@ function ProcessAdvancedSettings({ project, process }: { project: string; proces
       </section>
     </>
   )
+}
+
+/** `http://host:port` reads as `host:port` in tooltips and port rows. */
+function address(url: string): string {
+  return url.replace(/^https?:\/\//, "")
 }
 
 function exitedState(session: SessionInfo): string {
