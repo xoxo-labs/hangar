@@ -49,9 +49,7 @@
       "title": "Open Project",
       "description": "Opens a project in Hangar.",
       "implementationDescription": "Foreground Hangar (launching it if needed) with this project focused in the sidebar. Opening never starts anything — parity with the in-app rule that only ▶ starts a process.",
-      "parameters": [
-        { "name": "project", "entity": "Project", "requestDialog": "Which project?" }
-      ],
+      "parameters": [{ "name": "project", "entity": "Project", "requestDialog": "Which project?" }],
       "behavior": { "kind": "openApp", "target": "project" },
       "shortcut": {
         "phrases": ["Open ${project} in ${applicationName}"],
@@ -64,9 +62,7 @@
       "title": "Start Process",
       "description": "Starts a process in Hangar.",
       "implementationDescription": "Write a start command to the shared command directory. If Hangar is running it picks the command up immediately; otherwise launch Hangar and the command executes once the server is up. Return the process record with its post-start state.",
-      "parameters": [
-        { "name": "process", "entity": "Process", "requestDialog": "Which process?" }
-      ],
+      "parameters": [{ "name": "process", "entity": "Process", "requestDialog": "Which process?" }],
       "behavior": {
         "kind": "custom",
         "dialog": "Starting ${result.name} in ${result.project}.",
@@ -85,9 +81,7 @@
       "title": "Start Project",
       "description": "Starts every process in a Hangar project.",
       "implementationDescription": "Same command-directory contract as StartProcess, with a start-all command for the project. Launch Hangar if it is not running. Return how many processes the command actually started.",
-      "parameters": [
-        { "name": "project", "entity": "Project", "requestDialog": "Which project?" }
-      ],
+      "parameters": [{ "name": "project", "entity": "Project", "requestDialog": "Which project?" }],
       "behavior": {
         "kind": "custom",
         "dialog": "Starting ${result.started} processes in ${project.name}.",
