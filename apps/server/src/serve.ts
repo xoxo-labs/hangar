@@ -5,6 +5,7 @@ import { networkInterfaces } from "node:os"
 import { WebSocketServer, WebSocket } from "ws"
 import type { AppSettings, ClientMsg, Project, ServerMsg } from "@hangar/contracts"
 import { expandHome, findProject, hangarHome, loadRegistry, saveRegistry, validateProject } from "./registry.ts"
+import { exportAppIntentsState, watchAppIntentsCommands } from "./appintents.ts"
 import { loadHistory, loadHistoryReplay } from "./history.ts"
 import { SessionManager } from "./sessions.ts"
 import { loadSettings, saveSettings } from "./settings.ts"
@@ -175,9 +176,39 @@ export function serve(port: number): void {
     }
     return { type: "state", projects, sessions: manager.list(), history: loadHistory(settings), settings }
   }
-  const broadcastState = (): void => broadcast(stateMsg())
+  const broadcastState = (): void => {
+    broadcast(stateMsg())
+    try {
+      exportAppIntentsState(loadRegistry().projects, manager.list())
+    } catch {
+      // The Spotlight snapshot must never break state broadcasting.
+    }
+  }
 
   const manager = new SessionManager(broadcast, broadcastState, loadSettings)
+
+  // Spotlight/Shortcuts bridge: export the current state, then drain any
+  // commands queued while no server was running and keep watching.
+  try {
+    exportAppIntentsState(loadRegistry().projects, manager.list())
+  } catch {
+    // Same policy as above: the bridge is best-effort.
+  }
+  watchAppIntentsCommands((command) => {
+    try {
+      if (command.kind === "start-process") {
+        const slash = command.targetId.indexOf("/")
+        if (slash === -1) return
+        const project = findProject(loadRegistry(), command.targetId.slice(0, slash))
+        if (project) manager.start(project, command.targetId.slice(slash + 1))
+      } else if (command.kind === "start-project") {
+        const project = findProject(loadRegistry(), command.targetId)
+        if (project) manager.start(project)
+      }
+    } catch (error) {
+      broadcast({ type: "error", message: `App Intents command failed: ${String(error)}` })
+    }
+  })
 
   const httpServer = createServer((req, res) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "127.0.0.1"}`)

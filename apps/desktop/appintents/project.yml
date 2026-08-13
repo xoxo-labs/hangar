@@ -1,0 +1,31 @@
+name: HangarIntents
+
+options:
+  # macOS 26 for IntentModes / Spotlight actions — the rest is macOS 13-era.
+  deploymentTarget:
+    macOS: "26.0"
+
+targets:
+  HangarIntentsDev:
+    type: application
+    platform: macOS
+    sources:
+      - Generated
+      - Consumer
+      - DevHost
+    info:
+      path: DevHost/Info.plist
+      properties:
+        CFBundleURLTypes:
+          - CFBundleURLName: works.xoxo.hangar.intents-dev
+            CFBundleURLSchemes:
+              - hangar
+    # No entitlements: the dev host reads ~/.hangar-dev/appintents directly,
+    # so it needs no App Group and therefore no provisioning profile. The
+    # production appex adds the group.works.xoxo.hangar entitlement.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: works.xoxo.hangar.intents-dev
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: D998B4F552
