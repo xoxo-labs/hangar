@@ -1,22 +1,55 @@
 /**
- * The home screen's controls, as a floating glass bar over the list rather than
- * a band under the navigation title: grouping on the left, search filling the
- * rest. Both live where a thumb already is, the way iOS puts Safari's and Apps'
- * controls at the bottom — and the list keeps its full height behind them.
+ * The home screen's controls, as floating glass over the list rather than a
+ * band under the navigation title: grouping on the left, search filling the
+ * rest. Both live where a thumb already is, the way iOS puts Music's and
+ * Safari's controls at the bottom — and the list keeps its full height behind
+ * them.
+ *
+ * On iOS 26 these are real Liquid Glass elements, two separate shapes inside a
+ * `GlassContainer` so they refract and merge at the edges the way the system's
+ * own do. Anywhere else — older iOS, Android, or a device where the effect is
+ * unavailable — the same shapes fall back to a blur with a drawn edge, which is
+ * why every surface goes through `Surface` instead of picking one directly.
  *
  * The bar owns no state of its own: the query and the mode belong to the
  * screen, so a re-render from either one cannot desynchronise the two.
  */
 
 import { BlurView } from "expo-blur"
-import { useEffect, useRef, useState } from "react"
-import { Keyboard, type KeyboardEvent, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
+import { GlassContainer, GlassView, isLiquidGlassAvailable } from "expo-glass-effect"
+import { type ReactNode, useEffect, useRef, useState } from "react"
+import {
+  Keyboard,
+  type KeyboardEvent,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type ViewStyle,
+} from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import type { ViewMode } from "../mode"
 import { color, space } from "../theme"
 
 /** How much room the bar needs at the end of a list so the last row clears it. */
-export const HOME_BAR_INSET = 76
+export const HOME_BAR_INSET = 84
+
+const BAR_HEIGHT = 52
+
+/**
+ * Whether the system draws Liquid Glass for us. `isLiquidGlassAvailable` reaches
+ * for a native module, so a build without it must not take the screen down.
+ */
+const LIQUID_GLASS = ((): boolean => {
+  if (Platform.OS !== "ios") return false
+  try {
+    return isLiquidGlassAvailable()
+  } catch {
+    return false
+  }
+})()
 
 const MODES: { mode: ViewMode; label: string }[] = [
   { mode: "machines", label: "Machines" },
@@ -51,9 +84,7 @@ export function HomeBar({
       )}
       <View style={[styles.dock, { bottom }]} pointerEvents="box-none">
         {menuOpen && (
-          <View style={styles.menu}>
-            <BlurView intensity={70} tint="systemThinMaterialDark" style={StyleSheet.absoluteFill} />
-            <View style={styles.sheen} pointerEvents="none" />
+          <Surface style={styles.menu} radius={20}>
             {MODES.map((option) => (
               <Pressable
                 key={option.mode}
@@ -69,57 +100,94 @@ export function HomeBar({
                 <Text style={[styles.menuLabel, mode === option.mode && styles.menuLabelOn]}>{option.label}</Text>
               </Pressable>
             ))}
-          </View>
+          </Surface>
         )}
 
-        <View style={styles.bar}>
-          <BlurView intensity={70} tint="systemThinMaterialDark" style={StyleSheet.absoluteFill} />
-          {/* The sheen a glass surface catches along its top edge. */}
-          <View style={styles.sheen} pointerEvents="none" />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Change grouping"
-            accessibilityState={{ expanded: menuOpen }}
-            hitSlop={8}
-            onPress={() => {
-              Keyboard.dismiss()
-              setMenuOpen((open) => !open)
-            }}
-            style={({ pressed }) => [styles.grouping, (pressed || menuOpen) && styles.groupingOn]}
-          >
-            <Text style={[styles.glyph, menuOpen && styles.glyphOn]}>☰</Text>
-          </Pressable>
-          <View style={styles.divider} />
-          <Pressable style={styles.search} onPress={() => input.current?.focus()}>
-            <Text style={styles.glyph}>⌕</Text>
-            <TextInput
-              ref={input}
-              style={styles.input}
-              value={query}
-              onChangeText={onQuery}
-              placeholder={mode === "machines" ? "Search machines" : "Search projects"}
-              placeholderTextColor={color.faint}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="search"
-              clearButtonMode="never"
-            />
-            {query !== "" && (
-              <Pressable
-                accessibilityLabel="Clear search"
-                hitSlop={10}
-                onPress={() => {
-                  onQuery("")
-                  Keyboard.dismiss()
-                }}
-              >
-                <Text style={styles.clear}>✕</Text>
-              </Pressable>
-            )}
-          </Pressable>
-        </View>
+        <Row>
+          <Surface style={styles.groupingGlass} radius={BAR_HEIGHT / 2}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Change grouping"
+              accessibilityState={{ expanded: menuOpen }}
+              onPress={() => {
+                Keyboard.dismiss()
+                setMenuOpen((open) => !open)
+              }}
+              style={({ pressed }) => [styles.grouping, (pressed || menuOpen) && styles.groupingOn]}
+            >
+              <Text style={[styles.glyph, menuOpen && styles.glyphOn]}>☰</Text>
+            </Pressable>
+          </Surface>
+
+          <Surface style={styles.searchGlass} radius={BAR_HEIGHT / 2}>
+            <Pressable style={styles.search} onPress={() => input.current?.focus()}>
+              <Text style={styles.glyph}>⌕</Text>
+              <TextInput
+                ref={input}
+                style={styles.input}
+                value={query}
+                onChangeText={onQuery}
+                placeholder={mode === "machines" ? "Search machines" : "Search projects"}
+                placeholderTextColor={color.faint}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+                clearButtonMode="never"
+              />
+              {query !== "" && (
+                <Pressable
+                  accessibilityLabel="Clear search"
+                  hitSlop={10}
+                  onPress={() => {
+                    onQuery("")
+                    Keyboard.dismiss()
+                  }}
+                >
+                  <Text style={styles.clear}>✕</Text>
+                </Pressable>
+              )}
+            </Pressable>
+          </Surface>
+        </Row>
       </View>
     </>
+  )
+}
+
+/**
+ * Holds the two shapes. A `GlassContainer` is what lets neighbouring glass
+ * elements bleed into each other as they near; without Liquid Glass there is
+ * nothing to merge, so a plain row will do.
+ */
+function Row({ children }: { children: ReactNode }) {
+  if (!LIQUID_GLASS) return <View style={styles.row}>{children}</View>
+  return (
+    <GlassContainer spacing={18} style={styles.row}>
+      {children}
+    </GlassContainer>
+  )
+}
+
+/**
+ * One floating surface. `colorScheme="dark"` is not optional: Hangar on a phone
+ * is dark-only, and glass left on `auto` would turn milky white on a phone set
+ * to light appearance.
+ */
+function Surface({ style, radius, children }: { style: ViewStyle; radius: number; children: ReactNode }) {
+  if (LIQUID_GLASS) {
+    return (
+      <GlassView style={[style, { borderRadius: radius }]} glassEffectStyle="clear" colorScheme="dark" isInteractive>
+        {children}
+      </GlassView>
+    )
+  }
+  return (
+    <View style={[style, styles.blurred, { borderRadius: radius }]}>
+      <BlurView intensity={70} tint="systemThinMaterialDark" style={StyleSheet.absoluteFill} />
+      {/* The sheen a glass surface catches along its top edge. */}
+      <View style={styles.sheen} pointerEvents="none" />
+      {children}
+    </View>
   )
 }
 
@@ -148,61 +216,40 @@ function useKeyboardLift(): number {
 }
 
 const styles = StyleSheet.create({
-  dock: { position: "absolute", left: space.gutter, right: space.gutter, gap: 8 },
-  /*
-   * Glass: the iOS material does the work, so the fill is only a breath of
-   * white to lift it off a near-black list, and the border is a bright hairline
-   * rather than the chrome grey the cards use. `overflow: hidden` is what clips
-   * the blur to the rounded shape, and the shadow is what makes it float.
-   */
-  bar: {
-    flexDirection: "row",
-    alignItems: "center",
-    height: 52,
-    paddingHorizontal: 6,
-    borderRadius: 26,
+  dock: { position: "absolute", left: space.gutter, right: space.gutter, gap: 10 },
+  row: { flexDirection: "row", alignItems: "center", gap: 8 },
+  // Shadow is what makes a floating shape read as floating; glass has no fill
+  // of its own, so the list has to show through it.
+  groupingGlass: { width: BAR_HEIGHT, height: BAR_HEIGHT, ...shadow() },
+  searchGlass: { flex: 1, height: BAR_HEIGHT, ...shadow() },
+  // Only the fallback draws its own edge: real glass brings one.
+  blurred: {
     overflow: "hidden",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "#ffffff2b",
     backgroundColor: "#ffffff0f",
-    shadowColor: "#000",
-    shadowOpacity: 0.45,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
   },
-  sheen: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: "#ffffff33",
-  },
-  search: { flex: 1, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8 },
+  sheen: { position: "absolute", top: 0, left: 0, right: 0, height: 1, backgroundColor: "#ffffff33" },
+  grouping: { flex: 1, alignItems: "center", justifyContent: "center", borderRadius: BAR_HEIGHT / 2 },
+  groupingOn: { backgroundColor: "#ffffff1f" },
+  search: { flex: 1, flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: 14 },
   input: { flex: 1, color: color.text, fontSize: 15, paddingVertical: 8 },
   glyph: { color: color.muted, fontSize: 17 },
   glyphOn: { color: color.accent },
   clear: { color: color.faint, fontSize: 13 },
-  divider: { width: StyleSheet.hairlineWidth, height: 22, backgroundColor: color.line },
-  grouping: { alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: 20 },
-  groupingOn: { backgroundColor: "#ffffff1f" },
-  menu: {
-    alignSelf: "flex-start",
-    minWidth: 200,
-    paddingVertical: 4,
-    borderRadius: 18,
-    overflow: "hidden",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#ffffff2b",
-    backgroundColor: "#ffffff0f",
-    shadowColor: "#000",
-    shadowOpacity: 0.45,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-  },
-  menuRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 11 },
-  pressed: { backgroundColor: color.raised },
+  menu: { alignSelf: "flex-start", minWidth: 200, paddingVertical: 4, ...shadow() },
+  menuRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 11 },
+  pressed: { backgroundColor: "#ffffff14" },
   check: { width: 14, color: color.accent, fontSize: 13 },
   menuLabel: { color: color.soft, fontSize: 15 },
   menuLabelOn: { color: color.text, fontWeight: "600" },
 })
+
+function shadow(): ViewStyle {
+  return {
+    shadowColor: "#000",
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+  }
+}
