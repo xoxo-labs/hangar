@@ -1,3 +1,23 @@
+# Hangar 0.4.0
+
+## Connections: pair your Macs
+
+- Hangar can now accept paired connections from your other machines. Turn it on in Settings → Connections, generate a one-time pairing code (shown as a code, a paste-friendly string, and a QR), and enter it on the other Mac.
+- Connections are protected end to end: single-use pairing codes that expire in five minutes, per-client session tokens you can revoke at any time, and a server that stays loopback-only until you explicitly opt in. Traffic is plain HTTP on your network — Tailscale is the recommended way to reach a Mac across networks.
+- The sidebar groups projects by machine, every process runs in its own machine's context, and detected port links open on the right host. The command palette labels entries by machine, and new projects can be created on any connected Mac.
+
+## Same repo, one card
+
+- When the same repository lives on more than one connected machine (matched by its git origin), the sidebar merges it into a single project card with a section per machine — local and paired actions side by side.
+
+## Mobile companion
+
+- A new companion app for iPhone and iPad lives in the repository: pair by scanning the QR, watch live process output in color, start and stop processes, and switch machines' addresses on the go. On iPad it opens into a split layout with the session pane alongside the list.
+
+## Quality of life
+
+- The project editor's detected-scripts list gains a search filter once a folder yields more than five scripts — monorepos cumulate root and workspace scripts quickly.
+
 # Hangar 0.3.1
 
 ## Clearer session endings

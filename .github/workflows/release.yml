@@ -50,6 +50,7 @@ jobs:
           path: |
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
+            apps/desktop/release/*.blockmap
             apps/desktop/release/latest-mac.yml
       # electron-updater needs the ZIP and latest-mac.yml in addition to the
       # human-facing DMG; without them installed copies cannot discover/install.
@@ -60,5 +61,6 @@ jobs:
           files: |
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
+            apps/desktop/release/*.blockmap
             apps/desktop/release/latest-mac.yml
           generate_release_notes: true
