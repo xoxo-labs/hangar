@@ -9,11 +9,13 @@ import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react"
 import * as actions from "../actions"
 import { useDesktopUpdate } from "../hooks/useDesktopUpdate"
 import { useStore } from "../store"
+import { ConnectionsSettings } from "./ConnectionsSettings"
 import { resolveUpdateAction, type UpdateActionKind, updateStatusLine } from "./settingsUpdate.logic"
 import { Button } from "../ui/Button"
 import { cx } from "../ui/cx"
 import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/Dialog"
 import { Field, Select, TextInput } from "../ui/Field"
+import { ToggleRow } from "../ui/ToggleRow"
 
 const FONT_OPTIONS = [
   { label: "Default (SF Mono / Menlo)", value: DEFAULT_SETTINGS.terminal.fontFamily },
@@ -37,34 +39,6 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <div className="mb-[9px] text-sm font-semibold tracking-label text-surface-10 uppercase">{title}</div>
       {children}
     </div>
-  )
-}
-
-/** Old `.toggle-row` and its `input` / `span` / `strong` / `small` descendants. */
-function ToggleRow({
-  checked,
-  onChange,
-  title,
-  hint,
-}: {
-  checked: boolean
-  onChange: (next: boolean) => void
-  title: string
-  hint: string
-}) {
-  return (
-    <label className="flex w-full items-start gap-[9px] rounded-md border border-surface-5 bg-surface-a2 p-[9px]">
-      <input
-        type="checkbox"
-        className="mt-0.5 accent-accent-9"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      <span className="flex flex-col gap-0.5">
-        <strong className="text-base font-book">{title}</strong>
-        <small className="text-xs text-surface-9">{hint}</small>
-      </span>
-    </label>
   )
 }
 
@@ -142,6 +116,18 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
       ...current,
       sessionHistory: { ...current.sessionHistory, ...next },
     }))
+
+  /*
+   * The only setting that is not held back until Save: flipping it re-binds the
+   * server, and everything else in the Connections section (pairing codes, adding
+   * and removing machines) already acts at once and depends on it. The draft is
+   * kept in step so a later Save cannot roll it back.
+   */
+  const setAcceptRemote = (acceptRemote: boolean) => {
+    setSettings((current) => ({ ...current, connections: { ...current.connections, acceptRemote } }))
+    const saved = useStore.getState().settings
+    actions.updateSettings({ ...saved, connections: { ...saved.connections, acceptRemote } })
+  }
 
   const save = () => {
     actions.updateSettings(settings)
@@ -306,6 +292,12 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
                 </Select>
               </Field>
             </div>
+          </Section>
+          <Section title="Connections">
+            <ConnectionsSettings
+              acceptRemote={settings.connections?.acceptRemote === true}
+              onAcceptRemote={setAcceptRemote}
+            />
           </Section>
           <Section title="About">
             <div className="flex items-center justify-between rounded-md border border-surface-5 p-[10px]">

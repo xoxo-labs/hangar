@@ -7,21 +7,24 @@
     "dev": "vite --port 4790",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "node --test src/components/settingsUpdate.logic.test.ts"
+    "test": "node --test src/components/packageScripts.logic.test.ts src/components/settingsUpdate.logic.test.ts"
   },
   "dependencies": {
+    "@hangar/client-core": "workspace:*",
     "@hangar/contracts": "workspace:*",
     "@radix-ui/colors": "^3.0.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "cmdk": "^1.1.1",
     "lucide-react": "^1.30.0",
+    "qrcode": "^1.5.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.5",

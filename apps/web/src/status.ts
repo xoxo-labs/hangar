@@ -1,6 +1,21 @@
+import type { ConnectionStatus } from "@hangar/client-core"
 import type { SessionInfo } from "@hangar/contracts"
 
 export type Tone = "running" | "warning" | "idle" | "done" | "failed"
+
+/** How a machine's connection reads on the same dot scale as a session. */
+export function connectionTone(status: ConnectionStatus): Tone {
+  if (status === "connected") return "running"
+  if (status === "blocked") return "failed"
+  return "warning"
+}
+
+export const CONNECTION_LABEL: Record<ConnectionStatus, string> = {
+  connecting: "connecting…",
+  connected: "connected",
+  reconnecting: "reconnecting…",
+  blocked: "not paired",
+}
 
 export const HIGH_CPU_PERCENT = 80
 

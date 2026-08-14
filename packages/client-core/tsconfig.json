@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // DOM only for the two globals every target already has (`WebSocket`,
+    // `fetch`) — nothing here may touch `window` or `document`; node for the
+    // `node --test` suites.
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": ["src"]
+}

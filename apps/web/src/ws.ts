@@ -1,4 +1,6 @@
+import { connIdOf, LOCAL_CONN_ID, routeOutbound } from "@hangar/client-core"
 import type { ClientMsg, ServerMsg } from "@hangar/contracts"
+import { sendTo, startConnections } from "./connections/manager"
 import { takeCloseOnExit, useStore } from "./store"
 import {
   applyTerminalSettings,
@@ -10,80 +12,32 @@ import {
 } from "./terminals"
 import { applyThemeSetting } from "./theme"
 
-const MIN_BACKOFF = 500
-const MAX_BACKOFF = 5_000
-
-let socket: WebSocket | null = null
-let backoff = MIN_BACKOFF
-let retry: ReturnType<typeof setTimeout> | null = null
-/** First attempt reads as "connecting"; every later one as "reconnecting". */
-let everConnected = false
-/** The tutorial decision waits for the first state so it reads real settings, not defaults. */
+/** The tutorial decision waits for the local server's first state so it reads real settings, not defaults. */
 let sawFirstState = false
 
-function url(): string {
-  return `ws://127.0.0.1:${useStore.getState().port}/ws`
-}
-
+/** Brings up every connection; the supervisors own reconnection from here on. */
 export function connect(): void {
-  if (retry !== null) {
-    clearTimeout(retry)
-    retry = null
-  }
-  if (socket !== null && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
-    return
-  }
-
-  useStore.getState().setStatus(everConnected ? "reconnecting" : "connecting")
-
-  const ws = new WebSocket(url())
-  socket = ws
-
-  ws.onopen = () => {
-    if (socket !== ws) return
-    everConnected = true
-    backoff = MIN_BACKOFF
-    useStore.getState().setStatus("connected")
-    useStore.getState().setError(null)
-  }
-
-  ws.onmessage = (event) => {
-    if (socket !== ws || typeof event.data !== "string") return
-    let msg: ServerMsg
-    try {
-      msg = JSON.parse(event.data) as ServerMsg
-    } catch {
-      return
-    }
-    handle(msg)
-  }
-
-  ws.onerror = () => {
-    // `onclose` always follows; reconnection is handled there.
-  }
-
-  ws.onclose = () => {
-    if (socket !== ws) return
-    socket = null
-    useStore.getState().setStatus("reconnecting")
-    retry = setTimeout(connect, backoff)
-    backoff = Math.min(backoff * 2, MAX_BACKOFF)
-  }
+  startConnections(handle)
 }
 
-function handle(msg: ServerMsg): void {
+/** One connection's message, with every id already scoped by the manager. */
+function handle(connId: string, msg: ServerMsg): void {
   const store = useStore.getState()
   switch (msg.type) {
     case "state": {
-      const gone = store.sessions.filter((s) => !msg.sessions.some((next) => next.id === s.id))
-      const restarted = store.sessions.filter((session) =>
+      const known = store.sessions.filter((session) => connIdOf(session.id) === connId)
+      const gone = known.filter((session) => !msg.sessions.some((next) => next.id === session.id))
+      const restarted = known.filter((session) =>
         msg.sessions.some((next) => next.id === session.id && next.runId !== session.runId),
       )
-      store.applyState(msg.projects, msg.sessions, msg.history, msg.settings)
-      applyThemeSetting(msg.settings.appearance.theme)
-      applyTerminalSettings(msg.settings.terminal)
+      store.applyState(connId, msg)
       for (const session of gone) disposeTerminal(session.id)
       for (const session of restarted) resetMetricPositions(session.id)
+      // Theme, terminal appearance and onboarding are global UI: only the local
+      // machine's settings drive them.
+      if (connId !== LOCAL_CONN_ID) return
+      applyThemeSetting(msg.settings.appearance.theme)
+      applyTerminalSettings(msg.settings.terminal)
       if (!sawFirstState) {
         sawFirstState = true
         // `=== false` (not `!`): an older server that predates the onboarding
@@ -116,7 +70,7 @@ function handle(msg: ServerMsg): void {
   }
 }
 
+/** Strips the scope off `msg` and hands it to the connection that owns it. */
 export function send(msg: ClientMsg): void {
-  if (socket === null || socket.readyState !== WebSocket.OPEN) return
-  socket.send(JSON.stringify(msg))
+  for (const outbound of routeOutbound(msg)) sendTo(outbound.connId, outbound.msg)
 }

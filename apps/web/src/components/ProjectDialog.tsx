@@ -1,14 +1,22 @@
+import { connIdOf, displayName, LOCAL_CONN_ID, scoped } from "@hangar/client-core"
 import type { BrowserChoice, Project, ProjectProcess } from "@hangar/contracts"
 import { FolderOpen } from "lucide-react"
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
 import * as actions from "../actions"
-import { useStore } from "../store"
+import { authHeaders, serverOrigin } from "../links"
+import { connectionOf, machineLabel, useStore } from "../store"
 import { Button } from "../ui/Button"
 import { cx } from "../ui/cx"
 import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/Dialog"
-import { Field, TextInput } from "../ui/Field"
+import { Field, Select, TextInput } from "../ui/Field"
 import { IconButton } from "../ui/IconButton"
 import { BrowserSelect } from "./BrowserSelect"
+import {
+  filterPackageScripts,
+  groupPackageScripts,
+  type PackageScript,
+  SCRIPT_FILTER_THRESHOLD,
+} from "./packageScripts.logic"
 
 /* Ports of the retired `.field` / `.text-button` rules. The `Field` primitive
  * covers the plain label-wrapped case; these two fields need a `<div>` (a
@@ -37,7 +45,6 @@ type Row = {
   description?: string
   browser?: BrowserChoice
 }
-type PackageScript = { name: string; value: string; cmd: string; cwd?: string; workspace?: string }
 type ProjectInfo = {
   path: string
   exists: boolean
@@ -47,19 +54,6 @@ type ProjectInfo = {
     scripts: PackageScript[]
     workspaceScriptCount?: number
   }
-}
-
-type ScriptGroup = { label: string; scripts: PackageScript[] }
-
-function groupPackageScripts(scripts: PackageScript[]): ScriptGroup[] {
-  const groups = new Map<string, PackageScript[]>()
-  for (const script of scripts) {
-    const label = script.workspace ?? (script.cwd || "Root")
-    const group = groups.get(label)
-    if (group) group.push(script)
-    else groups.set(label, [script])
-  }
-  return Array.from(groups, ([label, entries]) => ({ label, scripts: entries }))
 }
 
 let nextRowId = 0
@@ -84,9 +78,17 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
   const running = useStore((s) =>
     s.sessions.some((session) => session.project === editing && session.status === "running"),
   )
-  const port = useStore((s) => s.port)
+  const connections = useStore((s) => s.connections)
 
-  const [name, setName] = useState(existing?.name ?? "")
+  // The form edits the bare name; the scope is put back on save. A new project
+  // defaults to this Mac; an existing one stays on the machine that owns it.
+  const [connId, setConnId] = useState(editing === null ? LOCAL_CONN_ID : connIdOf(editing))
+  const machines = Object.values(connections)
+  const machine = connectionOf(connections, connId)
+  const config = machine.config
+  // Only this Mac's folders can be browsed; a paired machine's paths are typed.
+  const canBrowse = window.hangarDesktop !== undefined && connId === LOCAL_CONN_ID
+  const [name, setName] = useState(existing === undefined ? "" : displayName(existing.name))
   const [path, setPath] = useState(existing?.path ?? initialPath)
   const [rows, setRows] = useState<Row[]>(() =>
     existing && existing.processes.length > 0
@@ -104,6 +106,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
   const [browser, setBrowser] = useState<BrowserChoice | "">(existing?.browser ?? "")
   const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null)
+  const [scriptQuery, setScriptQuery] = useState("")
   const [inspecting, setInspecting] = useState(false)
   const [browsing, setBrowsing] = useState(false)
   const [manual, setManual] = useState(editing === null && !window.hangarDesktop)
@@ -112,6 +115,8 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
 
   useEffect(() => {
     const candidate = path.trim()
+    // A new folder brings a new script list; a query typed against the old one is meaningless.
+    setScriptQuery("")
     if (candidate === "") {
       setProjectInfo(null)
       setInspecting(false)
@@ -122,7 +127,9 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
       setInspecting(true)
-      fetch(`http://127.0.0.1:${port}/project-info?path=${encodeURIComponent(candidate)}`, {
+      // The path is inspected on the machine the project will live on.
+      fetch(`${serverOrigin(config)}/project-info?path=${encodeURIComponent(candidate)}`, {
+        headers: authHeaders(config),
         signal: controller.signal,
       })
         .then(async (response) => {
@@ -142,7 +149,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [path, port])
+  }, [path, config])
 
   useEffect(() => {
     if (editing !== null || nameEdited.current || projectInfo === null || !projectInfo.exists) return
@@ -161,7 +168,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
 
   const save = (): void => {
     if (!valid) return
-    actions.upsertProject(toProject(name, path, rows, existing?.env, browser))
+    actions.upsertProject(toProject(scoped(connId, name.trim()), path, rows, existing?.env, browser))
     closeEditor()
   }
 
@@ -192,7 +199,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
 
   const browse = async (): Promise<void> => {
     const choose = window.hangarDesktop?.chooseDirectory
-    if (!choose || browsing) return
+    if (!choose || !canBrowse || browsing) return
     setBrowsing(true)
     try {
       const selected = await choose("Choose a project folder")
@@ -202,13 +209,35 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
     }
   }
 
-  const choosingFolder = editing === null && !manual && path.trim() === ""
+  const machineField =
+    machines.length < 2 ? null : (
+      <Field
+        label="Machine"
+        hint={editing === null ? "The Mac this project is created on." : "A project stays on the Mac that owns it."}
+        className="w-full max-w-[260px]"
+      >
+        {editing === null ? (
+          <Select value={connId} onChange={(event) => setConnId(event.target.value)}>
+            {machines.map((item) => (
+              <option key={item.config.id} value={item.config.id}>
+                {machineLabel(item)}
+              </option>
+            ))}
+          </Select>
+        ) : (
+          <TextInput readOnly value={machineLabel(machine)} />
+        )}
+      </Field>
+    )
+
+  const choosingFolder = editing === null && !manual && canBrowse && path.trim() === ""
   if (choosingFolder) {
     return (
       <Overlay onDismiss={closeEditor}>
         <Dialog label="Add project" className="w-[min(620px,100%)]!" onKeyDown={onKeyDown}>
           <DialogHeader title="Add project" />
           <DialogBody className="gap-3 py-5">
+            {machineField}
             <button
               type="button"
               autoFocus
@@ -258,18 +287,24 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
     })
   }
 
+  const detectedScripts = projectInfo?.package?.scripts ?? []
+  // A monorepo cumulates root plus every workspace's scripts, which is where a list stops being scannable.
+  const filterable = detectedScripts.length > SCRIPT_FILTER_THRESHOLD
+  const shownScripts = filterable ? filterPackageScripts(detectedScripts, scriptQuery) : detectedScripts
+
   return (
     // mousedown (not click) so a drag that ends on the backdrop keeps the dialog up.
     <Overlay onDismiss={closeEditor}>
       <Dialog
-        label={editing === null ? "Add project" : `Edit ${editing}`}
+        label={editing === null ? "Add project" : `Edit ${displayName(editing)}`}
         className="w-[min(620px,100%)]!"
         onKeyDown={onKeyDown}
       >
         <DialogHeader title={editing === null ? "Add project" : "Edit project"} />
 
         <DialogBody>
-          {editing === null && !manual && window.hangarDesktop ? (
+          {machineField}
+          {editing === null && !manual && canBrowse ? (
             <div className={FIELD}>
               <span className={FIELD_LABEL}>Project folder</span>
               <div className="flex w-full min-w-0 items-center gap-2 rounded-md border border-surface-5 bg-surface-1 px-2 py-1.5">
@@ -308,7 +343,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
                   placeholder="~/code/my-app"
                   onChange={(e) => setPath(e.target.value)}
                 />
-                {window.hangarDesktop && (
+                {canBrowse && (
                   <Button className="flex-none whitespace-nowrap" disabled={browsing} onClick={() => void browse()}>
                     {browsing ? "Opening…" : "Choose…"}
                   </Button>
@@ -354,8 +389,26 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
                   ? `Monorepo scripts · ${projectInfo.package.manager}`
                   : `package.json scripts · ${projectInfo.package.manager}`}
               </span>
+              {filterable && (
+                <TextInput
+                  // Deliberately not autofocused: the dialog's own focus flow starts at the path field.
+                  className="py-1 text-sm"
+                  value={scriptQuery}
+                  spellCheck={false}
+                  autoComplete="off"
+                  placeholder="Filter scripts…"
+                  onChange={(event) => setScriptQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    // Escape is swallowed only when it clears something; otherwise it still closes the dialog.
+                    if (event.key !== "Escape" || scriptQuery === "") return
+                    event.stopPropagation()
+                    setScriptQuery("")
+                  }}
+                />
+              )}
               <div className="max-h-[210px] w-full overflow-y-auto rounded-md border border-surface-5 bg-surface-1">
-                {groupPackageScripts(projectInfo.package.scripts).map((group) => (
+                {shownScripts.length === 0 && <p className="px-2 py-2.5 text-sm text-surface-9">No matching scripts</p>}
+                {groupPackageScripts(shownScripts).map((group) => (
                   <section key={group.label}>
                     <div className="sticky top-0 z-[1] flex items-center border-b border-surface-5 bg-surface-2 px-2 py-1 text-2xs font-semibold tracking-caps text-surface-9 uppercase">
                       <span className="truncate">{group.label}</span>

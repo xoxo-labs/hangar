@@ -386,8 +386,9 @@ ipcMain.handle("hangar:open-url", async (_event, rawUrl, browser) => {
   } catch {
     return "Invalid URL"
   }
-  if (!["http:", "https:"].includes(url.protocol) || !["127.0.0.1", "localhost"].includes(url.hostname)) {
-    return "Only local HTTP links are allowed"
+  // Paired machines expose their detected ports on their own host, so any http(s) URL is allowed.
+  if (!["http:", "https:"].includes(url.protocol)) {
+    return "Only HTTP links are allowed"
   }
   const appName = BROWSER_APPS[browser]
   if (process.platform === "darwin" && appName) {

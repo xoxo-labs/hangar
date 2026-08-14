@@ -1,11 +1,13 @@
-import { type Project, type ProjectProcess, type SessionInfo, sessionId } from "@hangar/contracts"
+import { buildSidebarModel, displayName, flatEntries, type SidebarEntry, type SidebarPart } from "@hangar/client-core"
+import { type Project, type SessionInfo, sessionId } from "@hangar/contracts"
 import { ChevronRight, CircleArrowUp, CircleHelp, History, Play, RotateCw, Settings, Square } from "lucide-react"
 import { type DragEvent, type FormEvent, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import * as actions from "../actions"
+import { retryConnection } from "../connections"
 import { useDesktopUpdate } from "../hooks/useDesktopUpdate"
-import { describe, hasHighCpu, toneOf } from "../status"
-import { useStore } from "../store"
+import { CONNECTION_LABEL, connectionTone, describe, hasHighCpu, toneOf } from "../status"
+import { type ConfirmRequest, type ConnectionState, machineLabel, useStore } from "../store"
 import { Button } from "../ui/Button"
 import { cx } from "../ui/cx"
 import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/Dialog"
@@ -52,6 +54,7 @@ export function Sidebar({
 }) {
   const projects = useStore((s) => s.projects)
   const sessions = useStore((s) => s.sessions)
+  const connections = useStore((s) => s.connections)
   const openEditor = useStore((s) => s.openEditor)
   const openHistory = useStore((s) => s.openHistory)
   const closeHistory = useStore((s) => s.closeHistory)
@@ -67,18 +70,48 @@ export function Sidebar({
   const byId = useMemo(() => new Map(sessions.map((s) => [s.id, s])), [sessions])
 
   const query = filter.trim().toLowerCase()
-  /* A project matched by name keeps all its processes; one matched only through
-   * a process narrows down to the processes that matched. */
-  const visible = useMemo(
-    () =>
-      projects.flatMap((project) => {
-        if (query === "" || project.name.toLowerCase().includes(query)) {
-          return [{ project, processes: project.processes }]
+  // One machine is the overwhelming case and must look exactly as it always has:
+  // headers only appear once a second machine is paired, and the same repo on
+  // two machines only merges into one entry there.
+  const machines = Object.values(connections)
+  const groups = useMemo(
+    () => buildSidebarModel(Object.keys(connections), projects, query),
+    [connections, projects, query],
+  )
+  const visible = useMemo(() => flatEntries(groups), [groups])
+
+  const renderProject = (entry: SidebarEntry) => (
+    <ProjectRow
+      key={entry.key}
+      entry={entry}
+      filtering={query !== ""}
+      byId={byId}
+      dragging={dragging === entry.key}
+      dropSide={dropTarget?.name === entry.key ? dropTarget.side : null}
+      onDragStart={() => {
+        setDragging(entry.key)
+        setDropTarget(null)
+      }}
+      onDragOver={(side) => {
+        if (dragging !== null && dragging !== entry.key) {
+          setDropTarget({ name: entry.key, side })
         }
-        const processes = project.processes.filter((p) => p.name.toLowerCase().includes(query))
-        return processes.length === 0 ? [] : [{ project, processes }]
-      }),
-    [projects, query],
+      }}
+      onDrop={(side) => {
+        if (dragging !== null && dragging !== entry.key) {
+          const names = projects.map((item) => item.name).filter((item) => item !== dragging)
+          const targetIndex = names.indexOf(entry.key)
+          names.splice(targetIndex + (side === "after" ? 1 : 0), 0, dragging)
+          actions.reorderProjects(names)
+        }
+        setDragging(null)
+        setDropTarget(null)
+      }}
+      onDragEnd={() => {
+        setDragging(null)
+        setDropTarget(null)
+      }}
+    />
   )
 
   return (
@@ -160,41 +193,25 @@ export function Sidebar({
           </p>
         ) : visible.length === 0 ? (
           <p className="mx-1.5 my-3 text-sm text-surface-9">No matches</p>
+        ) : machines.length > 1 ? (
+          groups.map((group) => {
+            const connection = connections[group.connId]
+            // A machine with nothing to show is still worth a header — unless a
+            // filter is running, where empty groups are just noise.
+            if (group.entries.length === 0 && query !== "") return null
+            return (
+              <section key={group.connId} className="mb-1">
+                {connection && <MachineHeader connection={connection} />}
+                {group.entries.length === 0 ? (
+                  <p className="mx-1.5 mt-0.5 mb-2 text-sm text-surface-9">No projects</p>
+                ) : (
+                  group.entries.map(renderProject)
+                )}
+              </section>
+            )
+          })
         ) : (
-          visible.map(({ project, processes }) => (
-            <ProjectRow
-              key={project.name}
-              project={project}
-              processes={processes}
-              filtering={query !== ""}
-              byId={byId}
-              dragging={dragging === project.name}
-              dropSide={dropTarget?.name === project.name ? dropTarget.side : null}
-              onDragStart={() => {
-                setDragging(project.name)
-                setDropTarget(null)
-              }}
-              onDragOver={(side) => {
-                if (dragging !== null && dragging !== project.name) {
-                  setDropTarget({ name: project.name, side })
-                }
-              }}
-              onDrop={(side) => {
-                if (dragging !== null && dragging !== project.name) {
-                  const names = projects.map((item) => item.name).filter((item) => item !== dragging)
-                  const targetIndex = names.indexOf(project.name)
-                  names.splice(targetIndex + (side === "after" ? 1 : 0), 0, dragging)
-                  actions.reorderProjects(names)
-                }
-                setDragging(null)
-                setDropTarget(null)
-              }}
-              onDragEnd={() => {
-                setDragging(null)
-                setDropTarget(null)
-              }}
-            />
-          ))
+          visible.map(renderProject)
         )}
 
         {projects.length === 0 && (
@@ -265,56 +282,47 @@ export function Sidebar({
   )
 }
 
-function ProjectRow({
-  project,
-  processes,
-  filtering,
-  byId,
-  dragging,
-  dropSide,
-  onDragStart,
-  onDragOver,
-  onDrop,
-  onDragEnd,
-}: {
-  project: Project
-  /** The processes to list — a subset of the project's while a filter is on. */
-  processes: ProjectProcess[]
-  filtering: boolean
-  byId: Map<string, SessionInfo>
-  dragging: boolean
-  dropSide: "before" | "after" | null
-  onDragStart: () => void
-  onDragOver: (side: "before" | "after") => void
-  onDrop: (side: "before" | "after") => void
-  onDragEnd: () => void
-}) {
-  const collapsed = useStore((s) => s.collapsed[project.name] ?? false)
-  const toggleCollapsed = useStore((s) => s.toggleCollapsed)
-  const openEditor = useStore((s) => s.openEditor)
-  const requestConfirm = useStore((s) => s.requestConfirm)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
-
-  // Counted over the whole project, not the filtered subset: the header's dot,
-  // counter and "all processes" actions all speak for the project as a whole.
-  const runningCount = project.processes.filter(
-    (p) => byId.get(sessionId(project.name, p.name))?.status === "running",
-  ).length
-  const running = runningCount > 0
-  const warningProcesses = project.processes.filter((process) =>
-    hasHighCpu(byId.get(sessionId(project.name, process.name))),
+/**
+ * Group header for one machine. It carries the only status the sidebar shows for
+ * a paired Mac, so a connection that stopped working is visible without opening
+ * Settings — and can be retried from here.
+ */
+function MachineHeader({ connection }: { connection: ConnectionState }) {
+  const { config, status } = connection
+  const label = machineLabel(connection)
+  const blocked = status === "blocked"
+  return (
+    <div className="flex min-h-[22px] items-center gap-[7px] px-1.5 pt-2 pb-1">
+      <Dot
+        tone={connectionTone(status)}
+        small
+        title={`${config.host}:${config.port} — ${connection.error ?? CONNECTION_LABEL[status]}`}
+      />
+      <span className="min-w-0 flex-1 overflow-hidden text-2xs font-semibold tracking-caps whitespace-nowrap text-surface-9 uppercase mask-r-from-[calc(100%-8px)]">
+        {label}
+      </span>
+      {blocked && (
+        <button
+          type="button"
+          className="rounded-md px-1.5! py-0.5! text-2xs! font-semibold! tracking-caps text-danger-11! uppercase hover:bg-surface-a3!"
+          title={connection.error ?? "This machine rejected the saved pairing"}
+          onClick={() => retryConnection(config.id)}
+        >
+          Retry
+        </button>
+      )}
+    </div>
   )
-  const expanded = !collapsed || filtering
+}
 
-  const dragOver = (event: DragEvent<HTMLElement>): void => {
-    event.preventDefault()
-    event.dataTransfer.dropEffect = "move"
-    const rect = event.currentTarget.getBoundingClientRect()
-    onDragOver(event.clientY < rect.top + rect.height / 2 ? "before" : "after")
-  }
-
-  const menuItems: MenuItem[] = [
+/** The project-level actions, shared by an entry's header and its machine sub-headers. */
+function projectMenuItems(
+  project: Project,
+  running: boolean,
+  openEditor: (project?: string) => void,
+  requestConfirm: (request: ConfirmRequest) => void,
+): MenuItem[] {
+  return [
     { label: "Start all", onSelect: () => actions.start(project.name) },
     { label: "Open empty terminal", onSelect: () => actions.openEmptyTerminal(project) },
     {
@@ -330,6 +338,65 @@ function ProjectRow({
     MENU_SEPARATOR,
     { label: "Edit project…", onSelect: () => openEditor(project.name) },
   ]
+}
+
+function ProjectRow({
+  entry,
+  filtering,
+  byId,
+  dragging,
+  dropSide,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+}: {
+  /** One project — or the same repo on several machines, merged into one entry. */
+  entry: SidebarEntry
+  filtering: boolean
+  byId: Map<string, SessionInfo>
+  dragging: boolean
+  dropSide: "before" | "after" | null
+  onDragStart: () => void
+  onDragOver: (side: "before" | "after") => void
+  onDrop: (side: "before" | "after") => void
+  onDragEnd: () => void
+}) {
+  // The anchor machine owns the header: its name, its path, its actions.
+  const anchor = entry.parts[0]
+  const project = anchor.project
+  const merged = entry.parts.length > 1
+  const collapsed = useStore((s) => s.collapsed[entry.key] ?? false)
+  const toggleCollapsed = useStore((s) => s.toggleCollapsed)
+  const openEditor = useStore((s) => s.openEditor)
+  const requestConfirm = useStore((s) => s.requestConfirm)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
+
+  // Counted over every machine's whole project, not the filtered subset: the
+  // header's dot, counter and "all processes" actions speak for the entry.
+  const all = entry.parts.flatMap((part) => part.project.processes.map((process) => ({ part, process })))
+  const runningCount = all.filter(
+    ({ part, process }) => byId.get(sessionId(part.project.name, process.name))?.status === "running",
+  ).length
+  const running = runningCount > 0
+  const warningProcesses = all.filter(({ part, process }) =>
+    hasHighCpu(byId.get(sessionId(part.project.name, process.name))),
+  )
+  // The header's menu acts on the anchor machine alone, so it follows that one.
+  const anchorRunning = project.processes.some(
+    (process) => byId.get(sessionId(project.name, process.name))?.status === "running",
+  )
+  const expanded = !collapsed || filtering
+
+  const dragOver = (event: DragEvent<HTMLElement>): void => {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = "move"
+    const rect = event.currentTarget.getBoundingClientRect()
+    onDragOver(event.clientY < rect.top + rect.height / 2 ? "before" : "after")
+  }
+
+  const menuItems = projectMenuItems(project, anchorRunning, openEditor, requestConfirm)
 
   return (
     <section
@@ -356,7 +423,7 @@ function ProjectRow({
         title={filtering ? undefined : "Drag to reorder project"}
         onDragStart={(event) => {
           event.dataTransfer.effectAllowed = "move"
-          event.dataTransfer.setData("text/plain", project.name)
+          event.dataTransfer.setData("text/plain", entry.key)
           onDragStart()
         }}
         onDragEnd={onDragEnd}
@@ -369,7 +436,7 @@ function ProjectRow({
           type="button"
           className={ROW_MAIN}
           title={project.path}
-          onClick={() => toggleCollapsed(project.name)}
+          onClick={() => toggleCollapsed(entry.key)}
           aria-expanded={expanded}
         >
           <ChevronRight
@@ -380,7 +447,10 @@ function ProjectRow({
             aria-hidden="true"
           />
           {warningProcesses.length > 0 && (
-            <Dot tone="warning" title={`High CPU: ${warningProcesses.map((process) => process.name).join(", ")}`} />
+            <Dot
+              tone="warning"
+              title={`High CPU: ${[...new Set(warningProcesses.map(({ process }) => process.name))].join(", ")}`}
+            />
           )}
           <span
             className={cx(
@@ -390,7 +460,7 @@ function ProjectRow({
               FADE_HOVER_ONE,
             )}
           >
-            {project.name}
+            {displayName(project.name)}
           </span>
           {running && (
             /* Sits where the overlaid menu button lands, so it yields whenever
@@ -401,14 +471,14 @@ function ProjectRow({
                 menuOpen && "opacity-0",
               )}
             >
-              {runningCount}/{project.processes.length}
+              {runningCount}/{all.length}
             </span>
           )}
         </button>
 
         <div className={cx(ROW_ACTIONS, menuOpen && "opacity-100")}>
           <Menu
-            title={`More actions for ${project.name}`}
+            title={`More actions for ${displayName(project.name)}`}
             contextPosition={contextMenuPosition}
             onOpenChange={(open) => {
               setMenuOpen(open)
@@ -419,20 +489,104 @@ function ProjectRow({
         </div>
       </div>
 
-      {expanded && (
-        <ul className="mt-[3px] mr-0 mb-0 ml-2.5 list-none border-l border-surface-5 py-0 pr-0 pl-2">
-          {processes.map((proc) => (
-            <ProcessRow
-              key={proc.name}
-              project={project.name}
-              name={proc.name}
-              cmd={proc.shell ? "Interactive shell" : proc.cmd}
-              description={proc.description}
-              session={byId.get(sessionId(project.name, proc.name))}
-            />
-          ))}
-        </ul>
-      )}
+      {expanded &&
+        (merged ? (
+          <div className="mt-[3px] mb-0 ml-2.5 border-l border-surface-5 pl-2">
+            {entry.parts.map((part) => (
+              <MachineSection key={part.connId} part={part} byId={byId} />
+            ))}
+          </div>
+        ) : (
+          <ul className="mt-[3px] mr-0 mb-0 ml-2.5 list-none border-l border-surface-5 py-0 pr-0 pl-2">
+            {anchor.processes.map((proc) => (
+              <ProcessRow
+                key={proc.name}
+                project={project.name}
+                name={proc.name}
+                cmd={proc.shell ? "Interactive shell" : proc.cmd}
+                description={proc.description}
+                session={byId.get(sessionId(project.name, proc.name))}
+              />
+            ))}
+          </ul>
+        ))}
+    </section>
+  )
+}
+
+/**
+ * One machine's half of a merged entry: which Mac these processes run on, and
+ * that Mac's own project actions. Every row underneath keeps its scoped ids, so
+ * starting, stopping and focusing all reach the machine the row belongs to.
+ */
+function MachineSection({ part, byId }: { part: SidebarPart; byId: Map<string, SessionInfo> }) {
+  const connection = useStore((s) => s.connections[part.connId])
+  const openEditor = useStore((s) => s.openEditor)
+  const requestConfirm = useStore((s) => s.requestConfirm)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
+  const project = part.project
+  const running = project.processes.some(
+    (process) => byId.get(sessionId(project.name, process.name))?.status === "running",
+  )
+  const label = connection ? machineLabel(connection) : part.connId
+
+  return (
+    <section className="mb-0.5">
+      <div
+        className={cx(ROW, "group")}
+        onContextMenu={(event) => {
+          event.preventDefault()
+          setContextMenuPosition({ x: event.clientX, y: event.clientY })
+        }}
+      >
+        <div className={cx(ROW_MAIN, "min-h-[22px]")} title={project.path}>
+          <Dot
+            tone={connection ? connectionTone(connection.status) : "idle"}
+            small
+            title={
+              connection
+                ? `${connection.config.host}:${connection.config.port} — ${connection.error ?? CONNECTION_LABEL[connection.status]}`
+                : label
+            }
+          />
+          <span
+            className={cx(
+              LABEL,
+              "text-2xs font-semibold tracking-caps text-surface-9 uppercase",
+              menuOpen ? FADE_CLEARS_ONE : FADE,
+              FADE_HOVER_ONE,
+            )}
+          >
+            {label}
+          </span>
+        </div>
+
+        <div className={cx(ROW_ACTIONS, menuOpen && "opacity-100")}>
+          <Menu
+            title={`More actions for ${displayName(project.name)} on ${label}`}
+            contextPosition={contextMenuPosition}
+            onOpenChange={(open) => {
+              setMenuOpen(open)
+              if (!open) setContextMenuPosition(null)
+            }}
+            items={projectMenuItems(project, running, openEditor, requestConfirm)}
+          />
+        </div>
+      </div>
+
+      <ul className="m-0 list-none p-0">
+        {part.processes.map((proc) => (
+          <ProcessRow
+            key={proc.name}
+            project={project.name}
+            name={proc.name}
+            cmd={proc.shell ? "Interactive shell" : proc.cmd}
+            description={proc.description}
+            session={byId.get(sessionId(project.name, proc.name))}
+          />
+        ))}
+      </ul>
     </section>
   )
 }

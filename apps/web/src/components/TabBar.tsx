@@ -1,3 +1,4 @@
+import { displayName } from "@hangar/client-core"
 import { PanelRight } from "lucide-react"
 import { type DragEvent, type ReactNode, useState } from "react"
 import * as actions from "../actions"
@@ -108,7 +109,7 @@ export function TabBar() {
                     onClick={() => setActive(session.id)}
                   >
                     <Dot tone={toneOf(session)} small title={describe(session)} />
-                    <span className="truncate text-base">{session.id}</span>
+                    <span className="truncate text-base">{displayName(session.id)}</span>
                     {session.status === "exited" && (
                       <span
                         className="flex-none rounded-sm bg-surface-a4 px-1 py-px text-2xs tabular-nums text-surface-9"
@@ -157,7 +158,7 @@ export function TabBar() {
                     onClick={() => setActive(waiting.id)}
                   >
                     <Dot tone="idle" small title="not started" />
-                    <span className="truncate text-base">{waiting.id}</span>
+                    <span className="truncate text-base">{displayName(waiting.id)}</span>
                   </button>
                   <button
                     type="button"
@@ -271,7 +272,7 @@ export function TabBar() {
                   type="button"
                   className="flex h-full min-w-0 items-center gap-[7px] text-inherit"
                   onClick={() => openHistoryRun(runId)}
-                  title={`${entry.id} · ${new Date(entry.startedAt).toLocaleString()}`}
+                  title={`${displayName(entry.id)} · ${new Date(entry.startedAt).toLocaleString()}`}
                 >
                   <span className="text-[11px] text-surface-8">◷</span>
                   <span className="truncate text-base">
