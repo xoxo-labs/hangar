@@ -1,8 +1,8 @@
-import { connIdOf, displayName } from "@hangar/client-core"
 import type { Project, ProjectProcess } from "@hangar/contracts"
+import { connIdOf, displayName } from "./scope.ts"
 
 /**
- * The sidebar's project list, machine by machine. When the same repo is
+ * The project list of a multi-machine client, machine by machine. When the same repo is
  * registered on more than one connected machine it collapses into ONE entry
  * listing every machine's processes under it. This is presentation only:
  * identity stays per-connection, every part keeps its own scoped project.

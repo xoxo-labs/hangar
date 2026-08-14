@@ -7,6 +7,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { AppState } from "react-native"
 import { createManager, type Manager } from "./manager"
+import { MODE_KEY, parseMode, type ViewMode } from "./mode"
 import { useStore } from "./store"
 
 let manager: Manager | null = null
@@ -28,8 +29,17 @@ export function startConnections(): void {
   if (started) return
   started = true
   const active = connections()
-  void active.start().then(() => useStore.getState().setReady())
+  void Promise.all([active.start(), readMode()]).then(([, mode]) => useStore.getState().setReady(mode))
   AppState.addEventListener("change", (state) => {
     if (state === "active") active.wake()
   })
+}
+
+/** A device with no preference stored yet, or an unreadable one, gets the default. */
+async function readMode(): Promise<ViewMode> {
+  try {
+    return parseMode(await AsyncStorage.getItem(MODE_KEY))
+  } catch {
+    return parseMode(null)
+  }
 }

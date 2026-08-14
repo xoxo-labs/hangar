@@ -21,10 +21,11 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: color.bg },
         }}
       >
-        <Stack.Screen name="index" options={{ title: "Machines" }} />
+        <Stack.Screen name="index" options={{ title: "Hangar" }} />
         <Stack.Screen name="pair" options={{ title: "Pair a machine", presentation: "modal" }} />
         <Stack.Screen name="machine/[id]" options={{ title: "Machine" }} />
         <Stack.Screen name="session/[id]" options={{ title: "Session" }} />
+        <Stack.Screen name="address/[id]" options={{ title: "Address" }} />
       </Stack>
     </>
   )

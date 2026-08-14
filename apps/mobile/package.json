@@ -17,6 +17,7 @@
     "@hangar/client-core": "workspace:*",
     "@hangar/contracts": "workspace:*",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "anser": "^1.4.10",
     "expo": "~57.0.12",
     "expo-camera": "~57.0.3",
     "expo-constants": "~57.0.10",

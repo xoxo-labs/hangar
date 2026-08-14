@@ -3,9 +3,11 @@
  * world below can hold N machines without their ids colliding.
  */
 
+import AsyncStorage from "@react-native-async-storage/async-storage"
 import type { ConnectionConfig, ConnectionStatus } from "@hangar/client-core"
 import type { ServerMsg } from "@hangar/contracts"
 import { create } from "zustand"
+import { DEFAULT_MODE, MODE_KEY, type ViewMode } from "./mode"
 import {
   applyExit,
   applyMetrics,
@@ -29,18 +31,28 @@ type Store = {
   world: World
   /** Paired machines, in the order they were added. */
   machines: Machine[]
-  /** The stored machine list has been read: an empty list now means "none". */
+  /** Stored state has been read: an empty machine list now means "none". */
   ready: boolean
+  /** How the home screen groups things — by machine or by project. */
+  mode: ViewMode
+  setMode: (mode: ViewMode) => void
   setConfigs: (configs: ConnectionConfig[]) => void
   setStatus: (connId: string, status: ConnectionStatus, error: string | null) => void
   ingest: (connId: string, msg: ServerMsg) => void
-  setReady: () => void
+  setReady: (mode: ViewMode) => void
 }
 
 export const useStore = create<Store>((set) => ({
   world: EMPTY_WORLD,
   machines: [],
   ready: false,
+  mode: DEFAULT_MODE,
+
+  setMode: (mode) => {
+    set({ mode })
+    // Fire and forget: a preference that fails to save is not worth an error.
+    void AsyncStorage.setItem(MODE_KEY, mode).catch(() => {})
+  },
 
   setConfigs: (configs) =>
     set((store) => {
@@ -66,7 +78,7 @@ export const useStore = create<Store>((set) => ({
       ),
     })),
 
-  setReady: () => set({ ready: true }),
+  setReady: (mode) => set({ ready: true, mode }),
 
   ingest: (connId, msg) =>
     set((store) => {

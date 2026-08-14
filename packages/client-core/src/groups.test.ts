@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import type { Project } from "@hangar/contracts"
-import { buildSidebarModel, flatEntries, type SidebarEntry, type SidebarGroup } from "./sidebarGroups.logic.ts"
+import { buildSidebarModel, flatEntries, type SidebarEntry, type SidebarGroup } from "./groups.ts"
 
 const project = (name: string, gitRemote?: string, processes: string[] = ["dev"]): Project => ({
   name,

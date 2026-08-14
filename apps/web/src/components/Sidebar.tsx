@@ -1,4 +1,4 @@
-import { displayName } from "@hangar/client-core"
+import { buildSidebarModel, displayName, flatEntries, type SidebarEntry, type SidebarPart } from "@hangar/client-core"
 import { type Project, type SessionInfo, sessionId } from "@hangar/contracts"
 import { ChevronRight, CircleArrowUp, CircleHelp, History, Play, RotateCw, Settings, Square } from "lucide-react"
 import { type DragEvent, type FormEvent, useMemo, useState } from "react"
@@ -14,7 +14,6 @@ import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/D
 import { IconButton } from "../ui/IconButton"
 import { MENU_SEPARATOR, Menu, type MenuItem } from "../ui/Menu"
 import { Dot } from "./Dot"
-import { buildSidebarModel, flatEntries, type SidebarEntry, type SidebarPart } from "./sidebarGroups.logic"
 
 /*
  * The `!` on padding/color/border/font utilities below dates from when the
