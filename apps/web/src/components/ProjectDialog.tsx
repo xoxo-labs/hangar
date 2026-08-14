@@ -11,6 +11,12 @@ import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/D
 import { Field, Select, TextInput } from "../ui/Field"
 import { IconButton } from "../ui/IconButton"
 import { BrowserSelect } from "./BrowserSelect"
+import {
+  filterPackageScripts,
+  groupPackageScripts,
+  type PackageScript,
+  SCRIPT_FILTER_THRESHOLD,
+} from "./packageScripts.logic"
 
 /* Ports of the retired `.field` / `.text-button` rules. The `Field` primitive
  * covers the plain label-wrapped case; these two fields need a `<div>` (a
@@ -39,7 +45,6 @@ type Row = {
   description?: string
   browser?: BrowserChoice
 }
-type PackageScript = { name: string; value: string; cmd: string; cwd?: string; workspace?: string }
 type ProjectInfo = {
   path: string
   exists: boolean
@@ -49,19 +54,6 @@ type ProjectInfo = {
     scripts: PackageScript[]
     workspaceScriptCount?: number
   }
-}
-
-type ScriptGroup = { label: string; scripts: PackageScript[] }
-
-function groupPackageScripts(scripts: PackageScript[]): ScriptGroup[] {
-  const groups = new Map<string, PackageScript[]>()
-  for (const script of scripts) {
-    const label = script.workspace ?? (script.cwd || "Root")
-    const group = groups.get(label)
-    if (group) group.push(script)
-    else groups.set(label, [script])
-  }
-  return Array.from(groups, ([label, entries]) => ({ label, scripts: entries }))
 }
 
 let nextRowId = 0
@@ -114,6 +106,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
   const [browser, setBrowser] = useState<BrowserChoice | "">(existing?.browser ?? "")
   const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null)
+  const [scriptQuery, setScriptQuery] = useState("")
   const [inspecting, setInspecting] = useState(false)
   const [browsing, setBrowsing] = useState(false)
   const [manual, setManual] = useState(editing === null && !window.hangarDesktop)
@@ -122,6 +115,8 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
 
   useEffect(() => {
     const candidate = path.trim()
+    // A new folder brings a new script list; a query typed against the old one is meaningless.
+    setScriptQuery("")
     if (candidate === "") {
       setProjectInfo(null)
       setInspecting(false)
@@ -292,6 +287,11 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
     })
   }
 
+  const detectedScripts = projectInfo?.package?.scripts ?? []
+  // A monorepo cumulates root plus every workspace's scripts, which is where a list stops being scannable.
+  const filterable = detectedScripts.length > SCRIPT_FILTER_THRESHOLD
+  const shownScripts = filterable ? filterPackageScripts(detectedScripts, scriptQuery) : detectedScripts
+
   return (
     // mousedown (not click) so a drag that ends on the backdrop keeps the dialog up.
     <Overlay onDismiss={closeEditor}>
@@ -389,8 +389,26 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
                   ? `Monorepo scripts · ${projectInfo.package.manager}`
                   : `package.json scripts · ${projectInfo.package.manager}`}
               </span>
+              {filterable && (
+                <TextInput
+                  // Deliberately not autofocused: the dialog's own focus flow starts at the path field.
+                  className="py-1 text-sm"
+                  value={scriptQuery}
+                  spellCheck={false}
+                  autoComplete="off"
+                  placeholder="Filter scripts…"
+                  onChange={(event) => setScriptQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    // Escape is swallowed only when it clears something; otherwise it still closes the dialog.
+                    if (event.key !== "Escape" || scriptQuery === "") return
+                    event.stopPropagation()
+                    setScriptQuery("")
+                  }}
+                />
+              )}
               <div className="max-h-[210px] w-full overflow-y-auto rounded-md border border-surface-5 bg-surface-1">
-                {groupPackageScripts(projectInfo.package.scripts).map((group) => (
+                {shownScripts.length === 0 && <p className="px-2 py-2.5 text-sm text-surface-9">No matching scripts</p>}
+                {groupPackageScripts(shownScripts).map((group) => (
                   <section key={group.label}>
                     <div className="sticky top-0 z-[1] flex items-center border-b border-surface-5 bg-surface-2 px-2 py-1 text-2xs font-semibold tracking-caps text-surface-9 uppercase">
                       <span className="truncate">{group.label}</span>
