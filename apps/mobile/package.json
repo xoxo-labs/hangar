@@ -6,6 +6,7 @@
   "scripts": {
     "start": "expo start",
     "ios": "expo start --ios",
+    "ipad": "xcrun simctl boot 'iPad Pro 13-inch (M5)' 2>/dev/null; open -a Simulator && expo start --ios",
     "android": "expo start --android",
     "export:ios": "expo export --platform ios",
     "typecheck": "tsc --noEmit",
