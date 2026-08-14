@@ -103,6 +103,28 @@ comment that Tailscale is the recommended transport, matching the desktop
 copy) and `NSLocalNetworkUsageDescription` + `NSBonjourServices` not needed
 (no mDNS). Camera: `NSCameraUsageDescription` via the expo-camera plugin.
 
+## iPad: adaptive split layout
+
+The phone keeps its navigation-stack experience; iPad-class widths get the
+desktop shape. One breakpoint, live-reactive (`useWindowDimensions`, Stage
+Manager and Split View resize on the fly):
+
+- **Compact** (< 700 pt wide): current behavior, route-based, unchanged.
+- **Regular** (≥ 700 pt): two panes. Left (~360 pt, hairline divider): the
+  existing navigation stack (home with the glass bar, machine detail,
+  address, pair) constrained to the pane. Right: the session surface.
+- Selection state: `selectedSessionId: string | null` (scoped id) in the
+  store. In regular width, View/row-tap set the selection instead of pushing
+  `/session/[id]`; the right pane renders the session view (header + actions
+  + log) or an empty placeholder. In compact, selection is ignored and the
+  route push stays.
+- Width transitions adopt state across models: entering regular while a
+  session route is up → dismiss it and adopt the id as the selection;
+  entering compact with a selection → land on the left stack as-is (no
+  forced push). Pure logic for the adoption/breakpoint decisions is tested.
+- `ios.supportsTablet` enabled. A tablet build also runs on Apple Silicon
+  Macs as "Designed for iPad".
+
 ## Verification
 
 - `pnpm -r typecheck` and `pnpm -r test` green across the repo (client-core

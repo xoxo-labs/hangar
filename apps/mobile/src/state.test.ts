@@ -11,9 +11,11 @@ import {
   dropScope,
   EMPTY_WORLD,
   METRIC_WINDOW_MS,
+  keepSelection,
   processCounts,
   projectsOf,
   sessionIdFor,
+  splitSessionId,
   type StateMessage,
 } from "./state.ts"
 
@@ -166,4 +168,32 @@ test("counts and project lists are per machine", () => {
     projectsOf(world, B).map((entry) => entry.name),
     ["cb::api"],
   )
+})
+
+test("a session id splits back into the project and process it addresses", () => {
+  assert.deepEqual(splitSessionId("ca::web/dev"), { project: "ca::web", process: "dev" })
+  assert.deepEqual(splitSessionId("local::web/dev"), { project: "local::web", process: "dev" })
+})
+
+test("a selection survives as long as its process is listed", () => {
+  let world = applyState(EMPTY_WORLD, A, state(A, [project(A, "web", ["dev", "test"])], [session(A, "web/dev")]))
+
+  assert.equal(keepSelection(world, "ca::web/dev"), "ca::web/dev")
+  // Never started, so it has no session — the project listing it is enough.
+  assert.equal(keepSelection(world, "ca::web/test"), "ca::web/test")
+  assert.equal(keepSelection(world, "ca::web/gone"), null)
+  assert.equal(keepSelection(world, null), null)
+
+  // A machine that drops the process takes the selection with it.
+  world = applyState(world, A, state(A, [project(A, "web", ["test"])], []))
+  assert.equal(keepSelection(world, "ca::web/dev"), null)
+})
+
+test("unpairing a machine clears a selection pointed at it", () => {
+  let world = applyState(EMPTY_WORLD, A, state(A, [project(A, "web", ["dev"])], [session(A, "web/dev")]))
+  world = applyState(world, B, state(B, [project(B, "api", ["serve"])], [session(B, "api/serve")]))
+  world = dropScope(world, A)
+
+  assert.equal(keepSelection(world, "ca::web/dev"), null)
+  assert.equal(keepSelection(world, "cb::api/serve"), "cb::api/serve")
 })

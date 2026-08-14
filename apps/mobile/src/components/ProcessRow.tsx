@@ -8,6 +8,10 @@
  * exist on purpose: the row-tap is what a thumb does, the button is what a
  * first-time eye finds — and it stays there for an exited process, where the
  * session view still holds the buffer it left behind.
+ *
+ * "Opens" means one of two things. On a phone it pushes the session screen; at
+ * iPad widths the log is already on screen beside the list, so both gestures
+ * point the right pane at this process instead of pushing a second copy of it.
  */
 
 import type { ProjectProcess } from "@hangar/contracts"
@@ -18,6 +22,7 @@ import { sessionIdFor, sessionOf } from "../state"
 import { describe, formatCpu, formatMemory, toneOf } from "../status"
 import { useStore } from "../store"
 import { color, mono, radius, space } from "../theme"
+import { useLayoutMode } from "../useLayoutMode"
 import { Button } from "./Button"
 import { Dot } from "./Dot"
 
@@ -37,12 +42,30 @@ export function ProcessRow({
 }) {
   const id = sessionIdFor(project, process.name)
   const session = useStore((store) => sessionOf(store.world, id))
+  const select = useStore((store) => store.select)
+  // A boolean, not the id: the row re-renders when its own selection flips,
+  // not every time some other row is picked.
+  const selected = useStore((store) => store.selectedSessionId === id)
   const router = useRouter()
+  const mode = useLayoutMode()
+  const showing = mode === "regular" && selected
   const running = session?.status === "running"
-  const open = (): void => router.push({ pathname: "/session/[id]", params: { id } })
+  const open = (): void => {
+    if (mode === "regular") select(id)
+    else router.push({ pathname: "/session/[id]", params: { id } })
+  }
 
   return (
-    <Pressable style={({ pressed }) => [styles.row, last && styles.lastRow, pressed && styles.pressed]} onPress={open}>
+    <Pressable
+      accessibilityState={{ selected: showing }}
+      style={({ pressed }) => [
+        styles.row,
+        last && styles.lastRow,
+        showing && styles.selected,
+        pressed && styles.pressed,
+      ]}
+      onPress={open}
+    >
       <View style={styles.line}>
         <Dot tone={toneOf(session)} size={7} />
         <Text style={styles.name} numberOfLines={1}>
@@ -95,6 +118,9 @@ const styles = StyleSheet.create({
     borderBottomColor: color.line,
   },
   lastRow: { borderBottomWidth: 0 },
+  // Which row the pane is showing. Only ever drawn at iPad widths: on a phone
+  // the session is a screen of its own and nothing is left behind to mark.
+  selected: { backgroundColor: color.accentDim },
   pressed: { backgroundColor: color.raised },
   line: { flexDirection: "row", alignItems: "center", gap: 8 },
   name: { flexShrink: 1, color: color.text, fontSize: 15, fontWeight: "600" },

@@ -120,6 +120,38 @@ export function sessionIdFor(scopedProject: string, process: string): SessionId 
   return scoped(connId, `${value}/${process}`)
 }
 
+/**
+ * The scoped project and the bare process name a session id is made of — what
+ * the actions need to address a process, and what the UI calls it.
+ */
+export function splitSessionId(id: SessionId): { project: string; process: string } {
+  const { connId, value } = parseScoped(id)
+  const slash = value.indexOf("/")
+  return {
+    project: scoped(connId, slash === -1 ? value : value.slice(0, slash)),
+    process: slash === -1 ? value : value.slice(slash + 1),
+  }
+}
+
+/**
+ * Whether an id still names something. A process that has never run has no
+ * session and is still perfectly selectable — its project listing it is enough.
+ */
+export function knownSession(world: World, id: SessionId): boolean {
+  if (world.sessions.some((session) => session.id === id)) return true
+  return world.projects.some((project) =>
+    project.processes.some((process) => sessionIdFor(project.name, process.name) === id),
+  )
+}
+
+/**
+ * A selection outlives disconnects and restarts — it only goes when its target
+ * does: a machine unpaired, or a process gone from the project it was listed in.
+ */
+export function keepSelection(world: World, selected: SessionId | null): SessionId | null {
+  return selected !== null && knownSession(world, selected) ? selected : null
+}
+
 export function projectsOf(world: World, connId: string): Project[] {
   return world.projects.filter((project) => connIdOf(project.name) === connId)
 }
