@@ -1,11 +1,13 @@
 import { buildSidebarModel, displayName, flatEntries, type SidebarEntry } from "@hangar/client-core"
 import { Stack, useRouter } from "expo-router"
+import { useState } from "react"
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { Button } from "../src/components/Button"
 import { Dot } from "../src/components/Dot"
+import { HOME_BAR_INSET, HomeBar } from "../src/components/HomeBar"
 import { ProcessRow } from "../src/components/ProcessRow"
 import { connections } from "../src/connections"
-import type { ViewMode } from "../src/mode"
+import { filterMachines, normalizeQuery } from "../src/filter"
 import { processCounts } from "../src/state"
 import { CONNECTION_LABEL, connectionTone } from "../src/status"
 import { type Machine, machineLabel, useStore } from "../src/store"
@@ -15,7 +17,11 @@ export default function HomeScreen() {
   const machines = useStore((store) => store.machines)
   const ready = useStore((store) => store.ready)
   const mode = useStore((store) => store.mode)
+  const setMode = useStore((store) => store.setMode)
   const router = useRouter()
+  // The search is a view of the list, not a setting: it starts empty every time
+  // the app does, and switching grouping keeps whatever you have typed.
+  const [query, setQuery] = useState("")
 
   return (
     <View style={styles.screen}>
@@ -36,47 +42,41 @@ export default function HomeScreen() {
         </View>
       ) : (
         <>
-          <ModeSwitch mode={mode} />
-          {mode === "machines" ? <MachineList machines={machines} /> : <ProjectList machines={machines} />}
+          {mode === "machines" ? (
+            <MachineList machines={machines} query={query} />
+          ) : (
+            <ProjectList machines={machines} query={query} />
+          )}
+          <HomeBar query={query} onQuery={setQuery} mode={mode} onMode={setMode} />
         </>
       )}
     </View>
   )
 }
 
-/**
- * The same machines, cut two ways. By machine is where you go to see one Mac's
- * state; by project is where you go when a repo lives on two of them and you
- * only care what is running, wherever it runs.
- */
-function ModeSwitch({ mode }: { mode: ViewMode }) {
-  const setMode = useStore((store) => store.setMode)
-  return (
-    <View style={styles.switch}>
-      {(["machines", "projects"] as const).map((option) => (
-        <Pressable
-          key={option}
-          accessibilityRole="tab"
-          accessibilityState={{ selected: mode === option }}
-          onPress={() => setMode(option)}
-          style={[styles.segment, mode === option && styles.segmentOn]}
-        >
-          <Text style={[styles.segmentLabel, mode === option && styles.segmentLabelOn]}>
-            {option === "machines" ? "Machines" : "Projects"}
-          </Text>
-        </Pressable>
-      ))}
-    </View>
-  )
-}
+function MachineList({ machines, query }: { machines: Machine[]; query: string }) {
+  const shown = filterMachines(machines, query, (machine) => ({
+    name: machineLabel(machine),
+    host: machine.config.host,
+    port: machine.config.port,
+  }))
 
-function MachineList({ machines }: { machines: Machine[] }) {
+  if (shown.length === 0) {
+    return (
+      <View style={styles.empty}>
+        <Text style={styles.emptyBody}>No machine matches “{query.trim()}”.</Text>
+      </View>
+    )
+  }
+
   return (
-    <ScrollView contentContainerStyle={styles.list}>
-      {machines.map((machine) => (
+    <ScrollView contentContainerStyle={styles.list} keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled">
+      {shown.map((machine) => (
         <MachineCard key={machine.config.id} machine={machine} />
       ))}
-      <Text style={styles.footnote}>Long-press a machine to rename it, change its address, retry or remove it.</Text>
+      {query === "" && (
+        <Text style={styles.footnote}>Long-press a machine to rename it, change its address, retry or remove it.</Text>
+      )}
     </ScrollView>
   )
 }
@@ -84,9 +84,11 @@ function MachineList({ machines }: { machines: Machine[] }) {
 /**
  * Every project on every machine, one entry per repo: a project registered on
  * two machines collapses into a single block listing both machines' processes,
- * exactly as the desktop sidebar groups them (`buildSidebarModel`).
+ * exactly as the desktop sidebar groups them (`buildSidebarModel`) — search
+ * included, so a name match keeps a merged repo whole and a process-only match
+ * narrows it to the machines that have that process.
  */
-function ProjectList({ machines }: { machines: Machine[] }) {
+function ProjectList({ machines, query }: { machines: Machine[]; query: string }) {
   // Select the world itself, never a derived object: zustand compares with
   // Object.is, so a selector that builds a fresh value re-renders forever.
   const world = useStore((store) => store.world)
@@ -94,22 +96,25 @@ function ProjectList({ machines }: { machines: Machine[] }) {
   // memoising it would only add a dependency array to keep honest.
   const labels = new Map(machines.map((machine) => [machine.config.id, machineLabel(machine)]))
   const connIds = machines.map((machine) => machine.config.id)
-  const entries = flatEntries(buildSidebarModel(connIds, world.projects, ""))
+  const search = normalizeQuery(query)
+  const entries = flatEntries(buildSidebarModel(connIds, world.projects, search))
 
   if (entries.length === 0) {
     return (
       <View style={styles.empty}>
         <Text style={styles.emptyBody}>
-          {machines.some((machine) => machine.status === "connected")
-            ? "No projects on your machines yet."
-            : "Waiting for your machines to answer…"}
+          {search !== ""
+            ? `No project or process matches “${query.trim()}”.`
+            : machines.some((machine) => machine.status === "connected")
+              ? "No projects on your machines yet."
+              : "Waiting for your machines to answer…"}
         </Text>
       </View>
     )
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.list}>
+    <ScrollView contentContainerStyle={styles.list} keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled">
       {entries.map((entry) => (
         <ProjectBlock key={entry.key} entry={entry} labels={labels} />
       ))}
@@ -201,21 +206,9 @@ function MachineCard({ machine }: { machine: Machine }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: color.bg },
-  list: { padding: space.gutter, gap: space.gap },
+  // The floating bar overlays the list, so the last row has to clear it.
+  list: { padding: space.gutter, paddingBottom: HOME_BAR_INSET, gap: space.gap },
   add: { color: color.accent, fontSize: 26, lineHeight: 30, fontWeight: "300" },
-  switch: {
-    flexDirection: "row",
-    gap: 4,
-    margin: space.gutter,
-    marginBottom: 0,
-    padding: 3,
-    borderRadius: radius.card,
-    backgroundColor: color.panel,
-  },
-  segment: { flex: 1, alignItems: "center", paddingVertical: 6, borderRadius: radius.chip },
-  segmentOn: { backgroundColor: color.raised },
-  segmentLabel: { color: color.muted, fontSize: 13, fontWeight: "600" },
-  segmentLabelOn: { color: color.text },
   card: {
     backgroundColor: color.panel,
     borderRadius: radius.card,
