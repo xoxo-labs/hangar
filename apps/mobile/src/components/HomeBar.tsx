@@ -17,6 +17,7 @@
 
 import { BlurView } from "expo-blur"
 import { GlassContainer, GlassView, isLiquidGlassAvailable } from "expo-glass-effect"
+import { SymbolView } from "expo-symbols"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import {
   Keyboard,
@@ -115,13 +116,13 @@ export function HomeBar({
               }}
               style={({ pressed }) => [styles.grouping, (pressed || menuOpen) && styles.groupingOn]}
             >
-              <Text style={[styles.glyph, menuOpen && styles.glyphOn]}>☰</Text>
+              <Icon name="line.3.horizontal.decrease" glyph="☰" size={19} tint={menuOpen ? color.accent : color.soft} />
             </Pressable>
           </Surface>
 
           <Surface style={styles.searchGlass} radius={BAR_HEIGHT / 2}>
             <Pressable style={styles.search} onPress={() => input.current?.focus()}>
-              <Text style={styles.glyph}>⌕</Text>
+              <Icon name="magnifyingglass" glyph="⌕" size={16} tint={color.muted} />
               <TextInput
                 ref={input}
                 style={styles.input}
@@ -143,7 +144,7 @@ export function HomeBar({
                     Keyboard.dismiss()
                   }}
                 >
-                  <Text style={styles.clear}>✕</Text>
+                  <Icon name="xmark.circle.fill" glyph="✕" size={16} tint={color.faint} />
                 </Pressable>
               )}
             </Pressable>
@@ -155,16 +156,32 @@ export function HomeBar({
 }
 
 /**
- * Holds the two shapes. A `GlassContainer` is what lets neighbouring glass
- * elements bleed into each other as they near; without Liquid Glass there is
- * nothing to merge, so a plain row will do.
+ * Holds the two shapes. They are deliberately given no merge distance: a
+ * `GlassContainer` with `spacing` lets neighbouring glass bleed together, which
+ * reads as one smeared control rather than two buttons — the grouping button
+ * and the field do different things and stay visibly apart. The container is
+ * still what groups them as one glass layer.
  */
 function Row({ children }: { children: ReactNode }) {
   if (!LIQUID_GLASS) return <View style={styles.row}>{children}</View>
+  return <GlassContainer style={styles.row}>{children}</GlassContainer>
+}
+
+/**
+ * An SF Symbol, with the text glyph it replaces as the fallback for anywhere
+ * the symbol set is unavailable. Sizes follow iOS: the field's magnifier sits a
+ * little smaller than the control icon beside it.
+ */
+function Icon({ name, glyph, size, tint }: { name: string; glyph: string; size: number; tint: string }) {
   return (
-    <GlassContainer spacing={18} style={styles.row}>
-      {children}
-    </GlassContainer>
+    <SymbolView
+      name={name as never}
+      size={size}
+      tintColor={tint}
+      weight="medium"
+      resizeMode="scaleAspectFit"
+      fallback={<Text style={{ color: tint, fontSize: size + 1 }}>{glyph}</Text>}
+    />
   )
 }
 
@@ -217,7 +234,7 @@ function useKeyboardLift(): number {
 
 const styles = StyleSheet.create({
   dock: { position: "absolute", left: space.gutter, right: space.gutter, gap: 10 },
-  row: { flexDirection: "row", alignItems: "center", gap: 8 },
+  row: { flexDirection: "row", alignItems: "center", gap: 12 },
   // Shadow is what makes a floating shape read as floating; glass has no fill
   // of its own, so the list has to show through it.
   groupingGlass: { width: BAR_HEIGHT, height: BAR_HEIGHT, ...shadow() },
@@ -232,11 +249,8 @@ const styles = StyleSheet.create({
   sheen: { position: "absolute", top: 0, left: 0, right: 0, height: 1, backgroundColor: "#ffffff33" },
   grouping: { flex: 1, alignItems: "center", justifyContent: "center", borderRadius: BAR_HEIGHT / 2 },
   groupingOn: { backgroundColor: "#ffffff1f" },
-  search: { flex: 1, flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: 14 },
+  search: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 15 },
   input: { flex: 1, color: color.text, fontSize: 15, paddingVertical: 8 },
-  glyph: { color: color.muted, fontSize: 17 },
-  glyphOn: { color: color.accent },
-  clear: { color: color.faint, fontSize: 13 },
   menu: { alignSelf: "flex-start", minWidth: 200, paddingVertical: 4, ...shadow() },
   menuRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 11 },
   pressed: { backgroundColor: "#ffffff14" },
