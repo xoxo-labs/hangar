@@ -8,7 +8,16 @@
 // uses the bundled server and static renderer shipped inside the application.
 
 import { spawn } from "node:child_process"
-import { existsSync, readFileSync } from "node:fs"
+import {
+  accessSync,
+  chmodSync,
+  constants,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -152,6 +161,73 @@ async function ensureServer() {
   }
 }
 
+function shellQuote(value) {
+  return `'${value.replaceAll("'", `'\\''`)}'`
+}
+
+function writableCliDirectory() {
+  for (const directory of ["/opt/homebrew/bin", "/usr/local/bin"]) {
+    try {
+      accessSync(directory, constants.W_OK)
+      return directory
+    } catch {
+      // Fall back to a user-owned directory below.
+    }
+  }
+  const directory = join(homedir(), ".local", "bin")
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  return directory
+}
+
+async function installCommandLineTool(window) {
+  if (!app.isPackaged) {
+    await dialog.showMessageBox(window, {
+      type: "info",
+      message: "The packaged app installs the command-line tool",
+      detail: "For this source checkout, run: cd apps/server && pnpm link --global",
+    })
+    return
+  }
+
+  const directory = writableCliDirectory()
+  const destination = join(directory, "hangar")
+  if (existsSync(destination)) {
+    const answer = await dialog.showMessageBox(window, {
+      type: "warning",
+      message: `Replace the existing ${destination}?`,
+      detail: "Hangar will replace it with a launcher for this installed application.",
+      buttons: ["Cancel", "Replace"],
+      defaultId: 1,
+      cancelId: 0,
+    })
+    if (answer.response !== 1) return
+  }
+
+  const launcher = `#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec ${shellQuote(process.execPath)} ${shellQuote(SERVER_ENTRY)} "$@"\n`
+  const temporary = `${destination}.${process.pid}.tmp`
+  try {
+    writeFileSync(temporary, launcher, { mode: 0o755 })
+    chmodSync(temporary, 0o755)
+    renameSync(temporary, destination)
+  } catch (error) {
+    await dialog.showMessageBox(window, {
+      type: "error",
+      message: "Could not install the command-line tool",
+      detail: error instanceof Error ? error.message : String(error),
+    })
+    return
+  }
+
+  const onPath = (process.env.PATH ?? "").split(":").includes(directory)
+  await dialog.showMessageBox(window, {
+    type: "info",
+    message: `Installed ${destination}`,
+    detail: onPath
+      ? "Open a new terminal and run: hangar help"
+      : `Add this directory to PATH, then open a new terminal:\n\nexport PATH=${shellQuote(directory)}:$PATH`,
+  })
+}
+
 function installApplicationMenu(window) {
   if (process.platform !== "darwin") return
   Menu.setApplicationMenu(
@@ -165,6 +241,10 @@ function installApplicationMenu(window) {
             label: "Settings…",
             accelerator: "CommandOrControl+,",
             click: () => window.webContents.send("hangar:open-settings"),
+          },
+          {
+            label: "Install Command Line Tool…",
+            click: () => void installCommandLineTool(window),
           },
           { type: "separator" },
           { role: "services" },

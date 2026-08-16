@@ -103,8 +103,9 @@ Paired tokens live in `~/.hangar/targets.json` with mode `0600` and grant contro
 of development commands on that Mac, much like an SSH credential. Tailscale is
 the recommended transport.
 
-No build step: Node ≥ 24 runs the TypeScript sources directly. Installing the
-DMG does not currently add `hangar` to your PATH. For a source checkout:
+No build step: Node ≥ 24 runs the TypeScript sources directly. The DMG does not
+modify PATH automatically; in the installed app choose **Hangar → Install
+Command Line Tool…**. For a source checkout:
 
 ```sh
 cd apps/server && pnpm link --global
