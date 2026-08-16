@@ -33,7 +33,7 @@ const LOOPBACK_ADDRESSES = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"])
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "authorization, content-type",
-  "access-control-allow-methods": "GET, POST",
+  "access-control-allow-methods": "GET, POST, DELETE",
 }
 const MAX_BODY_BYTES = 64 * 1024
 
@@ -339,6 +339,28 @@ export function serve(port: number): void {
       sendJson(res, 200, issueTicket(sessionId) satisfies WsTicketResponse)
       return
     }
+    if (req.method === "POST" && url.pathname === "/api/auth/pairing-code") {
+      if (!authorize(req)) {
+        sendJson(res, 401, { error: "unauthorized" })
+        return
+      }
+      const pairing: PairingInfo = { ...createPairingToken(), port, hosts: networkInfo() }
+      sendJson(res, 200, pairing)
+      return
+    }
+    if (req.method === "POST" && url.pathname === "/api/auth/revoke-self") {
+      // Prefer the bearer even on loopback: a paired CLI may be removing a
+      // target that happens to point back at this Mac.
+      const sessionId = verifyBearer(req.headers.authorization)
+      if (!sessionId) {
+        sendJson(res, 401, { error: "a paired session token is required" })
+        return
+      }
+      revokeSession(sessionId)
+      sendJson(res, 200, { revoked: true })
+      broadcastState()
+      return
+    }
     if (req.method === "GET" && url.pathname === "/network-info") {
       if (!authorize(req)) {
         sendJson(res, 401, { error: "unauthorized" })
@@ -359,6 +381,115 @@ export function serve(port: number): void {
       } catch (error) {
         sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) })
       }
+      return
+    }
+
+    // The CLI uses HTTP for correlated request/reply control. WebSocket remains
+    // the event and terminal-stream transport used by interactive clients.
+    if (url.pathname.startsWith("/api/") && !authorize(req)) {
+      sendJson(res, 401, { error: "unauthorized", code: "unauthorized" })
+      return
+    }
+    try {
+      if (req.method === "GET" && url.pathname === "/api/state") {
+        sendJson(res, 200, stateMsg())
+        return
+      }
+      if (req.method === "GET" && url.pathname === "/api/sessions") {
+        sendJson(res, 200, { sessions: manager.list() })
+        return
+      }
+      if (req.method === "GET" && url.pathname === "/api/logs") {
+        const id = url.searchParams.get("id") ?? ""
+        const data = manager.snapshot(id)
+        if (data === undefined) {
+          sendJson(res, 404, { error: `no session named ${JSON.stringify(id)}`, code: "session_not_found" })
+          return
+        }
+        sendJson(res, 200, { id, data })
+        return
+      }
+      if (req.method === "POST" && url.pathname === "/api/sessions/probe") {
+        await manager.sampleMetrics(true)
+        sendJson(res, 200, { sessions: manager.list() })
+        return
+      }
+      if (req.method === "POST" && url.pathname.startsWith("/api/sessions/")) {
+        const action = url.pathname.slice("/api/sessions/".length)
+        const body = (await readJsonBody(req)) as { project?: unknown; process?: unknown }
+        if (typeof body.project !== "string" || body.project === "") throw new Error("project is required")
+        const processName = typeof body.process === "string" && body.process !== "" ? body.process : undefined
+        if (action !== "start" && action !== "stop" && action !== "restart") {
+          sendJson(res, 404, { error: "unknown session action", code: "not_found" })
+          return
+        }
+        const project = findProject(loadRegistry(), body.project)
+        if (!project) {
+          sendJson(res, 404, { error: `no project named ${JSON.stringify(body.project)}`, code: "project_not_found" })
+          return
+        }
+        const processNames = processName
+          ? project.processes.filter((proc) => proc.name === processName).map((proc) => proc.name)
+          : project.processes.map((proc) => proc.name)
+        if (processNames.length === 0) {
+          sendJson(res, 404, { error: `no process named ${JSON.stringify(processName)}`, code: "process_not_found" })
+          return
+        }
+        const runningBefore = new Set(
+          manager
+            .list()
+            .filter((session) => session.project === project.name && session.status === "running")
+            .map((session) => session.process),
+        )
+        const changed =
+          action === "start"
+            ? processNames.some((name) => !runningBefore.has(name))
+            : action === "stop"
+              ? processNames.some((name) => runningBefore.has(name))
+              : true
+        if (action === "start") manager.start(project, processName)
+        else if (action === "stop") manager.stop(project.name, processName)
+        else manager.restart(project, processName)
+        const sessions = manager
+          .list()
+          .filter((session) => session.project === body.project && (!processName || session.process === processName))
+        sendJson(res, 200, { changed, sessions })
+        return
+      }
+      if (req.method === "POST" && url.pathname === "/api/projects") {
+        const body = (await readJsonBody(req)) as { project?: Project }
+        if (!body.project) throw new Error("project is required")
+        const { gitRemote: _computed, ...project } = body.project
+        const errors = validateProject(project)
+        if (errors.length > 0) throw new Error(errors.join("; "))
+        const registry = loadRegistry()
+        const existingIndex = registry.projects.findIndex((item) => item.name === project.name)
+        if (existingIndex === -1) registry.projects.push(project)
+        else registry.projects[existingIndex] = project
+        saveRegistry(registry)
+        broadcastState()
+        sendJson(res, 200, { changed: true, project })
+        return
+      }
+      if (req.method === "DELETE" && url.pathname.startsWith("/api/projects/")) {
+        const name = decodeURIComponent(url.pathname.slice("/api/projects/".length))
+        const registry = loadRegistry()
+        if (!findProject(registry, name)) {
+          sendJson(res, 404, { error: `no project named ${JSON.stringify(name)}`, code: "project_not_found" })
+          return
+        }
+        if (manager.list().some((session) => session.project === name && session.status === "running")) {
+          sendJson(res, 409, { error: `stop ${name}'s processes before removing it`, code: "project_running" })
+          return
+        }
+        registry.projects = registry.projects.filter((project) => project.name !== name)
+        saveRegistry(registry)
+        for (const session of manager.list().filter((session) => session.project === name)) manager.dismiss(session.id)
+        sendJson(res, 200, { changed: true, project: name })
+        return
+      }
+    } catch (error) {
+      sendJson(res, 400, { error: error instanceof Error ? error.message : String(error), code: "invalid_request" })
       return
     }
     res.writeHead(404)

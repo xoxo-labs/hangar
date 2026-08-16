@@ -62,18 +62,49 @@ One entry per project:
 
 ## CLI
 
+The CLI controls the same persistent sessions as the desktop and web clients.
+Use `project/process` to select one process, or a bare project name for all of
+its processes.
+
 ```sh
-hangar ls [--json]                # list projects (--json for agents)
-hangar add <name> <path> \
-  --cmd "web=pnpm dev@apps/web"   # register; --cmd is repeatable, cwd after @
-hangar add --json '{...}'         # register from a JSON blob (agent-friendly)
-hangar start <name> [process]     # run all (or one) processes, prefixed output
-hangar path <name>                # print the project's path
-hangar rm <name>                  # unregister
+hangar ls --json
+hangar add <name> <path> --cmd "web=pnpm dev@apps/web"
+hangar --json status [project/process]
+hangar --json start project/process [--wait-port[=3000]]
+hangar stop project/process
+hangar restart project
+hangar logs project/process --tail 100
+hangar ports project --json
 ```
 
-No build step: Node ≥ 24 runs the TypeScript sources directly. To get the
-`hangar` command on your PATH:
+A missing local server is started automatically. `hangar run project/process`
+keeps the old, unsupervised foreground behavior for scripts that explicitly
+need it.
+
+### Remote targets
+
+On the Mac that will run the processes, mint a single-use five-minute code:
+
+```sh
+hangar target pair-code
+```
+
+On the client, pass the code over stdin so it does not enter shell history:
+
+```sh
+printf '%s' "$PAIRING_CODE" | hangar target add studio 100.90.1.5:4780 --code -
+hangar -t studio status --json
+hangar -t studio start project/process --wait-port
+```
+
+`HANGAR_TARGET=studio` can select a target for a whole shell. The implicit
+target is always `local`; there is deliberately no persistent remote default.
+Paired tokens live in `~/.hangar/targets.json` with mode `0600` and grant control
+of development commands on that Mac, much like an SSH credential. Tailscale is
+the recommended transport.
+
+No build step: Node ≥ 24 runs the TypeScript sources directly. Installing the
+DMG does not currently add `hangar` to your PATH. For a source checkout:
 
 ```sh
 cd apps/server && pnpm link --global

@@ -243,6 +243,11 @@ export class SessionManager {
     return [...this.sessions.values()].filter((s) => s.buffer.length > 0).map((s) => ({ id: s.id, data: s.buffer }))
   }
 
+  /** Current in-memory scrollback for one session. Used by bounded CLI log reads. */
+  snapshot(id: SessionId): string | undefined {
+    return this.sessions.get(id)?.buffer
+  }
+
   /** Start all (or one) of a project's processes. Running sessions are left alone. */
   start(project: Project, only?: string): void {
     ensureSpawnHelperExecutable()
@@ -457,7 +462,8 @@ export class SessionManager {
     await Promise.race([done, new Promise((r) => setTimeout(r, timeoutMs))])
   }
 
-  private async sampleMetrics(): Promise<void> {
+  /** Refresh resource data immediately; CLI readiness waits can force a port probe. */
+  async sampleMetrics(forcePorts = false): Promise<void> {
     if (this.sampling) return
     const running = [...this.sessions.values()].filter(
       (session): session is Session & { pid: number } => session.status === "running" && session.pid !== undefined,
@@ -484,7 +490,7 @@ export class SessionManager {
         )
         session.outputBytesAtLastSample = session.metrics.outputBytes
         const listening =
-          this.sampleNumber % 3 === 1
+          forcePorts || this.sampleNumber % 3 === 1
             ? await listeningPorts(tree.map((item) => item.pid))
             : { ports: session.metrics.ports, bindings: session.metrics.portBindings ?? {} }
         session.metrics = {

@@ -120,6 +120,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
 /** The hangar server listens on this port unless HANGAR_PORT overrides it. */
 export const DEFAULT_PORT = 4780
 
+/** Stable one-shot CLI result. Streaming commands use JSONL events instead. */
+export type CliResult<T = unknown> =
+  | { ok: true; target: string; changed?: boolean; data: T }
+  | {
+      ok: false
+      target: string
+      error: { code: string; message: string; hint?: string }
+      data?: unknown
+    }
+
 /** Session id is `${projectName}/${processName}`. */
 export type SessionId = string
 
