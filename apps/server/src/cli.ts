@@ -353,18 +353,20 @@ async function waitForPort(
   client: HangarApi,
   selected: { project: string; process?: string },
   wanted: number | null,
+  previousRunIds = new Set<string>(),
 ): Promise<SessionInfo[]> {
   const deadline = Date.now() + globalOptions.timeoutMs
   while (Date.now() < deadline) {
     const sessions = (await client.probe()).sessions.filter(
       (session) => session.project === selected.project && (!selected.process || session.process === selected.process),
     )
-    const opened = sessions.filter((session) =>
+    const currentRuns = sessions.filter((session) => !previousRunIds.has(session.runId))
+    const opened = currentRuns.filter((session) =>
       wanted === null ? (session.metrics?.ports.length ?? 0) > 0 : session.metrics?.ports.includes(wanted),
     )
     if (opened.length > 0) return opened
-    const exited = sessions.find((session) => session.status === "exited")
-    if (exited && !sessions.some((session) => session.status === "running")) {
+    const exited = currentRuns.find((session) => session.status === "exited")
+    if (exited && currentRuns.length > 0 && !currentRuns.some((session) => session.status === "running")) {
       const log = await client.logs(exited.id).catch(() => ({ data: "" }))
       throw new CliFailure(
         `${exited.id} exited before opening ${wanted === null ? "a port" : `port ${wanted}`}`,
@@ -387,8 +389,17 @@ async function cmdLifecycle(action: "start" | "stop" | "restart", argv: string[]
     throw new CliFailure("--wait-port is only valid with start or restart", "invalid_usage", 2)
   const selected = selector(argv[0])
   const client = await api()
+  const previousRunIds =
+    action === "restart" && waitPort !== undefined
+      ? new Set(
+          matchingSessions((await client.sessions()).sessions, argv[0])
+            .filter((session) => session.status === "running")
+            .map((session) => session.runId),
+        )
+      : new Set<string>()
   const result = await client.session(action, selected.project, selected.process)
-  const sessions = waitPort === undefined ? result.sessions : await waitForPort(client, selected, waitPort)
+  const sessions =
+    waitPort === undefined ? result.sessions : await waitForPort(client, selected, waitPort, previousRunIds)
   success({ sessions }, result.changed)
   const pastTense = action === "start" ? "started" : action === "stop" ? "stopped" : "restarted"
   human(`${pastTense} ${argv[0]}${globalOptions.targetId === "local" ? "" : ` on ${globalOptions.targetId}`}`)
