@@ -25,8 +25,10 @@ import { expandHome, findProject, hangarHome, loadRegistry, saveRegistry, valida
 import { exportAppIntentsState, watchAppIntentsCommands } from "./appintents.ts"
 import { gitRemoteFor } from "./git.ts"
 import { loadHistory, loadHistoryReplay } from "./history.ts"
+import { clearRuntimeState, writeRuntimeState } from "./runtime-state.ts"
 import { SessionManager } from "./sessions.ts"
 import { loadSettings, saveSettings } from "./settings.ts"
+import { resolveWebRoot, serveWebUi } from "./webui.ts"
 
 const LOOPBACK_ADDRESSES = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"])
 /** Auth (bearer or loopback) is the security boundary here, not the origin check. */
@@ -47,8 +49,9 @@ function authorize(req: IncomingMessage): string | null {
   return verifyBearer(req.headers.authorization)
 }
 
-function bindHost(settings: AppSettings): string {
-  return process.env.HANGAR_HOST ?? (settings.connections?.acceptRemote ? "0.0.0.0" : "127.0.0.1")
+/** An explicit --host pins the bind; otherwise env, then the acceptRemote setting. */
+function bindHost(settings: AppSettings, hostOverride?: string): string {
+  return hostOverride ?? process.env.HANGAR_HOST ?? (settings.connections?.acceptRemote ? "0.0.0.0" : "127.0.0.1")
 }
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
@@ -210,26 +213,83 @@ function inspectProject(inputPath: string): object {
   }
 }
 
-export function serve(port: number): void {
+export function serve(port: number, hostOverride?: string): void {
   const clients = new Set<WebSocket>()
-  let host = bindHost(loadSettings())
+  let host = bindHost(loadSettings(), hostOverride)
+  const webRoot = resolveWebRoot()
+  // Behind NAT or Docker port publishing, the reachable address is one the
+  // server cannot discover from its own interfaces; the operator supplies it.
+  const advertiseHost = process.env.HANGAR_ADVERTISE_HOST
+  const advertisePort = Number(process.env.HANGAR_ADVERTISE_PORT ?? "") || port
+
+  /** The bind address is what we listen on; the banner needs one a phone can reach. */
+  const displayHost = (): string => {
+    const preferred = advertiseHost ?? (host !== "0.0.0.0" && host !== "::" ? host : undefined)
+    if (preferred) return preferred.includes(":") ? `[${preferred}]` : preferred
+    const hosts = networkInfo()
+    return hosts.tailscale[0] ?? hosts.lan[0] ?? "127.0.0.1"
+  }
+
+  /**
+   * The addresses this machine hands out. An operator who set an advertise host
+   * has said which one actually answers, and that has to hold everywhere a
+   * client dials us — a client opens a detected port at one of these, so
+   * reporting an interface address it cannot route (a container's docker bridge,
+   * say) produces a dead link just as surely as a wrong pairing string would.
+   */
+  const advertisedHosts = (): { lan: string[]; tailscale: string[] } =>
+    advertiseHost ? { lan: [advertiseHost], tailscale: [] } : networkInfo()
+
+  const pairingInfo = (): PairingInfo => ({
+    ...createPairingToken(),
+    port: advertisePort,
+    hosts: advertisedHosts(),
+    bindHost: host,
+    ...(advertiseHost === undefined ? {} : { advertiseHost }),
+  })
+
+  /** A wildcard bind already answers loopback; a pinned remote address does not. */
+  const pinnedRemoteBind = (): boolean =>
+    !LOOPBACK_ADDRESSES.has(host) && host !== "localhost" && host !== "0.0.0.0" && host !== "::"
 
   const listen = (): void => {
     // Two quick acceptRemote flips queue two close callbacks; only the first listen may run.
     if (httpServer.listening) return
     httpServer.listen(port, host, () => {
+      writeRuntimeState(host, port)
+      const shown = displayHost()
       process.stdout.write(`hangar server listening on http://${host}:${port} (ws: /ws)\n`)
+      // Loopback trust is the local auth model: the CLI, desktop probe, and
+      // pair-code minting all assume 127.0.0.1 answers, whatever the bind.
+      if (pinnedRemoteBind()) {
+        loopbackServer.listen(port, "127.0.0.1", () => {
+          process.stdout.write(`also listening on http://127.0.0.1:${port} for local tools\n`)
+        })
+      }
+      process.stdout.write(`web ui: http://${shown}:${advertisePort}${webRoot === null ? " (not built)" : ""}\n`)
+      if (!LOOPBACK_ADDRESSES.has(host) && host !== "localhost") {
+        process.stdout.write(`pair a device: hangar target pair-code\n`)
+      }
     })
   }
 
   /** Re-binds after the acceptRemote toggle. PTY sessions survive; UIs reconnect on their own. */
   const applyBindHost = (): void => {
-    const next = bindHost(loadSettings())
+    const next = bindHost(loadSettings(), hostOverride)
     if (next === host) return
     host = next
     for (const client of clients) client.close(1012, "rebinding")
     clients.clear()
-    httpServer.close(listen)
+    // Both listeners must be down before listen() may run again.
+    let pending = 1 + (loopbackServer.listening ? 1 : 0)
+    const closed = (): void => {
+      if (--pending === 0) listen()
+    }
+    if (loopbackServer.listening) {
+      loopbackServer.close(closed)
+      loopbackServer.closeAllConnections()
+    }
+    httpServer.close(closed)
     httpServer.closeAllConnections()
   }
 
@@ -344,8 +404,7 @@ export function serve(port: number): void {
         sendJson(res, 401, { error: "unauthorized" })
         return
       }
-      const pairing: PairingInfo = { ...createPairingToken(), port, hosts: networkInfo() }
-      sendJson(res, 200, pairing)
+      sendJson(res, 200, pairingInfo())
       return
     }
     if (req.method === "POST" && url.pathname === "/api/auth/revoke-self") {
@@ -366,7 +425,7 @@ export function serve(port: number): void {
         sendJson(res, 401, { error: "unauthorized" })
         return
       }
-      sendJson(res, 200, networkInfo())
+      sendJson(res, 200, advertisedHosts())
       return
     }
     if (req.method === "GET" && url.pathname === "/project-info") {
@@ -492,20 +551,29 @@ export function serve(port: number): void {
       sendJson(res, 400, { error: error instanceof Error ? error.message : String(error), code: "invalid_request" })
       return
     }
+    // Everything else is the web UI. API misses stay JSON 404s so clients
+    // never mistake the SPA shell for an API response.
+    if ((req.method === "GET" || req.method === "HEAD") && !url.pathname.startsWith("/api/")) {
+      serveWebUi(url.pathname, res, webRoot, req.method === "HEAD")
+      return
+    }
     res.writeHead(404)
     res.end()
   }
 
-  const httpServer = createServer((req, res) => {
+  const requestHandler = (req: IncomingMessage, res: ServerResponse): void => {
     handleHttp(req, res).catch(() => {
       if (!res.headersSent) sendJson(res, 500, { error: "internal error" })
       else res.end()
     })
-  })
+  }
+  const httpServer = createServer(requestHandler)
+  /** Companion listener on 127.0.0.1, used only for pinned remote binds. */
+  const loopbackServer = createServer(requestHandler)
 
   const wss = new WebSocketServer({ noServer: true })
 
-  httpServer.on("upgrade", (req, socket, head) => {
+  const handleUpgrade = (req: IncomingMessage, socket: import("node:net").Socket, head: Buffer): void => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "127.0.0.1"}`)
     const ticket = url.searchParams.get("ticket")
     if (url.pathname !== "/ws" || (!isLoopback(req) && (!ticket || !consumeTicket(ticket)))) {
@@ -514,7 +582,9 @@ export function serve(port: number): void {
       return
     }
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req))
-  })
+  }
+  httpServer.on("upgrade", handleUpgrade)
+  loopbackServer.on("upgrade", handleUpgrade)
 
   wss.on("connection", (socket) => {
     clients.add(socket)
@@ -603,8 +673,7 @@ export function serve(port: number): void {
         applyBindHost()
         return
       case "createPairingToken": {
-        const pairing: PairingInfo = { ...createPairingToken(), port, hosts: networkInfo() }
-        socket.send(JSON.stringify({ type: "pairingToken", pairing } satisfies ServerMsg))
+        socket.send(JSON.stringify({ type: "pairingToken", pairing: pairingInfo() } satisfies ServerMsg))
         return
       }
       case "revokeAuthSession":
@@ -648,6 +717,7 @@ export function serve(port: number): void {
     shuttingDown = true
     process.stdout.write("\nshutting down sessions...\n")
     await manager.stopAll()
+    clearRuntimeState()
     process.exit(0)
   }
   process.on("SIGINT", () => void shutdown())
@@ -656,6 +726,11 @@ export function serve(port: number): void {
   listen()
   httpServer.on("error", (error) => {
     process.stderr.write(`failed to listen on ${port}: ${error.message}\n`)
+    clearRuntimeState()
     process.exit(1)
+  })
+  // Another process owning 127.0.0.1:port must not take down the remote bind.
+  loopbackServer.on("error", (error) => {
+    process.stderr.write(`loopback companion unavailable on 127.0.0.1:${port}: ${error.message}\n`)
   })
 }

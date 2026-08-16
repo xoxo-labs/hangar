@@ -221,6 +221,17 @@ export type PairingInfo = {
   port: number
   /** Candidate addresses another machine can reach this server on. */
   hosts: { lan: string[]; tailscale: string[] }
+  /**
+   * The address the server actually listens on. Loopback means the candidates
+   * in `hosts` are unreachable until the server is rebound; absent on servers
+   * that predate the field.
+   */
+  bindHost?: string
+  /**
+   * Where clients should dial instead of the bind — NAT and containers publish
+   * the server on an address it cannot see itself. Wins over every candidate.
+   */
+  advertiseHost?: string
 }
 
 /** Body of POST /api/auth/pair — exchanges a pairing code for a session token. */

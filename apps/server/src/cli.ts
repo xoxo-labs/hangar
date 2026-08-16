@@ -7,6 +7,7 @@ import type { CliResult, Project, ProjectProcess, ServerMsg, SessionInfo } from 
 import { WebSocket } from "ws"
 import { ApiError, HangarApi } from "./api-client.ts"
 import { expandHome, findProject, loadRegistry, registryPath, saveRegistry, validateProject } from "./registry.ts"
+import { readRuntimeState } from "./runtime-state.ts"
 import { startProject } from "./start.ts"
 import { loadTargets, parseAddress, resolveTarget, saveTargets, targetBase, type CliTarget } from "./targets.ts"
 
@@ -25,7 +26,7 @@ Usage:
   hangar [global options] ports [project[/process]] [--json]
   hangar [global options] target ls|add|rm|pair-code
   hangar run <project[/process]>       Legacy foreground runner
-  hangar serve [--port <n>]           Run the Hangar server
+  hangar serve [--port <n>] [--host <addr>]   Run the Hangar server
 
 Global options (before the command):
   -t, --target <name|host:port>  Target server; default local (env: HANGAR_TARGET)
@@ -192,18 +193,34 @@ async function api(autostart = true): Promise<HangarApi> {
 
   const cliEntry = process.argv[1]
   if (!cliEntry) throw new CliFailure("cannot locate the Hangar server entry point", "target_unreachable", 3)
-  const child = spawn(process.execPath, [cliEntry, "serve", "--port", String(resolved.port)], {
-    detached: true,
-    stdio: "ignore",
-    env: {
-      ...process.env,
-      HANGAR_PORT: String(resolved.port),
-      ...(globalOptions.targetId === "dev" && !process.env.HANGAR_HOME
-        ? { HANGAR_HOME: `${homedir()}/.hangar-dev` }
-        : {}),
-    },
-  })
-  child.unref()
+  // A server that bound only a remote address is alive but invisible to our
+  // loopback probe. Spawning a second one would double-supervise HANGAR_HOME,
+  // so surface the situation instead.
+  const existing = readRuntimeState()
+  if (existing?.port === resolved.port) {
+    if (!["127.0.0.1", "0.0.0.0", "::", "::1", "localhost"].includes(existing.host)) {
+      throw new CliFailure(
+        `a Hangar server (pid ${existing.pid}) is bound to ${existing.host}:${existing.port}, which is not reachable on 127.0.0.1 — try: hangar -t ${existing.host}:${existing.port} ...`,
+        "target_unreachable",
+        3,
+      )
+    }
+    // Locally reachable but not answering yet (still booting, most likely):
+    // fall through to the poll below without racing it with a second spawn.
+  } else {
+    const child = spawn(process.execPath, [cliEntry, "serve", "--port", String(resolved.port)], {
+      detached: true,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        HANGAR_PORT: String(resolved.port),
+        ...(globalOptions.targetId === "dev" && !process.env.HANGAR_HOME
+          ? { HANGAR_HOME: `${homedir()}/.hangar-dev` }
+          : {}),
+      },
+    })
+    child.unref()
+  }
   const deadline = Date.now() + globalOptions.timeoutMs
   while (Date.now() < deadline) {
     await new Promise((done) => setTimeout(done, 150))
@@ -515,10 +532,30 @@ async function cmdTarget(argv: string[]): Promise<void> {
   }
   if (action === "pair-code") {
     const pairing = await (await api()).pairingCode()
-    const host = pairing.hosts.tailscale[0] ?? pairing.hosts.lan[0] ?? target().host
+    // A loopback-bound server would mint a code no remote device could ever
+    // redeem; refuse with the remedy instead of printing a dead QR. An
+    // advertised address means something out there dials in via NAT — allow it.
+    if (pairing.advertiseHost === undefined && ["127.0.0.1", "::1", "localhost"].includes(pairing.bindHost ?? "")) {
+      throw new CliFailure(
+        `the server on ${targetBase(target())} only listens on loopback — restart it with: hangar serve --host <addr> (or enable remote connections in settings)`,
+        "server_loopback",
+      )
+    }
+    // A pinned non-wildcard bind is the one address that is certainly right.
+    const pinned =
+      pairing.bindHost !== undefined && pairing.bindHost !== "0.0.0.0" && pairing.bindHost !== "::"
+        ? pairing.bindHost
+        : undefined
+    const host = pairing.advertiseHost ?? pinned ?? pairing.hosts.tailscale[0] ?? pairing.hosts.lan[0] ?? target().host
     const value = `${host}:${pairing.port}#${pairing.token}`
     success({ pairing: { ...pairing, value } })
     human(`${value}  expires in 5:00`)
+    // The QR carries the same pairing string the mobile scanner expects.
+    // TTY-only: piped output keeps the single-line form.
+    if (!globalOptions.json && process.stdout.isTTY) {
+      const qrcode = await import("qrcode")
+      human(await qrcode.toString(value, { type: "terminal", small: true }))
+    }
     return
   }
   if (action === "add") {
@@ -579,11 +616,11 @@ async function cmdRun(argv: string[]): Promise<void> {
 }
 
 async function cmdServe(argv: string[]): Promise<void> {
-  const { values } = parseArgs({ args: argv, options: { port: { type: "string" } } })
+  const { values } = parseArgs({ args: argv, options: { port: { type: "string" }, host: { type: "string" } } })
   const port = Number(values.port ?? process.env.HANGAR_PORT ?? 4780)
   if (!Number.isInteger(port) || port <= 0) throw new CliFailure(`invalid port: ${values.port}`, "invalid_usage", 2)
   const { serve } = await import("./serve.ts")
-  serve(port)
+  serve(port, values.host)
 }
 
 async function main(): Promise<void> {

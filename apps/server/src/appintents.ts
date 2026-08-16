@@ -30,6 +30,9 @@ function writeAtomic(file: string, records: unknown): void {
 }
 
 export function exportAppIntentsState(projects: Project[], sessions: SessionInfo[]): void {
+  // Spotlight/Shortcuts only exist on macOS; a headless Linux server has no
+  // Swift side to feed, so skip the writes entirely.
+  if (process.platform !== "darwin") return
   const running = new Set(sessions.filter((s) => s.status === "running").map((s) => s.id))
 
   const projectRecords: ProjectRecord[] = projects.map((project) => {
@@ -65,6 +68,7 @@ export function exportAppIntentsState(projects: Project[], sessions: SessionInfo
  * startup — the disk is the queue.
  */
 export function watchAppIntentsCommands(execute: (command: AppIntentsCommand) => void): void {
+  if (process.platform !== "darwin") return
   const dir = commandsDir()
   mkdirSync(dir, { recursive: true })
 

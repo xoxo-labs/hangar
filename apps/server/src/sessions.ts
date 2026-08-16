@@ -157,13 +157,29 @@ type Session = {
 
 type ProcessSample = { pid: number; ppid: number; cpu: number; rssKb: number }
 
+const missingTools = new Set<string>()
+
 function run(command: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(command, args, { encoding: "utf8", env: { ...process.env, LC_ALL: "C" } }, (error, stdout) => {
-      if (error) reject(error)
-      else resolve(stdout)
+      if (error) {
+        // Port detection and metrics degrade silently when their tool is
+        // absent (a bare Linux host, typically); say so once instead.
+        if ((error as NodeJS.ErrnoException).code === "ENOENT" && !missingTools.has(command)) {
+          missingTools.add(command)
+          const feature = command === "lsof" ? "port detection" : "process metrics"
+          process.stderr.write(`${command} not found; install it to enable ${feature}\n`)
+        }
+        reject(error)
+      } else resolve(stdout)
     })
   })
+}
+
+/** Daemons and containers often start without SHELL, and zsh is a macOS default only. */
+function defaultShell(): string {
+  if (process.platform === "darwin") return "/bin/zsh"
+  return ["/bin/bash", "/bin/sh"].find((candidate) => existsSync(candidate)) ?? "/bin/sh"
 }
 
 function descendants(rootPid: number, samples: ProcessSample[]): ProcessSample[] {
@@ -270,7 +286,7 @@ export class SessionManager {
       }
       Object.assign(env, project.env)
 
-      const shell = process.env.SHELL ?? "/bin/zsh"
+      const shell = process.env.SHELL ?? defaultShell()
       // Interactive terminals stay in a login shell. Commands use -c and exit
       // when the command does; -l gives GUI-launched servers a real PATH.
       const args = proc.shell ? ["-l"] : ["-lc", proc.cmd]
