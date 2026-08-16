@@ -1,10 +1,17 @@
-import { buildSidebarModel, displayName, flatEntries, type SidebarEntry, type SidebarPart } from "@hangar/client-core"
+import {
+  buildSidebarModel,
+  displayName,
+  flatEntries,
+  LOCAL_CONN_ID,
+  type SidebarEntry,
+  type SidebarPart,
+} from "@hangar/client-core"
 import { type Project, type SessionInfo, sessionId } from "@hangar/contracts"
 import { ChevronRight, CircleArrowUp, CircleHelp, History, Play, RotateCw, Settings, Square } from "lucide-react"
 import { type DragEvent, type FormEvent, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import * as actions from "../actions"
-import { retryConnection } from "../connections"
+import { removeConnection, retryConnection, updateConnection } from "../connections"
 import { useDesktopUpdate } from "../hooks/useDesktopUpdate"
 import { CONNECTION_LABEL, connectionTone, describe, hasHighCpu, toneOf } from "../status"
 import { type ConfirmRequest, type ConnectionState, machineLabel, useStore } from "../store"
@@ -185,20 +192,14 @@ export function Sidebar({
             }}
           />
         )}
-        {projects.length === 0 ? (
-          <p className="mx-1.5 my-3 text-base leading-relaxed text-surface-10">
-            No projects registered yet.
-            <br />
-            Add one below, or run <code>hangar add</code>.
-          </p>
-        ) : visible.length === 0 ? (
+        {visible.length === 0 && query !== "" ? (
           <p className="mx-1.5 my-3 text-sm text-surface-9">No matches</p>
         ) : machines.length > 1 ? (
           groups.map((group) => {
             const connection = connections[group.connId]
-            // A machine with nothing to show is still worth a header — unless a
-            // filter is running, where empty groups are just noise.
-            if (group.entries.length === 0 && query !== "") return null
+            // A machine with nothing to show is still worth a header. This is
+            // especially important for a paired machine that has never connected:
+            // its header is where Retry, Rename and Remove remain available.
             return (
               <section key={group.connId} className="mb-1">
                 {connection && <MachineHeader connection={connection} />}
@@ -210,6 +211,12 @@ export function Sidebar({
               </section>
             )
           })
+        ) : projects.length === 0 ? (
+          <p className="mx-1.5 my-3 text-base leading-relaxed text-surface-10">
+            No projects registered yet.
+            <br />
+            Add one below, or run <code>hangar add</code>.
+          </p>
         ) : (
           visible.map(renderProject)
         )}
@@ -290,9 +297,24 @@ export function Sidebar({
 function MachineHeader({ connection }: { connection: ConnectionState }) {
   const { config, status } = connection
   const label = machineLabel(connection)
+  const remote = config.id !== LOCAL_CONN_ID
   const blocked = status === "blocked"
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
+  const [renaming, setRenaming] = useState(false)
+  const [removing, setRemoving] = useState(false)
+
   return (
-    <div className="flex min-h-[22px] items-center gap-[7px] px-1.5 pt-2 pb-1">
+    <div
+      className={cx(
+        "flex min-h-[22px] items-center gap-[7px] rounded-md px-1.5 pt-2 pb-1",
+        remote && "hover:bg-surface-a3",
+      )}
+      onContextMenu={(event) => {
+        if (!remote) return
+        event.preventDefault()
+        setContextMenuPosition({ x: event.clientX, y: event.clientY })
+      }}
+    >
       <Dot
         tone={connectionTone(status)}
         small
@@ -311,7 +333,115 @@ function MachineHeader({ connection }: { connection: ConnectionState }) {
           Retry
         </button>
       )}
+      {remote && (
+        <Menu
+          title={`Actions for ${label}`}
+          showTrigger={false}
+          contextPosition={contextMenuPosition}
+          onOpenChange={(open) => {
+            if (!open) setContextMenuPosition(null)
+          }}
+          items={[
+            { label: "Rename…", onSelect: () => setRenaming(true) },
+            {
+              label: "Retry now",
+              disabled: status === "connected",
+              onSelect: () => retryConnection(config.id),
+            },
+            MENU_SEPARATOR,
+            { label: "Remove…", onSelect: () => setRemoving(true) },
+          ]}
+        />
+      )}
+      {renaming && <RenameMachineDialog connection={connection} onClose={() => setRenaming(false)} />}
+      {removing && <RemoveMachineDialog connection={connection} onClose={() => setRemoving(false)} />}
     </div>
+  )
+}
+
+function RenameMachineDialog({ connection, onClose }: { connection: ConnectionState; onClose: () => void }) {
+  const [name, setName] = useState(machineLabel(connection))
+  const trimmed = name.trim()
+  const unchanged = trimmed === connection.config.label
+
+  const submit = (event: FormEvent): void => {
+    event.preventDefault()
+    if (trimmed === "" || unchanged) return
+    updateConnection(connection.config.id, { label: trimmed })
+    onClose()
+  }
+
+  return createPortal(
+    <Overlay onDismiss={onClose}>
+      <Dialog
+        label={`Rename ${machineLabel(connection)}`}
+        className="max-w-[360px]"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onClose()
+        }}
+      >
+        <form onSubmit={submit}>
+          <DialogHeader title="Rename machine" />
+          <DialogBody>
+            <label className="flex flex-col gap-1.5 text-sm text-surface-10">
+              Name
+              <input
+                autoFocus
+                className="w-full rounded-md border border-surface-5 bg-surface-1 px-2.5 py-1.5 text-md text-surface-12 focus:border-accent-9 focus:outline-none"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            </label>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={trimmed === "" || unchanged}>
+              Rename
+            </Button>
+          </DialogFooter>
+        </form>
+      </Dialog>
+    </Overlay>,
+    document.body,
+  )
+}
+
+function RemoveMachineDialog({ connection, onClose }: { connection: ConnectionState; onClose: () => void }) {
+  const label = machineLabel(connection)
+  return createPortal(
+    <Overlay onDismiss={onClose}>
+      <Dialog
+        label={`Remove ${label}`}
+        className="max-w-[400px]"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onClose()
+        }}
+      >
+        <DialogHeader title="Remove machine?" />
+        <DialogBody>
+          <p className="m-0 text-base leading-relaxed text-surface-10">
+            Remove <strong className="text-surface-12">{label}</strong> from paired machines? You can pair it again
+            later.
+          </p>
+        </DialogBody>
+        <DialogFooter>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              onClose()
+              removeConnection(connection.config.id)
+            }}
+          >
+            Remove
+          </Button>
+        </DialogFooter>
+      </Dialog>
+    </Overlay>,
+    document.body,
   )
 }
 
