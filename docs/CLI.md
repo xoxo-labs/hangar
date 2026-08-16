@@ -36,6 +36,22 @@ hangar stop lust/web
 
 Use `--json` for scripts and coding agents. `logs --follow --json` produces JSONL.
 
+## Running the server
+
+Commands autostart a missing local server, so `hangar serve` is only needed when you want to own the process — or bind it somewhere other than loopback:
+
+```sh
+hangar serve                              # 127.0.0.1:4780
+hangar serve --port 4781                  # the built-in dev target
+hangar serve --host "$(tailscale ip -4)"  # reachable on the tailnet only
+```
+
+Bind precedence: `--host` → `HANGAR_HOST` → the connections setting (`0.0.0.0`) → `127.0.0.1`. Prefer a tailnet address over `0.0.0.0`.
+
+The server also serves the built web UI on the same port, so `http://<host>:4780` is a complete client. See [docs/REMOTE.md](REMOTE.md#headless).
+
+A running server records its bind address in `$HANGAR_HOME/server-runtime.json`. If a live server already owns the port but is bound to an address the CLI cannot reach over loopback, autostart stops and tells you to use `-t <host>:<port>` instead of spawning a second server on the same home directory.
+
 ## Remote servers
 
 On the Mac running Hangar, enable remote connections and create a pairing code:
@@ -43,6 +59,8 @@ On the Mac running Hangar, enable remote connections and create a pairing code:
 ```sh
 hangar target pair-code
 ```
+
+On a TTY this also prints the code as a QR the mobile app can scan; `--json` output is unchanged.
 
 On the client, keep the code out of shell history:
 

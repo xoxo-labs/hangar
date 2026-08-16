@@ -23,9 +23,10 @@ Wording note: user-facing copy talks about "connections", "paired machines",
 
 WS access is code execution (`start` runs `$SHELL -lc`). Therefore:
 
-- The server binds `127.0.0.1` unless the user explicitly enables
-  `settings.connections.acceptRemote`; then it binds `0.0.0.0`
-  (`HANGAR_HOST` env overrides either way).
+- The server binds `127.0.0.1` unless the user widens it explicitly. Precedence:
+  `hangar serve --host <addr>` → `HANGAR_HOST` env →
+  `settings.connections.acceptRemote` (`0.0.0.0`) → `127.0.0.1`. A tailnet
+  address is preferable to `0.0.0.0` — it exposes nothing to the LAN.
 - Loopback clients are trusted (unchanged from today). Non-loopback requests
   must present credentials on **every** HTTP endpoint except `/health` and
   `POST /api/auth/pair`, and on the WS upgrade.
@@ -56,8 +57,9 @@ label)`, `verifyBearer(authorizationHeader)`, `issueTicket(sessionId)`,
 
 ### `serve.ts`
 
-- **Bind host**: `HANGAR_HOST` env if set, else `0.0.0.0` when
-  `settings.connections.acceptRemote`, else `127.0.0.1`. When a settings save
+- **Bind host**: the `--host` flag if given, else `HANGAR_HOST` env, else
+  `0.0.0.0` when `settings.connections.acceptRemote`, else `127.0.0.1`. An
+  explicit `--host` pins the bind and survives the toggle. When a settings save
   flips `acceptRemote`: broadcast state, close all WS clients (code 1012),
   `server.close()` + `closeAllConnections()`, then `listen()` again on the new
   host. PTY sessions live in `SessionManager` and are untouched; local UIs
@@ -164,10 +166,59 @@ only ever sees **scoped** values:
     string), remove, per-connection status dot, Retry when `blocked`.
 - Sidebar: with >1 connection, group projects under machine headers
   (label/serverName + status dot). Local group first.
-- Ports/links panel: per-connection `network-info` (bearer where remote);
-  detected-port links for a paired machine open `http://<its host>:<port>`.
+- Ports/links panel: per-connection `network-info` (bearer where remote).
+  Opening and copying a detected port resolve through the same per-machine
+  "Reach ports at" choice; only **Automatic** differs, because the two links
+  are for different destinations. Copy prefers a Tailscale or LAN address —
+  the point is to hand it to another device. Open uses the host this browser
+  already talks to the machine on, which is known to work here and avoids a
+  dev server rejecting an unfamiliar `Host` header. An explicit LAN, Tailscale
+  or custom choice applies to both.
+- `HANGAR_ADVERTISE_HOST` (with `HANGAR_ADVERTISE_PORT`) is a machine behind
+  NAT or Docker port publishing saying which address actually answers. It
+  overrides the discovered interfaces in `/network-info` as well as in pairing
+  strings — a client dials detected ports at those addresses, so an interface
+  it cannot route (a container's docker bridge) would yield a dead link.
+  A published port must still map 1:1: the port a session reports is the one
+  the link uses.
 - Command palette: entries already enumerate scoped projects; ensure labels go
   through `displayName` and remote entries mention the machine.
+
+## Headless
+
+The server serves the built web UI on its own port, so a Mac with no display
+needs nothing but `hangar serve`. Any `GET`/`HEAD` outside `/health`, `/api/*`,
+`/network-info`, `/project-info` and `/ws` is answered from the web bundle,
+with unknown paths falling back to `index.html` (the SPA owns its routing).
+The bundle is resolved from `HANGAR_WEB_DIST`, then `dist/web` beside the
+packaged server, then `apps/web/dist` in a source checkout; when nothing is
+built, `/` answers `503` naming the build command.
+
+```sh
+hangar serve --host "$(tailscale ip -4)"   # on the headless Mac
+hangar target pair-code                    # single-use code, 5 minutes
+```
+
+Then open `http://<host>:4780` from any device on the tailnet and pair from
+Settings → Connections with that code. The startup banner prints the same URL
+(substituting a reachable address when bound to `0.0.0.0`) and the pair-code
+hint whenever the bind is not loopback.
+
+A pinned non-wildcard bind also opens a companion listener on `127.0.0.1`:
+loopback trust is the local auth model, and the CLI, the desktop probe, and
+pair-code minting all assume the loopback answers whatever the bind. Pairing
+codes refuse to mint against a loopback-only server — the QR would point at an
+address nothing can reach.
+
+Linux hosts work too (`scripts/docker-headless/Dockerfile` is the reproducible
+proof): sessions fall back to `/bin/bash` (then `/bin/sh`) when `SHELL` is
+unset, and `lsof` + `procps` are runtime dependencies — port detection and
+process metrics warn once and degrade without them.
+
+Security note: the static shell is public by design — it carries no secrets and
+no state. Every state-bearing request (WS upgrade, `/api/*`, `/network-info`,
+`/project-info`) still requires loopback or a paired token, so an unpaired
+browser gets an app that can see nothing.
 
 ## Verification checklist
 

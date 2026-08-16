@@ -14,8 +14,10 @@ are unsigned for now: if Gatekeeper blocks the first launch, right-click
 ## Architecture (t3code-inspired)
 
 1. **`apps/server`** — the brain. Owns the project registry and the PTY
-   sessions, exposed over a local WebSocket (`hangar serve`, port 4780). Also
-   ships the `hangar` CLI: the CLI and the desktop backend are the same program.
+   sessions, exposed over a local WebSocket (`hangar serve`, port 4780). It also
+   serves the built web UI on that same port, so a browser alone is a complete
+   client. Also ships the `hangar` CLI: the CLI and the desktop backend are the
+   same program.
 2. **`apps/desktop`** — thin Electron shell: ensures the server is running
    (spawns it if not) and shows the web UI in a window.
 3. **`apps/web`** — React UI with xterm.js terminals (Vite, port 4790), talking
@@ -105,6 +107,12 @@ target is always `local`; there is deliberately no persistent remote default.
 Paired tokens live in `~/.hangar/targets.json` with mode `0600` and grant control
 of development commands on that Mac, much like an SSH credential. Tailscale is
 the recommended transport.
+
+A Mac with no display can run Hangar on its own — `hangar serve --host <addr>`
+binds where you point it (a Tailscale address is the safe choice) and serves the
+web UI there, so `http://<host>:4780` in any browser is a full client once paired
+with a code from `hangar target pair-code`. See
+[docs/REMOTE.md](docs/REMOTE.md#headless).
 
 No build step: Node ≥ 24 runs the TypeScript sources directly. The DMG does not
 modify PATH automatically; in the installed app choose **Hangar → Install

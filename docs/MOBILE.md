@@ -84,6 +84,9 @@ A mobile manager mirroring the web one, built on the shared supervisor:
    fields; POST `/api/auth/pair` with label = device name (`expo-device` or a
    static "iPhone"); store config on success; the same inline error mapping as
    the web (401 bad/expired, 429 locked → "generate a fresh code on your Mac").
+   The QR comes either from the Mac's Connections settings or from
+   `hangar target pair-code`, which prints the same `host:port#CODE` string as a
+   terminal QR — that is how a headless Mac is paired without a browser.
 3. **Machine detail**: projects grouped, each process row: status dot, name,
    CPU/mem when running, tap → session; buttons start/stop/restart (stop and
    restart confirm via native Alert).
@@ -132,8 +135,10 @@ Manager and Split View resize on the fly):
 - Mobile: `tsc --noEmit` in apps/mobile, pure-logic tests (ANSI strip, store
   reducers) under `node --test`, and `npx expo export --platform ios` completes
   (proves metro resolves the workspace packages).
-- Live check against a real server: `HANGAR_HOME=$(mktemp -d) HANGAR_PORT=4899
-  HANGAR_HOST=0.0.0.0 node apps/server/src/cli.ts serve` — pair with a token
-  minted over a loopback WS client, drive the manager headlessly (node) to
-  prove connect → state → start → output → stop works with the mobile layer's
-  code paths where runnable outside RN.
+- Live check against a real server: `HANGAR_HOME=$(mktemp -d)
+  node apps/server/src/cli.ts serve --port 4899 --host 0.0.0.0` (or a tailnet
+  address) — pair with a code from `hangar -t 127.0.0.1:4899 target pair-code`,
+  whose terminal QR the phone can scan directly, or with a token minted over a
+  loopback WS client; drive the manager headlessly (node) to prove connect →
+  state → start → output → stop works with the mobile layer's code paths where
+  runnable outside RN.

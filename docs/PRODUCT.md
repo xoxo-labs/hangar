@@ -17,9 +17,12 @@ it. Architecture and dev setup live in the [README](../README.md).
   path that already exists on the machine. Nothing is cloned, copied, or moved.
 - **Open source** (MIT), launched macOS-first. Source and downloadable builds:
   <https://github.com/xoxo-labs/hangar>.
-- **Local-first**: the server binds `127.0.0.1` only. "Remote" today means
-  shareable *links* to your dev servers over LAN or Tailscale — not remote
-  access to Hangar itself. (Remote control is on the roadmap, see below.)
+- **Local-first, reachable only when you say so**: the server binds `127.0.0.1`
+  until you turn connections on or bind it yourself (`hangar serve --host …`).
+  Then other devices — another Mac, the phone app, the CLI, a browser on the
+  tailnet — reach it only after pairing with a single-use code. Shareable *links*
+  to your dev servers over LAN or Tailscale are a separate feature and need none
+  of that.
 - **Opt-in persistence**: session history and terminal logs are off by default.
   Live metrics are kept in memory only. Everything that is persisted stays on
   disk, under the user's control, with retention settings.
@@ -35,13 +38,14 @@ it. Architecture and dev setup live in the [README](../README.md).
 | **Ports, detected** | Listening ports found automatically across the process tree; one click opens them in the browser of your choice (system, Safari, Chrome, Arc, Firefox, Brave, Edge). |
 | **Shareable port links (LAN / Tailscale)** | Copy a link another device can open — LAN for same-Wi-Fi, Tailscale for the tailnet, or a custom host. Loopback-only binds get a warning with the exact fix (`--host 0.0.0.0`). |
 | **Unified search (⌘K)** | One palette across processes, per-process and per-project actions, archived runs, and app commands. Plus sidebar filtering and history search. |
+| **Connections (paired machines)** | Pair another Mac, the phone app, or the CLI with a single-use five-minute code and drive its sessions from one window; paired tokens are revocable. The server serves the web UI itself, so a Mac with no display runs `hangar serve --host <addr>` and is controlled from a browser on the tailnet. Plaintext over Tailscale is the recommended transport. |
 | **Session history, opt-in** | Archived runs with outcome, duration, peaks, a downsampled resource timeline, and an ANSI replay you can *rewind* — scrubbing the timeline truncates the replay to that moment. |
 | **Terminal logs, opt-in** | Raw output to disk with directory, retention, max-size, and format controls. Surfaced with a secrets warning. |
 
 Wording to avoid:
 
-- ~~"remote access"~~ → say **shareable links** / **open on your phone**. Hangar
-  itself is not remotely reachable.
+- ~~"remote access"~~ → say **shareable links** / **open on your phone** for
+  ports, and **connections** / **paired machines** for controlling Hangar itself.
 - ~~"scrollable synced usage"~~ → say **metrics synced to output** or
   **scroll-synced charts and terminal**.
 
@@ -61,9 +65,6 @@ Capitalized **Hangar** for the product, the macOS app, and the server identity
 
 ## Roadmap
 
-- **Remote control** — act on sessions (start/stop/restart) from another device,
-  not just open their ports. Requires deliberately widening the server's
-  localhost-only bind; treat as a security-sensitive change.
 - **Windows build** — the Electron shell and web UI package fine, but the server
   is Darwin/Unix-specific and needs a platform layer before a Windows build is
   honest: `$SHELL -lc` login shells (→ PowerShell/cmd), `ps -axo` metrics
