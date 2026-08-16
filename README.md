@@ -62,6 +62,9 @@ One entry per project:
 
 ## CLI
 
+See the [human CLI guide](docs/CLI.md). Coding agents can use the bundled slim
+[`hangar-dev-servers` skill](.agents/skills/hangar-dev-servers/SKILL.md).
+
 The CLI controls the same persistent sessions as the desktop and web clients.
 Use `project/process` to select one process, or a bare project name for all of
 its processes.
