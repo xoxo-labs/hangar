@@ -1,10 +1,17 @@
 import { LOCAL_CONN_ID } from "@hangar/client-core"
 import type { BrowserChoice, SessionMetrics } from "@hangar/contracts"
 import { useCallback, useEffect, useState } from "react"
-import { loadNetworkInfo, openPortUrl, portUrl, shareUrl, type NetworkInfo } from "../links"
+import {
+  EMPTY_NETWORK,
+  loadNetworkInfo,
+  openPortUrl,
+  openUrl,
+  shareUrl,
+  watchNetworkInfo,
+  type NetworkInfo,
+} from "../links"
 import { connectionOf, useStore } from "../store"
 
-const EMPTY_NETWORK: NetworkInfo = { lan: [], tailscale: [] }
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]", "::1", "localhost"])
 
 /**
@@ -19,21 +26,25 @@ export function usePortLinks(connId: string, metrics: SessionMetrics | undefined
   const browser = browserOverride ?? links.browser
   const [network, setNetwork] = useState<NetworkInfo>(EMPTY_NETWORK)
 
-  useEffect(() => {
-    const refresh = () =>
-      void loadNetworkInfo(config)
-        .then(setNetwork)
-        .catch(() => setNetwork(EMPTY_NETWORK))
-    refresh()
-    const timer = window.setInterval(refresh, 10_000)
-    return () => window.clearInterval(timer)
-  }, [config])
+  useEffect(() => watchNetworkInfo(config, setNetwork), [config])
+
+  const linkForPort = useCallback(
+    (port: number) => shareUrl(port, links.shareHost, links.customHost, network, fallbackHost(config)),
+    [config, links.customHost, links.shareHost, network],
+  )
+
+  const urlForPort = useCallback(
+    (port: number) => openUrl(port, links.shareHost, links.customHost, network, fallbackHost(config)),
+    [config, links.customHost, links.shareHost, network],
+  )
 
   const openPort = useCallback(
     (port: number) => {
-      void openPortUrl(portUrl(config, port), browser).catch(() => showNotice(`Could not open port ${port}`))
+      // Opens on the polled network info rather than refetching first: Safari
+      // blocks window.open once the click gesture is gone.
+      void openPortUrl(urlForPort(port), browser).catch(() => showNotice(`Could not open port ${port}`))
     },
-    [browser, config, showNotice],
+    [browser, showNotice, urlForPort],
   )
 
   const copyPort = useCallback(
@@ -52,11 +63,6 @@ export function usePortLinks(connId: string, metrics: SessionMetrics | undefined
     [config, links.customHost, links.shareHost, showNotice],
   )
 
-  const linkForPort = useCallback(
-    (port: number) => shareUrl(port, links.shareHost, links.customHost, network, fallbackHost(config)),
-    [config, links.customHost, links.shareHost, network],
-  )
-
   const isLoopbackOnly = useCallback(
     (port: number): boolean => {
       const bindings = metrics?.portBindings?.[port] ?? []
@@ -65,7 +71,7 @@ export function usePortLinks(connId: string, metrics: SessionMetrics | undefined
     [metrics?.portBindings],
   )
 
-  return { openPort, copyPort, linkForPort, isLoopbackOnly, browser }
+  return { openPort, copyPort, linkForPort, urlForPort, isLoopbackOnly, browser }
 }
 
 function fallbackHost(config: { id: string; host: string }): string {

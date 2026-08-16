@@ -191,7 +191,7 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
                   )}
                 </Select>
               </Field>
-              <Field label="Copy links using">
+              <Field label="Reach ports at">
                 <Select
                   className={SELECT_HOVER}
                   value={links.shareHost}
@@ -220,7 +220,8 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
               </Field>
             )}
             <p className="mt-2 mb-0 text-xs leading-normal text-surface-9">
-              LAN links work on the same Wi-Fi. Tailscale links work on devices in your tailnet.
+              The address a detected port is opened and copied at. LAN links work on the same Wi-Fi, Tailscale links on
+              devices in your tailnet; a custom host covers a port that answers somewhere else, like a forwarded one.
             </p>
           </Section>
           <Section title="Terminal behavior">

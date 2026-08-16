@@ -1,7 +1,9 @@
-import { type ConnectionConfig, LOCAL_CONN_ID } from "@hangar/client-core"
+import type { ConnectionConfig } from "@hangar/client-core"
 import type { BrowserChoice, ShareHostChoice } from "@hangar/contracts"
 
 export type NetworkInfo = { lan: string[]; tailscale: string[] }
+
+export const EMPTY_NETWORK: NetworkInfo = { lan: [], tailscale: [] }
 
 /** Base HTTP address of one machine's hangar server. */
 export function serverOrigin(config: ConnectionConfig): string {
@@ -18,6 +20,44 @@ export async function loadNetworkInfo(config: ConnectionConfig): Promise<Network
   const response = await fetch(`${serverOrigin(config)}/network-info`, { headers: authHeaders(config) })
   if (!response.ok) throw new Error("Could not detect network addresses")
   return response.json() as Promise<NetworkInfo>
+}
+
+const NETWORK_POLL_MS = 10_000
+
+type NetworkWatch = { listeners: Set<(info: NetworkInfo) => void>; timer: number; value: NetworkInfo }
+
+const watches = new Map<string, NetworkWatch>()
+
+/**
+ * One poll per machine however many components ask — the inspector and every
+ * session strip on screen share a single `/network-info` request.
+ */
+export function watchNetworkInfo(config: ConnectionConfig, onChange: (info: NetworkInfo) => void): () => void {
+  const key = serverOrigin(config)
+  let watch = watches.get(key)
+  if (!watch) {
+    const publish = (value: NetworkInfo) => {
+      const live = watches.get(key)
+      if (!live) return
+      live.value = value
+      for (const listener of live.listeners) listener(value)
+    }
+    const refresh = () => void loadNetworkInfo(config).then(publish, () => publish(EMPTY_NETWORK))
+    watch = { listeners: new Set(), timer: window.setInterval(refresh, NETWORK_POLL_MS), value: EMPTY_NETWORK }
+    watches.set(key, watch)
+    refresh()
+  }
+  watch.listeners.add(onChange)
+  onChange(watch.value)
+  return () => {
+    const live = watches.get(key)
+    if (!live) return
+    live.listeners.delete(onChange)
+    if (live.listeners.size === 0) {
+      window.clearInterval(live.timer)
+      watches.delete(key)
+    }
+  }
 }
 
 export function shareUrl(
@@ -42,6 +82,25 @@ export function shareUrl(
   return { url: `http://${fallbackHost}:${port}`, kind: fallbackHost === "localhost" ? "local" : "direct" }
 }
 
+/**
+ * Where *this* browser should dial a detected port. An explicit choice is the
+ * user saying which address of that machine actually answers — honoured here as
+ * much as for a copied link. "Automatic" is not: it optimises for a link handed
+ * to another device, while this browser already reaches the machine on the host
+ * it is connected to, and a dev server that filters Host headers may well
+ * refuse the LAN alias.
+ */
+export function openUrl(
+  port: number,
+  choice: ShareHostChoice,
+  customHost: string,
+  network: NetworkInfo,
+  fallbackHost = "localhost",
+): string {
+  if (choice === "auto") return `http://${fallbackHost}:${port}`
+  return shareUrl(port, choice, customHost, network, fallbackHost).url
+}
+
 const BROWSER_LABELS: Record<BrowserChoice, string> = {
   system: "system default browser",
   safari: "Safari",
@@ -54,11 +113,6 @@ const BROWSER_LABELS: Record<BrowserChoice, string> = {
 
 export function browserLabel(browser: BrowserChoice): string {
   return BROWSER_LABELS[browser]
-}
-
-/** A detected port belongs to the machine that reported it: never localhost for a paired one. */
-export function portUrl(config: ConnectionConfig, port: number): string {
-  return config.id === LOCAL_CONN_ID ? `http://localhost:${port}` : `http://${config.host}:${port}`
 }
 
 /** Opens a detected service in the configured browser. */
