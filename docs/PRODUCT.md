@@ -65,6 +65,8 @@ Capitalized **Hangar** for the product, the macOS app, and the server identity
 
 ## Roadmap
 
+Smaller, concrete work is tracked in [TODO.md](TODO.md).
+
 - **Windows build** — the Electron shell and web UI package fine, but the server
   is Darwin/Unix-specific and needs a platform layer before a Windows build is
   honest: `$SHELL -lc` login shells (→ PowerShell/cmd), `ps -axo` metrics
