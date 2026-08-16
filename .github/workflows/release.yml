@@ -6,6 +6,11 @@ on:
   workflow_dispatch:
 
 # The release step creates/updates the GitHub release for the pushed tag.
+#
+# This workflow deliberately does not publish @xoxo-labs/hangar to npm. That is
+# done by hand with 2FA, so no standing credential exists here that could
+# publish under the maintainer's name if a secret or a dependency of this
+# workflow were compromised. See docs/TODO.md ("Publishing stays manual").
 permissions:
   contents: write
 

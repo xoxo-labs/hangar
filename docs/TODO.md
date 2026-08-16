@@ -54,3 +54,18 @@ a machine whose CLI is older than the protocol it speaks. Worth folding into the
 release checklist, and worth deciding whether a version mismatch between a
 client and a paired machine should be visible in the UI (see the headless
 update question above, which raises the same skew).
+
+**Publishing stays manual, on purpose.** The DMG is built by CI on a tag; the
+npm package is published by hand, from a clean checkout, with 2FA:
+
+```sh
+cd apps/server && npm publish --dry-run   # read the file list, then:
+npm publish --access public               # completes in a browser
+```
+
+An automation token in CI would be a standing credential that bypasses 2FA and
+can publish under the maintainer's name — the exact shape of a supply-chain
+compromise, and a worse trade than typing a one-time password a few times a
+year. Do not add an npm step to [release.yml](../.github/workflows/release.yml).
+If that ever changes, use npm trusted publishing (GitHub OIDC, no long-lived
+token) rather than a secret, and turn on provenance in the same move.
