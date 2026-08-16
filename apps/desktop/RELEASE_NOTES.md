@@ -1,3 +1,27 @@
+# Hangar 0.5.0
+
+## Drive Hangar from the terminal
+
+- A `hangar` command now controls your supervised processes from any terminal, and from coding agents: `hangar ls`, `start`, `stop`, `restart`, `status`, `logs` and `ports`, against the local Mac or any paired one with `-t <machine>`.
+- `hangar start lust/web --wait-port` returns only once the server is actually listening, so a script never races a slow boot. `--json` everywhere, and `logs --follow --json` streams JSONL.
+- Install it from **Hangar → Install Command Line Tool…**. It lands in Homebrew's bin directory, `/usr/local/bin`, or `~/.local/bin` — whichever your account can write to.
+
+## A Mac with no display
+
+- `hangar serve --host <addr>` binds Hangar where you point it — a Tailscale address is the safe choice — and serves the full web UI from that same port. Open `http://<host>:4780` in any browser and you have a complete client, no app installed on that machine.
+- `hangar target pair-code` prints a QR next to the pairing string, so a phone can join a headless host by scanning it.
+- Hangar behind NAT or in a container can be told the address that actually answers, and hands that out everywhere: pairing strings, QRs, and the links you open for detected ports.
+
+## Ports open where they answer
+
+- Opening a detected port and copying its link used to disagree about the address. Both now follow one per-machine setting, renamed to **Reach ports at** because it no longer governs copying alone.
+- Automatic still tells the two apart on purpose: a copied link prefers your Tailscale or LAN address, since you are handing it to another device, while opening uses the host you already reach that machine on.
+
+## Paired machines in the sidebar
+
+- Right-click a machine header to rename it, retry a stalled connection, or remove it.
+- A machine that has never connected keeps its header, so those actions stay available instead of vanishing with its empty project list.
+
 # Hangar 0.4.0
 
 ## Connections: pair your Macs
