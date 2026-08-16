@@ -12,18 +12,39 @@ permissions:
 jobs:
   mac:
     runs-on: macos-latest
-    env:
-      # Developer ID signing + notarization. electron-builder imports the
-      # certificate from CSC_LINK into a temporary keychain, and notarizes
-      # when the APPLE_* credentials are present (skips with a warning when
-      # they are not, so forks and secretless runs still produce a build).
-      CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
-      CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_P12_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
+      # Developer ID signing + notarization, but only when the certificate
+      # secret exists. A job-level `CSC_LINK: ${{ secrets... }}` would export
+      # an empty-but-defined variable on secretless runs (Apple account still
+      # under review, forks), which electron-builder resolves as a file path
+      # and dies with "not a file" — so the env is written conditionally, and
+      # unsigned interim builds still release (the site documents the xattr
+      # workaround until signing lands).
+      - name: Configure signing
+        env:
+          MAC_CERT: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_P12_PASSWORD }}
+          NOTARIZE_APPLE_ID: ${{ secrets.APPLE_ID }}
+          NOTARIZE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          NOTARIZE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$MAC_CERT" ]; then
+            {
+              echo "CSC_LINK=$MAC_CERT"
+              echo "CSC_KEY_PASSWORD=$MAC_CERT_PASSWORD"
+              echo "APPLE_ID=$NOTARIZE_APPLE_ID"
+              echo "APPLE_APP_SPECIFIC_PASSWORD=$NOTARIZE_PASSWORD"
+              echo "APPLE_TEAM_ID=$NOTARIZE_TEAM_ID"
+              echo "SIGNING=enabled"
+            } >> "$GITHUB_ENV"
+          else
+            {
+              echo "CSC_IDENTITY_AUTO_DISCOVERY=false"
+              echo "SIGNING=disabled"
+            } >> "$GITHUB_ENV"
+            echo "::warning::No signing certificate configured — releasing an unsigned build."
+          fi
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -31,10 +52,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm dist:mac
-      # Fail the release if the produced app is not signed, notarized, and
-      # stapled — a silent fallback to an unsigned build must not ship.
+      # When signing is on, fail the release if the produced app is not
+      # signed, notarized, and stapled — a silent fallback to an unsigned
+      # build must not ship as a supposedly signed one.
       - name: Verify signature and notarization
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && env.SIGNING == 'enabled'
         run: |
           APP="apps/desktop/release/mac-arm64/Hangar.app"
           codesign --verify --deep --strict --verbose=2 "$APP"
