@@ -266,7 +266,10 @@ export function serve(port: number, hostOverride?: string): void {
           process.stdout.write(`also listening on http://127.0.0.1:${port} for local tools\n`)
         })
       }
-      process.stdout.write(`web ui: http://${shown}:${advertisePort}${webRoot === null ? " (not built)" : ""}\n`)
+      // No bundled UI is normal for the standalone CLI: clients connect to this
+      // address instead of being served from it.
+      if (webRoot === null) process.stdout.write(`api only: no web ui bundled — connect a client to this address\n`)
+      else process.stdout.write(`web ui: http://${shown}:${advertisePort}\n`)
       if (!LOOPBACK_ADDRESSES.has(host) && host !== "localhost") {
         process.stdout.write(`pair a device: hangar target pair-code\n`)
       }

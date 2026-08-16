@@ -53,7 +53,12 @@ function send(res: ServerResponse, path: string, head: boolean): void {
 export function serveWebUi(pathname: string, res: ServerResponse, root: string | null, head = false): void {
   if (root === null) {
     res.writeHead(503, { "content-type": "text/plain; charset=utf-8" })
-    res.end("hangar is running, but the web UI is not built — run: pnpm --filter @hangar/web build\n")
+    // Two audiences reach this: a checkout that has not built the UI yet, and a
+    // standalone CLI install, which ships no UI at all by design.
+    res.end(
+      "hangar is running, but no web UI is bundled with it.\n" +
+        "Use the Hangar desktop app to manage this server, or from a source checkout run: pnpm --filter @hangar/web build\n",
+    )
     return
   }
   let decoded: string

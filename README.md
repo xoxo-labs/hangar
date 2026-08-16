@@ -119,8 +119,19 @@ modify PATH automatically; in the installed app choose **Hangar → Install
 Command Line Tool…**. For a source checkout:
 
 ```sh
-cd apps/server && pnpm link --global
+cd apps/server && pnpm build:npm && pnpm link --global
 ```
+
+The CLI and its server are also published on their own, for machines that want
+no desktop app (a headless host, a container, a coding agent's box):
+
+```sh
+npx @xoxo-labs/hangar status
+npm install -g @xoxo-labs/hangar
+```
+
+That package is `apps/server`, bundled — same registry, same API, same pairing;
+only the web UI is left out. See [apps/server/README.md](apps/server/README.md).
 
 ## License
 

@@ -9,3 +9,4 @@ apps/desktop/release/
 # Xcode (regenerate with xcodegen from project.yml)
 apps/desktop/appintents/HangarIntents.xcodeproj/
 apps/desktop/appintents/DevHost/Info.plist
+*.tgz

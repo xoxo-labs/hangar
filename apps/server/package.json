@@ -1,28 +1,58 @@
 {
-  "name": "@hangar/server",
+  "name": "@xoxo-labs/hangar",
   "version": "0.5.0",
-  "private": true,
+  "description": "Supervisor for local and remote development servers: start them once, keep them running past the terminal that started them",
+  "keywords": [
+    "dev-server",
+    "process-manager",
+    "supervisor",
+    "cli",
+    "developer-tools",
+    "coding-agents"
+  ],
+  "license": "MIT",
+  "author": "XOXO Labs",
+  "homepage": "https://github.com/xoxo-labs/hangar#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xoxo-labs/hangar.git",
+    "directory": "apps/server"
+  },
+  "bugs": {
+    "url": "https://github.com/xoxo-labs/hangar/issues"
+  },
   "type": "module",
   "bin": {
-    "hangar": "./src/cli.ts"
+    "hangar": "./dist/cli.mjs"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test src/*.test.ts"
+    "test": "node --test src/*.test.ts",
+    "build:npm": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/cli.mjs --external:node-pty --external:ws --external:qrcode",
+    "prepack": "pnpm run build:npm"
   },
   "engines": {
     "node": ">=24"
   },
   "dependencies": {
-    "@hangar/contracts": "workspace:*",
     "node-pty": "^1.1.0",
     "qrcode": "^1.5.4",
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@hangar/contracts": "workspace:*",
     "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.18.0",
     "@types/node": "^26.0.0",
+    "esbuild": "^0.25.0",
     "typescript": "^5.9.0"
   }
 }

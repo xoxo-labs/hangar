@@ -89,6 +89,15 @@ Set `HANGAR_TARGET=studio` to select it for the current shell. Tailscale is the 
 
 ## Installation and discovery
 
-From the installed application, choose **Hangar → Install Command Line Tool…**. From a source checkout, run `cd apps/server && pnpm link --global`.
+Three ways to get the `hangar` command, all the same program:
+
+```sh
+npx @xoxo-labs/hangar status        # no install at all
+npm install -g @xoxo-labs/hangar    # CLI and server, no desktop UI
+```
+
+From the installed application, choose **Hangar → Install Command Line Tool…**. From a source checkout, run `cd apps/server && pnpm build:npm && pnpm link --global`.
+
+The npm package bundles no web UI: `hangar serve` from it answers the CLI and any paired client, and the desktop app is what draws terminals. Everything else — the registry, sessions, pairing, `--json` — is identical.
 
 Run `hangar help` for the complete command list and options.

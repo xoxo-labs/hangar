@@ -121,9 +121,6 @@ importers:
 
   apps/server:
     dependencies:
-      '@hangar/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
@@ -134,6 +131,9 @@ importers:
         specifier: ^8.18.0
         version: 8.21.2
     devDependencies:
+      '@hangar/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@types/node':
         specifier: ^26.0.0
         version: 26.1.2
@@ -143,6 +143,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.0
         version: 8.18.1
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
       typescript:
         specifier: ^5.9.0
         version: 5.9.3

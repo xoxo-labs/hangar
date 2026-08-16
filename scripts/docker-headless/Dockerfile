@@ -84,7 +84,7 @@ COPY . .
 # pnpm-workspace.yaml, so node-pty's native build runs unattended. The filter
 # keeps apps/desktop (and its ~100MB electron download) out of the image; the
 # trailing "..." pulls in each app's workspace dependencies.
-RUN pnpm install --frozen-lockfile --filter @hangar/server... --filter @hangar/web...
+RUN pnpm install --frozen-lockfile --filter @xoxo-labs/hangar... --filter @hangar/web...
 
 # Fail loudly here rather than at spawn time if the allow-list ever regresses:
 # without the native build every session dies with "Cannot find module pty.node".

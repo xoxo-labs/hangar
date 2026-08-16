@@ -42,11 +42,15 @@ Worth checking first whether the honest answer is narrower: report the version
 per machine and warn on skew, and let updating a headless host stay a deliberate
 `ssh` + `git pull` + restart. That may be the whole feature.
 
-## Document the signing-free CLI install
+## Keep the npm package and the DMG in step
 
-`Hangar → Install Command Line Tool…` is the only install path the release notes
-mention, and reaching it means getting the unsigned app past Gatekeeper first.
-The CLI itself needs none of that — `bin` in `apps/server/package.json` points at
-`src/cli.ts` and Node ≥ 24 runs it directly, so `cd apps/server && pnpm link
---global` is a complete install from a checkout. Say so somewhere a user will
-look, at least while releases are unsigned ([SIGNING.md](SIGNING.md)).
+`@xoxo-labs/hangar` publishes `apps/server` — the CLI and the server, bundled by
+esbuild, with no web UI — so a signing-free install exists while releases are
+unsigned ([SIGNING.md](SIGNING.md)): `npx @xoxo-labs/hangar`.
+
+Its version now travels with the app's. A release that ships a DMG without
+publishing the package leaves the two out of step, and a paired client can drive
+a machine whose CLI is older than the protocol it speaks. Worth folding into the
+release checklist, and worth deciding whether a version mismatch between a
+client and a paired machine should be visible in the UI (see the headless
+update question above, which raises the same skew).
