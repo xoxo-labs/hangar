@@ -347,8 +347,11 @@ async function cmdStatus(argv: string[]): Promise<void> {
     if (sessions.length === 0) return human("no matching sessions")
     for (const session of sessions) {
       const ports = session.metrics?.ports.length ? ` ports:${session.metrics.ports.join(",")}` : ""
+      // The reason belongs on the line that reports the failure, not one `logs`
+      // call away.
+      const why = session.exitDiagnosis ? `  ${session.exitDiagnosis.message}` : ""
       human(
-        `${session.id}  ${session.status}${session.pid ? ` pid:${session.pid}` : ""}${ports}${session.exitCode !== null && session.exitCode !== undefined ? ` exit:${session.exitCode}` : ""}`,
+        `${session.id}  ${session.status}${session.pid ? ` pid:${session.pid}` : ""}${ports}${session.exitCode !== null && session.exitCode !== undefined ? ` exit:${session.exitCode}` : ""}${why}`,
       )
     }
   }
@@ -364,6 +367,16 @@ function readWaitPort(argv: string[]): number | null | undefined {
   if (!Number.isInteger(port) || port <= 0 || port > 65535)
     throw new CliFailure(`invalid wait port: ${port}`, "invalid_usage", 2)
   return port
+}
+
+/** One short re-read, in case the exit arrived before its diagnosis did. */
+async function settledExit(client: HangarApi, exited: SessionInfo): Promise<SessionInfo> {
+  await new Promise((done) => setTimeout(done, 400))
+  const again = await client
+    .sessions()
+    .then(({ sessions }) => sessions.find((session) => session.runId === exited.runId))
+    .catch(() => undefined)
+  return again ?? exited
 }
 
 async function waitForPort(
@@ -384,13 +397,19 @@ async function waitForPort(
     if (opened.length > 0) return opened
     const exited = currentRuns.find((session) => session.status === "exited")
     if (exited && currentRuns.length > 0 && !currentRuns.some((session) => session.status === "running")) {
-      const log = await client.logs(exited.id).catch(() => ({ data: "" }))
+      // The server diagnoses a failure just after the exit lands, so a probe
+      // that caught the exit first is worth repeating once for the reason.
+      const failed = exited.exitDiagnosis ? exited : await settledExit(client, exited)
+      const log = await client.logs(failed.id).catch(() => ({ data: "" }))
       throw new CliFailure(
-        `${exited.id} exited before opening ${wanted === null ? "a port" : `port ${wanted}`}`,
+        `${failed.id} exited before opening ${wanted === null ? "a port" : `port ${wanted}`}${
+          failed.exitDiagnosis ? `: ${failed.exitDiagnosis.message}` : ""
+        }`,
         "process_exited",
         1,
         {
           sessions,
+          ...(failed.exitDiagnosis ? { exitDiagnosis: failed.exitDiagnosis } : {}),
           logTail: tailLines(stripVTControlCharacters(log.data), 40),
         },
       )

@@ -27,6 +27,15 @@ hangar ports lust/web
 hangar status lust/web
 ```
 
+When a process dies because its port was taken, Hangar says so instead of leaving you a bare exit code — in `status`, in `--wait-port` failures, and in the session's own output:
+
+```sh
+hangar status lust/web
+# lust/web  exited pid:256 exit:1  port 3000 is held by pid 98910 (node), which hangar does not manage
+```
+
+The holder is named as a Hangar session when Hangar started it (`port 3000 is held by lust/api (pid 4120), started by hangar`), so a conflict between two of your own projects reads as one. With `--json` the same finding arrives as `exitDiagnosis`.
+
 Lifecycle commands are safe to repeat:
 
 ```sh

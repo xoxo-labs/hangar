@@ -188,6 +188,11 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
             <span className="text-surface-9">State</span>
             <strong className="font-book">{inspectorState(session)}</strong>
           </div>
+          {session.exitDiagnosis && (
+            <p className="mb-[12px] rounded-md bg-danger-a3 px-[8px] py-[7px] text-sm leading-snug text-danger-11">
+              {session.exitDiagnosis.message}
+            </p>
+          )}
           <div className="mb-[12px] flex gap-2">
             <Button
               variant={!running ? "primary" : "default"}

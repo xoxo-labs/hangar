@@ -36,5 +36,8 @@ export function describe(session: SessionInfo | undefined): string {
   if (!session) return "not started"
   if (hasHighCpu(session)) return `high CPU (${Math.round(session.metrics!.cpuPercent)}%)`
   if (session.status === "running") return session.pid ? `running (pid ${session.pid})` : "running"
-  return session.exitCode == null ? "exited" : `exited with code ${session.exitCode}`
+  const exited = session.exitCode == null ? "exited" : `exited with code ${session.exitCode}`
+  // A known cause travels with the status wherever it is shown: a code alone
+  // sends people to the logs for something Hangar already worked out.
+  return session.exitDiagnosis ? `${exited} · ${session.exitDiagnosis.message}` : exited
 }

@@ -8,6 +8,7 @@ import { spawn as ptySpawn, type IPty } from "node-pty"
 import {
   sessionId,
   type AppSettings,
+  type ExitDiagnosis,
   type Project,
   type ServerMsg,
   type SessionId,
@@ -15,6 +16,14 @@ import {
   type SessionMetrics,
   type SessionMetricSample,
 } from "@hangar/contracts"
+import {
+  conflictPorts,
+  DIAGNOSIS_TAIL_CHARS,
+  mentionsPortConflict,
+  parsePortHolder,
+  portConflict,
+  type PortHolder,
+} from "./diagnose.ts"
 import { appendHistory, ensureReplayDirectory, historyReplayPath } from "./history.ts"
 import { expandHome } from "./registry.ts"
 
@@ -29,9 +38,14 @@ const HISTORY_METRIC_INTERVAL_MS = METRICS_INTERVAL_MS
 const MAX_HISTORY_METRIC_SAMPLES = 10_800
 const MAX_HISTORY_REPLAY_BYTES = 10 * 1024 * 1024
 const RESTART_DIVIDER = "\r\n\x1b[2m— restarted —\x1b[0m\r\n"
+/** A diagnosis costs one or two short probes; never let them outlive the answer. */
+const DIAGNOSIS_TIMEOUT_MS = 2_000
 function exitNotice(exitCode: number | null): string {
   const result = exitCode === null ? "after a signal" : `with code ${exitCode}`
   return `\r\n\x1b[90m[hangar] process exited ${result}\x1b[0m\r\n`
+}
+function diagnosisNotice(message: string): string {
+  return `\x1b[90m[hangar] ${message}\x1b[0m\r\n`
 }
 /** Inherit the full environment except vars that would confuse dev servers. */
 const ENV_BLOCKLIST = new Set(["PORT", "ELECTRON_RUN_AS_NODE", "HANGAR_PORT"])
@@ -148,6 +162,7 @@ type Session = {
   replayTruncated: boolean
   buffer: string
   killTimer: NodeJS.Timeout | null
+  exitDiagnosis: ExitDiagnosis | undefined
   logPath: string | undefined
   logStream: WriteStream | null
   logBytes: number
@@ -159,20 +174,25 @@ type ProcessSample = { pid: number; ppid: number; cpu: number; rssKb: number }
 
 const missingTools = new Set<string>()
 
-function run(command: string, args: string[]): Promise<string> {
+function run(command: string, args: string[], timeoutMs = 0): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(command, args, { encoding: "utf8", env: { ...process.env, LC_ALL: "C" } }, (error, stdout) => {
-      if (error) {
-        // Port detection and metrics degrade silently when their tool is
-        // absent (a bare Linux host, typically); say so once instead.
-        if ((error as NodeJS.ErrnoException).code === "ENOENT" && !missingTools.has(command)) {
-          missingTools.add(command)
-          const feature = command === "lsof" ? "port detection" : "process metrics"
-          process.stderr.write(`${command} not found; install it to enable ${feature}\n`)
-        }
-        reject(error)
-      } else resolve(stdout)
-    })
+    execFile(
+      command,
+      args,
+      { encoding: "utf8", env: { ...process.env, LC_ALL: "C" }, timeout: timeoutMs },
+      (error, stdout) => {
+        if (error) {
+          // Port detection and metrics degrade silently when their tool is
+          // absent (a bare Linux host, typically); say so once instead.
+          if ((error as NodeJS.ErrnoException).code === "ENOENT" && !missingTools.has(command)) {
+            missingTools.add(command)
+            const feature = command === "lsof" ? "port detection" : "process metrics"
+            process.stderr.write(`${command} not found; install it to enable ${feature}\n`)
+          }
+          reject(error)
+        } else resolve(stdout)
+      },
+    )
   })
 }
 
@@ -217,8 +237,26 @@ async function listeningPorts(pids: number[]): Promise<{ ports: number[]; bindin
   }
 }
 
+/**
+ * Who is listening on one port right now, whether or not hangar started it.
+ * `null` means nobody does; `undefined` means we could not look (no lsof on the
+ * host, or it hung) — the two must not be confused into a claim about the port.
+ */
+async function portHolder(port: number): Promise<PortHolder | null | undefined> {
+  try {
+    return parsePortHolder(await run("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-Fpc"], DIAGNOSIS_TIMEOUT_MS))
+  } catch (error) {
+    // A match-less lsof exits 1 with no output, which is an answer, not a
+    // failure. execFile reports that status as a number, unlike ENOENT.
+    const { code, killed } = error as { code?: string | number; killed?: boolean }
+    return code === 1 && killed !== true ? null : undefined
+  }
+}
+
 export class SessionManager {
   private sessions = new Map<SessionId, Session>()
+  /** Ports each session was last seen listening on, kept across its restarts. */
+  private lastPorts = new Map<SessionId, number[]>()
   /** Sessions that should respawn (with this project config) when their exit lands. */
   private pendingRestarts = new Map<SessionId, Project>()
   private sampling = false
@@ -252,6 +290,7 @@ export class SessionManager {
       ...(s.endedAt === undefined ? {} : { endedAt: s.endedAt }),
       metrics: s.metrics,
       ...(s.logPath ? { logPath: s.logPath } : {}),
+      ...(s.exitDiagnosis ? { exitDiagnosis: s.exitDiagnosis } : {}),
     }))
   }
 
@@ -340,6 +379,7 @@ export class SessionManager {
         // Reuse the old buffer so a restart keeps prior scrollback context.
         buffer: existing ? existing.buffer + RESTART_DIVIDER : "",
         killTimer: null,
+        exitDiagnosis: undefined,
         ...logging,
       }
       this.sessions.set(id, session)
@@ -370,46 +410,113 @@ export class SessionManager {
         session.logStream = null
         session.replayStream?.end()
         session.replayStream = null
-        if (session.historyEnabled) {
-          appendHistory(
-            {
-              runId: session.runId,
-              id: session.id,
-              project: session.project,
-              process: session.process,
-              cmd: session.cmd,
-              startedAt: session.startedAt,
-              endedAt: session.endedAt,
-              durationMs: session.endedAt - session.startedAt,
-              exitCode,
-              reason: session.stopRequested ? "stopped" : exitCode === 0 ? "completed" : "failed",
-              peakCpuPercent: session.metrics.peakCpuPercent,
-              peakMemoryBytes: session.metrics.peakMemoryBytes,
-              totalOutputBytes: session.metrics.outputBytes,
-              ...(session.historyMetrics.length > 0 ? { metricSamples: session.historyMetrics } : {}),
-              ...(session.replayCaptured ? { hasReplay: true } : {}),
-              ...(session.replayTruncated ? { replayTruncated: true } : {}),
-              ...(session.logPath ? { logPath: session.logPath } : {}),
-            },
-            this.getSettings(),
-          )
-        }
         this.broadcast({ type: "exit", id, exitCode })
-        const restartAs = this.pendingRestarts.get(id)
-        if (restartAs) {
-          this.pendingRestarts.delete(id)
-          try {
-            this.start(restartAs, proc.name)
-            return // start() already broadcast the new state
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error)
-            this.broadcast({ type: "error", message: `restart ${id}: ${message}` })
-          }
-        }
-        this.notifyState()
+        // An unexpected failure gets one bounded probe before the run is
+        // recorded, so the reason lands in history and in the next `status`.
+        const diagnosing =
+          exitCode !== 0 && !session.stopRequested
+            ? this.diagnoseExit(session).catch(() => undefined)
+            : Promise.resolve(undefined)
+        void diagnosing.then((diagnosis) => this.finishExit(session, proc.name, diagnosis))
       })
     }
     this.notifyState()
+  }
+
+  /** The half of an exit that waits for a diagnosis: history, restart, state. */
+  private finishExit(session: Session, processName: string, diagnosis: ExitDiagnosis | undefined): void {
+    const id = session.id
+    const exitCode = session.exitCode
+    const endedAt = session.endedAt ?? Date.now()
+    if (diagnosis) {
+      session.exitDiagnosis = diagnosis
+      const notice = diagnosisNotice(diagnosis.message)
+      session.buffer = (session.buffer + notice).slice(-MAX_BUFFER_CHARS)
+      this.broadcast({ type: "output", id, data: notice })
+    }
+    if (session.historyEnabled) {
+      appendHistory(
+        {
+          runId: session.runId,
+          id: session.id,
+          project: session.project,
+          process: session.process,
+          cmd: session.cmd,
+          startedAt: session.startedAt,
+          endedAt,
+          durationMs: endedAt - session.startedAt,
+          exitCode,
+          reason: session.stopRequested ? "stopped" : exitCode === 0 ? "completed" : "failed",
+          peakCpuPercent: session.metrics.peakCpuPercent,
+          peakMemoryBytes: session.metrics.peakMemoryBytes,
+          totalOutputBytes: session.metrics.outputBytes,
+          ...(session.historyMetrics.length > 0 ? { metricSamples: session.historyMetrics } : {}),
+          ...(session.replayCaptured ? { hasReplay: true } : {}),
+          ...(session.replayTruncated ? { replayTruncated: true } : {}),
+          ...(session.logPath ? { logPath: session.logPath } : {}),
+          ...(diagnosis ? { exitDiagnosis: diagnosis } : {}),
+        },
+        this.getSettings(),
+      )
+    }
+    const restartAs = this.pendingRestarts.get(id)
+    if (restartAs) {
+      this.pendingRestarts.delete(id)
+      try {
+        this.start(restartAs, processName)
+        return // start() already broadcast the new state
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        this.broadcast({ type: "error", message: `restart ${id}: ${message}` })
+      }
+    }
+    this.notifyState()
+  }
+
+  /**
+   * Why a process died, in the case Hangar can actually close on its own: it
+   * complained about a port, and Hangar can see who is holding that port.
+   * Undefined whenever the evidence runs out — a wrong reason is worse than
+   * none.
+   */
+  private async diagnoseExit(session: Session): Promise<ExitDiagnosis | undefined> {
+    const tail = session.buffer.slice(-DIAGNOSIS_TAIL_CHARS)
+    const named = conflictPorts(tail)
+    // Python and Django say "address already in use" without ever naming the
+    // port; the ports Hangar watched this session open answer for it.
+    const remembered = named.length > 0 || !mentionsPortConflict(tail) ? [] : (this.lastPorts.get(session.id) ?? [])
+    let looked = false
+    for (const port of [...named, ...remembered]) {
+      const holder = await portHolder(port)
+      if (holder === undefined) continue // could not look; say nothing about this port
+      looked = true
+      if (holder === null || holder.pid === session.pid) continue
+      const owner = this.sessionOwning(holder.pid, await this.processSamples().catch(() => []))
+      return portConflict(port, { ...holder, ...(owner ? { session: owner } : {}) })
+    }
+    // Named by the process itself, and free again by the time we looked: still
+    // the reason it died, and it says a plain retry is likely to work.
+    return looked && named.length > 0 ? portConflict(named[0]!) : undefined
+  }
+
+  /** The running session whose process tree contains `pid`, if any. */
+  private sessionOwning(pid: number, samples: ProcessSample[]): SessionId | undefined {
+    for (const session of this.sessions.values()) {
+      if (session.status !== "running" || session.pid === undefined) continue
+      if (session.pid === pid) return session.id
+      if (descendants(session.pid, samples).some((sample) => sample.pid === pid)) return session.id
+    }
+    return undefined
+  }
+
+  private async processSamples(): Promise<ProcessSample[]> {
+    const output = await run("ps", ["-axo", "pid=,ppid=,%cpu=,rss="])
+    return output.split("\n").flatMap((line) => {
+      const [pid, ppid, cpu, rssKb] = line.trim().split(/\s+/).map(Number)
+      return Number.isFinite(pid) && Number.isFinite(ppid) && Number.isFinite(cpu) && Number.isFinite(rssKb)
+        ? [{ pid: pid!, ppid: ppid!, cpu: cpu!, rssKb: rssKb! }]
+        : []
+    })
   }
 
   /**
@@ -488,13 +595,7 @@ export class SessionManager {
     this.sampling = true
     this.sampleNumber += 1
     try {
-      const output = await run("ps", ["-axo", "pid=,ppid=,%cpu=,rss="])
-      const samples: ProcessSample[] = output.split("\n").flatMap((line) => {
-        const [pid, ppid, cpu, rssKb] = line.trim().split(/\s+/).map(Number)
-        return Number.isFinite(pid) && Number.isFinite(ppid) && Number.isFinite(cpu) && Number.isFinite(rssKb)
-          ? [{ pid: pid!, ppid: ppid!, cpu: cpu!, rssKb: rssKb! }]
-          : []
-      })
+      const samples = await this.processSamples()
       for (const session of running) {
         if (session.status !== "running") continue
         const tree = descendants(session.pid, samples)
@@ -509,6 +610,9 @@ export class SessionManager {
           forcePorts || this.sampleNumber % 3 === 1
             ? await listeningPorts(tree.map((item) => item.pid))
             : { ports: session.metrics.ports, bindings: session.metrics.portBindings ?? {} }
+        // Remembered past this run: a process that dies on a port conflict never
+        // gets to open a port, so its predecessor's ports are the only lead.
+        if (listening.ports.length > 0) this.lastPorts.set(session.id, listening.ports)
         session.metrics = {
           ...session.metrics,
           cpuPercent: Math.round(cpuPercent * 10) / 10,

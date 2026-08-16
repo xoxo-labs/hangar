@@ -149,6 +149,26 @@ export type SessionMetrics = {
   peakMemoryBytes: number
 }
 
+/**
+ * Why a session died, when the server can say more than the exit code. Attached
+ * shortly after the exit itself, because naming the culprit needs a probe.
+ */
+export type ExitDiagnosis = {
+  /** The only cause recognized today: the process could not take its port. */
+  kind: "port_conflict"
+  port: number
+  /** Ready to show as-is: "port 3201 is held by pid 98910 (node), …". */
+  message: string
+  /** Absent when the port was free again by the time Hangar looked. */
+  holder?: {
+    pid: number
+    /** Executable name as reported by lsof, e.g. "node". */
+    command: string
+    /** Set when the holder belongs to another Hangar session's process tree. */
+    session?: SessionId
+  }
+}
+
 export type SessionInfo = {
   id: SessionId
   /** Unique for every launch; unlike id, changes after a restart. */
@@ -165,6 +185,8 @@ export type SessionInfo = {
   metrics?: SessionMetrics
   /** Current on-disk output log, when logging was enabled at session start. */
   logPath?: string
+  /** Why the process failed, when Hangar could tie the failure to a cause. */
+  exitDiagnosis?: ExitDiagnosis
 }
 
 export type SessionMetricSample = {
@@ -203,6 +225,8 @@ export type SessionHistoryEntry = {
   hasReplay?: boolean
   replayTruncated?: boolean
   logPath?: string
+  /** Same diagnosis the live session carried, kept with the run that failed. */
+  exitDiagnosis?: ExitDiagnosis
 }
 
 /** A client from another machine that holds a session token for this server. */
