@@ -8,6 +8,9 @@
   "scripts": {
     "dev": "HANGAR_HOME=$HOME/.hangar-dev HANGAR_PORT=4781 VITE_HANGAR_PORT=4781 concurrently -k -n server,web,desktop -c blue,magenta,yellow \"node apps/server/src/cli.ts serve\" \"pnpm --filter @hangar/web dev\" \"HANGAR_NO_SPAWN=1 pnpm --filter @hangar/desktop dev\"",
     "dev:headless": "HANGAR_HOME=$HOME/.hangar-dev HANGAR_PORT=4781 VITE_HANGAR_PORT=4781 concurrently -k -n server,web -c blue,magenta \"node apps/server/src/cli.ts serve\" \"pnpm --filter @hangar/web dev\"",
+    "dev:remotes": "scripts/docker-headless/dev-remotes.sh up",
+    "dev:remotes:pair": "scripts/docker-headless/dev-remotes.sh pair",
+    "dev:remotes:down": "scripts/docker-headless/dev-remotes.sh down",
     "build": "pnpm --filter @hangar/desktop build",
     "package:mac": "pnpm --filter @hangar/desktop package:mac",
     "dist:mac": "pnpm --filter @hangar/desktop dist:mac",

@@ -1,0 +1,26 @@
+# Ignore-file for scripts/docker-headless/Dockerfile. BuildKit reads
+# "<dockerfile-path>.dockerignore" in preference to the context-root
+# .dockerignore, so these excludes apply only to this image's build context.
+#
+# The critical entries are the node_modules ones: the host is macOS, and its
+# darwin-arm64 node-pty binaries would shadow the Linux build done in the image.
+node_modules
+*/node_modules
+apps/*/node_modules
+packages/*/node_modules
+**/node_modules
+
+.git
+.github
+.tmp
+.agents
+.claude
+
+# Host build output — the image builds the web UI itself.
+apps/*/dist
+apps/*/dist-electron
+packages/*/dist
+apps/desktop/release
+
+**/.DS_Store
+*.log

@@ -1,0 +1,95 @@
+# Two Linux containers, each running a Hangar server, used as stand-in "remote
+# machines" while developing the multi-machine UI. Driven by dev-remotes.sh
+# (`pnpm dev:remotes`), never meant to be a production deployment.
+#
+# Both services run the same image, built from the Dockerfile next to this file
+# with the repo root as context. The Dockerfile-adjacent Dockerfile.dockerignore
+# keeps macOS-native node_modules out of the build context.
+#
+# Each server binds 0.0.0.0:4780 inside its container and is published on a
+# distinct Mac port (4795 / 4796). A container only sees its bridge IP, so
+# HANGAR_ADVERTISE_HOST/PORT tell the banner, pairing codes and QRs to advertise
+# the address a browser or phone can actually dial.
+#
+# The demo web process gets its own published port, and it must be published
+# 1:1: a detected port is opened as <machine host>:<that same port>, so a
+# remapped port (8092 -> 8091) would produce a link nothing answers. Hence a
+# distinct demo port per container (HANGAR_DEMO_PORT) rather than a shared 8091
+# on two different Mac ports.
+name: hangar-dev-remotes
+
+services:
+  hangar-a:
+    container_name: hangar-dev-a
+    build:
+      context: ../..
+      dockerfile: scripts/docker-headless/Dockerfile
+    image: hangar-dev-remote:latest
+    restart: unless-stopped
+    ports:
+      - "4795:4780"
+      - "8091:8091"
+    environment:
+      HANGAR_HOME: /root/.hangar
+      # Empty falls back to loopback: reachable from the Mac, not from a phone.
+      HANGAR_ADVERTISE_HOST: ${HANGAR_ADVERTISE_HOST:-127.0.0.1}
+      HANGAR_ADVERTISE_PORT: "4795"
+      # Distinguishes the seeded demo projects in a grouped UI.
+      HANGAR_DEMO_PREFIX: a
+      # Must match the published port above, 1:1.
+      HANGAR_DEMO_PORT: "8091"
+    # The wrapper seeds demo projects on first boot, then execs the command.
+    entrypoint: ["/bin/bash", "/opt/hangar/entrypoint.sh"]
+    command: ["node", "apps/server/src/cli.ts", "serve", "--host", "0.0.0.0", "--port", "4780"]
+    volumes:
+      # Server state (projects.json, auth.json, settings.json) survives restarts
+      # and `docker compose down`; only `down --volumes` discards it.
+      - hangar-a-home:/root/.hangar
+      - ./entrypoint.sh:/opt/hangar/entrypoint.sh:ro
+      # Live TS sources over the image copies: edit on the Mac, then
+      # `docker compose restart`. Never mount over node_modules — the image's
+      # Linux node-pty build would be shadowed by the macOS one.
+      - ../../apps/server/src:/app/apps/server/src:ro
+      - ../../packages/contracts/src:/app/packages/contracts/src:ro
+      - ../../packages/client-core/src:/app/packages/client-core/src:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4780/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  hangar-b:
+    container_name: hangar-dev-b
+    build:
+      context: ../..
+      dockerfile: scripts/docker-headless/Dockerfile
+    image: hangar-dev-remote:latest
+    restart: unless-stopped
+    ports:
+      - "4796:4780"
+      - "8092:8092"
+    environment:
+      HANGAR_HOME: /root/.hangar
+      HANGAR_ADVERTISE_HOST: ${HANGAR_ADVERTISE_HOST:-127.0.0.1}
+      HANGAR_ADVERTISE_PORT: "4796"
+      HANGAR_DEMO_PREFIX: b
+      HANGAR_DEMO_PORT: "8092"
+    entrypoint: ["/bin/bash", "/opt/hangar/entrypoint.sh"]
+    command: ["node", "apps/server/src/cli.ts", "serve", "--host", "0.0.0.0", "--port", "4780"]
+    volumes:
+      - hangar-b-home:/root/.hangar
+      - ./entrypoint.sh:/opt/hangar/entrypoint.sh:ro
+      - ../../apps/server/src:/app/apps/server/src:ro
+      - ../../packages/contracts/src:/app/packages/contracts/src:ro
+      - ../../packages/client-core/src:/app/packages/client-core/src:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4780/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+volumes:
+  hangar-a-home:
+  hangar-b-home:
