@@ -1,3 +1,19 @@
+# Hangar 0.6.0
+
+## Signed by a known developer
+
+- Hangar is now Developer ID–signed and notarized by Apple. Downloading it and double-clicking is all there is to it: no right-click-to-open, no `xattr` incantation, no "unidentified developer" dialog.
+- Automatic updates work properly for the first time. macOS validates the signature of an incoming update before installing it, which unsigned builds could never satisfy.
+
+## An icon of its own
+
+- Hangar has real artwork on every surface it shows up: the Dock and the DMG, the iOS and Android home screens, the browser tab and the web app when you add it to a home screen. It replaces Electron's default, Expo's placeholder, and a lone favicon.
+
+## Smaller things
+
+- Install the CLI without the app: `npm i -g @xoxo-labs/hangar` gives you `hangar` on a machine that has no display, which is what a container or an agent box usually is.
+- When a session dies because its port was already taken, Hangar now names the process holding it instead of leaving you to hunt for it.
+
 # Hangar 0.5.0
 
 ## Drive Hangar from the terminal

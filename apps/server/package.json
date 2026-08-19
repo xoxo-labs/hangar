@@ -1,6 +1,6 @@
 {
   "name": "@xoxo-labs/hangar",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Supervisor for local and remote development servers: start them once, keep them running past the terminal that started them",
   "keywords": [
     "dev-server",
