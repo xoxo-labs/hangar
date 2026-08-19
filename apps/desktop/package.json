@@ -62,7 +62,8 @@
       ]
     },
     "dmg": {
-      "title": "Hangar ${version}"
+      "title": "Hangar ${version}",
+      "sign": true
     },
     "publish": [
       {

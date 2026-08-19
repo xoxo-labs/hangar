@@ -65,6 +65,21 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm dist:mac
+      # electron-builder notarizes the .app inside the disk image, not the
+      # image itself, so a downloaded DMG still carried the quarantine
+      # warning that the signed app inside had just earned its way out of.
+      # Submit the image too and staple its own ticket — before the
+      # unversioned copy below, which then inherits the stapled bytes.
+      - name: Notarize the disk image
+        if: env.SIGNING == 'enabled'
+        run: |
+          DMG=$(ls apps/desktop/release/Hangar-*-arm64.dmg)
+          xcrun notarytool submit "$DMG" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple "$DMG"
       # When signing is on, fail the release if the produced app is not
       # signed, notarized, and stapled — a silent fallback to an unsigned
       # build must not ship as a supposedly signed one. Runs on every signed
@@ -83,6 +98,11 @@ jobs:
           codesign --display --verbose=4 "$APP" 2>&1 | grep "^Authority=Developer ID Application"
           xcrun stapler validate "$APP"
           spctl --assess --type execute --verbose=2 "$APP"
+          # The image a user actually double-clicks, assessed the way Gatekeeper
+          # assesses a downloaded disk image rather than an executable.
+          DMG=$(ls apps/desktop/release/Hangar-*-arm64.dmg)
+          xcrun stapler validate "$DMG"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
       # A version-free alias so the site can deep-link the newest build
       # directly: /releases/latest/download/Hangar-arm64.dmg
       - run: cp apps/desktop/release/Hangar-*-arm64.dmg apps/desktop/release/Hangar-arm64.dmg
