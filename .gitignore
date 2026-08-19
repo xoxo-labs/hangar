@@ -6,6 +6,11 @@ apps/desktop/release/
 *.log
 .tmp/
 
+# Signing material must never reach a public repo: the .p12 export password
+# and any certificate that happens to be staged here while setting up secrets.
+.hiddenPassword
+*.p12
+
 # Xcode (regenerate with xcodegen from project.yml)
 apps/desktop/appintents/HangarIntents.xcodeproj/
 apps/desktop/appintents/DevHost/Info.plist

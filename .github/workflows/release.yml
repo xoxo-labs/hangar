@@ -59,13 +59,20 @@ jobs:
       - run: pnpm dist:mac
       # When signing is on, fail the release if the produced app is not
       # signed, notarized, and stapled — a silent fallback to an unsigned
-      # build must not ship as a supposedly signed one.
+      # build must not ship as a supposedly signed one. Runs on every signed
+      # build, not just tags, so a workflow_dispatch can prove the signing
+      # setup end to end without publishing a release.
       - name: Verify signature and notarization
-        if: startsWith(github.ref, 'refs/tags/') && env.SIGNING == 'enabled'
+        if: env.SIGNING == 'enabled'
         run: |
           APP="apps/desktop/release/mac-arm64/Hangar.app"
           codesign --verify --deep --strict --verbose=2 "$APP"
-          codesign --display --requirements - "$APP" 2>&1 | grep "Developer ID"
+          # Assert the *leaf* is a Developer ID Application certificate, so an
+          # ad-hoc or "Apple Development" signature can't pass as distributable.
+          # Not via the designated requirement: that spells Developer ID as
+          # certificate OIDs (…6.1.13 / …6.2.6), never the literal string, so
+          # grepping its output for "Developer ID" failed even on good builds.
+          codesign --display --verbose=4 "$APP" 2>&1 | grep "^Authority=Developer ID Application"
           xcrun stapler validate "$APP"
           spctl --assess --type execute --verbose=2 "$APP"
       # A version-free alias so the site can deep-link the newest build
