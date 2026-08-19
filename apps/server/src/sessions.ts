@@ -2,7 +2,7 @@ import { execFile } from "node:child_process"
 import { chmodSync, createWriteStream, existsSync, mkdirSync, type WriteStream } from "node:fs"
 import { createRequire } from "node:module"
 import { randomUUID } from "node:crypto"
-import { dirname, join, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
 import { stripVTControlCharacters } from "node:util"
 import { spawn as ptySpawn, type IPty } from "node-pty"
 import {
@@ -202,6 +202,23 @@ function defaultShell(): string {
   return ["/bin/bash", "/bin/sh"].find((candidate) => existsSync(candidate)) ?? "/bin/sh"
 }
 
+/**
+ * A login shell reads .zprofile but never .zshrc — and nvm, fnm, volta and asdf
+ * all install themselves into .zshrc. So `npm run dev` works in the user's
+ * terminal and dies here with "command not found", which is indistinguishable
+ * from a broken project. Commands therefore run interactively as well, the way
+ * a terminal would run them.
+ *
+ * Only for shells that document -i, though: $SHELL can be anything, and a shell
+ * that rejects the flag would fail to start at all rather than merely missing a
+ * PATH entry. The cost of -i on the shells we do opt in is that whatever their
+ * .zshrc prints lands in the session output.
+ */
+export function commandShellFlags(shell: string): string {
+  const name = basename(shell)
+  return name === "zsh" || name === "bash" ? "-ilc" : "-lc"
+}
+
 function descendants(rootPid: number, samples: ProcessSample[]): ProcessSample[] {
   const wanted = new Set([rootPid])
   let changed = true
@@ -326,9 +343,10 @@ export class SessionManager {
       Object.assign(env, project.env)
 
       const shell = process.env.SHELL ?? defaultShell()
-      // Interactive terminals stay in a login shell. Commands use -c and exit
-      // when the command does; -l gives GUI-launched servers a real PATH.
-      const args = proc.shell ? ["-l"] : ["-lc", proc.cmd]
+      // Interactive terminals stay in a login shell — a pty already makes those
+      // interactive, so they read .zshrc anyway. Commands use -c and exit when
+      // the command does; the flags carry -l for a GUI-launched server's PATH.
+      const args = proc.shell ? ["-l"] : [commandShellFlags(shell), proc.cmd]
       const displayedCommand = proc.shell ? `${shell} -l` : proc.cmd
       const pty = ptySpawn(shell, args, {
         name: "xterm-256color",
