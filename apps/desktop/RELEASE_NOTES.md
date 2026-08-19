@@ -1,3 +1,9 @@
+# Hangar 0.6.1
+
+## The disk image is notarized too
+
+- 0.6.0 signed and notarized the app, but not the disk image wrapped around it — and macOS checks a downloaded image on its own, before you ever reach the app inside. The DMG now carries its own notarization ticket, so nothing along the way asks whether you are sure.
+
 # Hangar 0.6.0
 
 ## Signed by a known developer
