@@ -269,6 +269,12 @@ function installApplicationMenu(window) {
         role: "help",
         submenu: [
           {
+            // A dialog in the main window, unlike its two neighbours here,
+            // which open windows of their own.
+            label: "Tutorial",
+            click: () => window.webContents.send("hangar:open-tutorial"),
+          },
+          {
             label: "Hangar Help & Shortcuts",
             click: openShortcutsWindow,
           },

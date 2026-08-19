@@ -10,6 +10,7 @@ declare global {
       openShortcuts: () => Promise<void>
       onOpenSettings: (callback: () => void) => () => void
       onOpenHelp: (callback: () => void) => () => void
+      onOpenTutorial: (callback: () => void) => () => void
       chooseDirectory: (title?: string) => Promise<string | null>
       updateState: () => Promise<DesktopUpdateState>
       checkForUpdate: () => Promise<DesktopUpdateState>

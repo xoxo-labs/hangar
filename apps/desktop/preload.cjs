@@ -14,6 +14,11 @@ contextBridge.exposeInMainWorld("hangarDesktop", {
     ipcRenderer.on("hangar:open-help", listener)
     return () => ipcRenderer.removeListener("hangar:open-help", listener)
   },
+  onOpenTutorial: (callback) => {
+    const listener = () => callback()
+    ipcRenderer.on("hangar:open-tutorial", listener)
+    return () => ipcRenderer.removeListener("hangar:open-tutorial", listener)
+  },
   chooseDirectory: (title) => ipcRenderer.invoke("hangar:choose-directory", title),
   updateState: () => ipcRenderer.invoke("hangar:update-state"),
   checkForUpdate: () => ipcRenderer.invoke("hangar:update-check"),

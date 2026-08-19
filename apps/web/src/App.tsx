@@ -60,10 +60,12 @@ export function App() {
   const closeInspector = useStore((s) => s.closeInspector)
   const openSettings = useStore((s) => s.openSettings)
   const openHelp = useStore((s) => s.openHelp)
+  const openTutorial = useStore((s) => s.openTutorial)
   const paletteOpen = useStore((s) => s.paletteOpen)
 
   useEffect(() => window.hangarDesktop?.onOpenSettings(openSettings), [openSettings])
   useEffect(() => window.hangarDesktop?.onOpenHelp(openHelp), [openHelp])
+  useEffect(() => window.hangarDesktop?.onOpenTutorial(openTutorial), [openTutorial])
   // Counted rather than a boolean, and used as the dialog's key: picking the
   // menu item again while the answer is on screen re-runs the check instead of
   // leaving the previous result sitting there.
