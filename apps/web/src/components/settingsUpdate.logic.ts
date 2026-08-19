@@ -29,3 +29,45 @@ export function resolveUpdateAction(state: DesktopUpdateState): { label: string;
   if (state.status === "idle" || state.status === "error") return { label: "Check for updates", kind: "check" }
   return null
 }
+
+export type SidebarUpdate = {
+  kind: Exclude<UpdateActionKind, "check">
+  /** Non-null exactly while a download runs — this is what the progress ring draws. */
+  percent: number | null
+  /** Accessible name and tooltip: the sidebar control is icon-only. */
+  label: string
+}
+
+/**
+ * The sidebar's update control, or null when it must not render at all: in a
+ * browser or on mobile (no desktop shell, so no state), while the updater is
+ * disabled, idle or checking, and for errors only a fresh check could clear.
+ * Checking stays in Settings — the sidebar only appears when a single click
+ * has something to do.
+ */
+export function resolveSidebarUpdate(state: DesktopUpdateState | null): SidebarUpdate | null {
+  if (state === null) return null
+  if (state.status === "downloading") {
+    const percent = clampPercent(state.downloadPercent)
+    return { kind: "download", percent, label: `Downloading ${describeVersion(state.availableVersion)}… ${percent}%` }
+  }
+
+  const action = resolveUpdateAction(state)
+  if (action === null || action.kind === "check") return null
+  if (action.kind === "install") {
+    return { kind: "install", percent: null, label: `Restart to install ${describeVersion(state.downloadedVersion)}` }
+  }
+  const verb = state.status === "error" ? "Retry downloading" : "Download"
+  return { kind: "download", percent: null, label: `${verb} ${describeVersion(state.availableVersion)}` }
+}
+
+/** Versions come off the feed and can in principle be missing; never say "version null". */
+function describeVersion(version: string | null): string {
+  return version === null ? "the update" : `version ${version}`
+}
+
+/** electron-updater reports a float, and a resumed download can overshoot 100. */
+function clampPercent(percent: number | null): number {
+  if (percent === null || !Number.isFinite(percent)) return 0
+  return Math.min(100, Math.max(0, Math.round(percent)))
+}

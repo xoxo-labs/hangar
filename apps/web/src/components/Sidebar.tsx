@@ -7,7 +7,7 @@ import {
   type SidebarPart,
 } from "@hangar/client-core"
 import { type Project, type SessionInfo, sessionId } from "@hangar/contracts"
-import { ChevronRight, CircleArrowUp, CircleHelp, History, Play, RotateCw, Settings, Square } from "lucide-react"
+import { ChevronRight, CircleHelp, History, Play, RotateCw, Settings, Square } from "lucide-react"
 import { type DragEvent, type FormEvent, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import * as actions from "../actions"
@@ -21,6 +21,7 @@ import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/D
 import { IconButton } from "../ui/IconButton"
 import { MENU_SEPARATOR, Menu, type MenuItem } from "../ui/Menu"
 import { Dot } from "./Dot"
+import { SidebarUpdateButton } from "./SidebarUpdateButton"
 
 /*
  * The `!` on padding/color/border/font utilities below dates from when the
@@ -231,23 +232,6 @@ export function Sidebar({
           </button>
         )}
       </nav>
-      {update !== null && (update.status === "available" || update.status === "downloaded") && (
-        <button
-          type="button"
-          className="mx-2 mb-2 flex flex-none items-center gap-[8px] rounded-md border! border-accent-7! bg-accent-a3 px-[9px]! py-[6px]! text-left text-sm! text-accent-11! hover:bg-accent-a4!"
-          title={
-            update.status === "downloaded"
-              ? `Version ${update.downloadedVersion} downloaded — open Settings to restart and install`
-              : `Version ${update.availableVersion} is available — open Settings to download`
-          }
-          onClick={openSettings}
-        >
-          <CircleArrowUp className="size-[15px] flex-none" aria-hidden="true" />
-          <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap mask-r-from-[calc(100%-8px)]">
-            {update.status === "downloaded" ? "Restart to update" : `Update ${update.availableVersion} available`}
-          </span>
-        </button>
-      )}
       <div className="flex flex-none items-center gap-1 border-t border-surface-5 p-2">
         <button
           type="button"
@@ -284,6 +268,8 @@ export function Sidebar({
         >
           <Settings className="size-[17px]" aria-hidden="true" />
         </IconButton>
+        {/* Last, so appearing and disappearing never shifts the buttons people aim at. */}
+        <SidebarUpdateButton update={update} />
       </div>
     </aside>
   )

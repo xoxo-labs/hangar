@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import type { DesktopUpdateState } from "@hangar/contracts"
-import { resolveUpdateAction, updateStatusLine } from "./settingsUpdate.logic.ts"
+import { resolveSidebarUpdate, resolveUpdateAction, updateStatusLine } from "./settingsUpdate.logic.ts"
 
 const state = (overrides: Partial<DesktopUpdateState>): DesktopUpdateState => ({
   status: "idle",
@@ -40,6 +40,47 @@ describe("resolveUpdateAction", () => {
 
     const bareError = state({ status: "error", message: "feed unreachable" })
     assert.equal(resolveUpdateAction(bareError)?.kind, "check")
+  })
+})
+
+describe("resolveSidebarUpdate", () => {
+  it("stays hidden when a click would have nothing to do", () => {
+    assert.equal(resolveSidebarUpdate(null), null)
+    assert.equal(resolveSidebarUpdate(state({})), null)
+    assert.equal(resolveSidebarUpdate(state({ status: "checking" })), null)
+    assert.equal(resolveSidebarUpdate(state({ status: "disabled" })), null)
+    assert.equal(resolveSidebarUpdate(state({ status: "error", message: "feed unreachable" })), null)
+  })
+
+  it("names the version in the icon's accessible label at each stage", () => {
+    assert.deepEqual(resolveSidebarUpdate(state({ status: "available", availableVersion: "0.3.0" })), {
+      kind: "download",
+      percent: null,
+      label: "Download version 0.3.0",
+    })
+    assert.deepEqual(resolveSidebarUpdate(state({ status: "downloaded", downloadedVersion: "0.3.0" })), {
+      kind: "install",
+      percent: null,
+      label: "Restart to install version 0.3.0",
+    })
+    assert.equal(
+      resolveSidebarUpdate(state({ status: "error", availableVersion: "0.3.0", message: "network gone" }))?.label,
+      "Retry downloading version 0.3.0",
+    )
+    assert.equal(resolveSidebarUpdate(state({ status: "available" }))?.label, "Download the update")
+  })
+
+  it("carries the percentage while downloading, in the label as well as the ring", () => {
+    const half = resolveSidebarUpdate(state({ status: "downloading", availableVersion: "0.3.0", downloadPercent: 42 }))
+    assert.deepEqual(half, { kind: "download", percent: 42, label: "Downloading version 0.3.0… 42%" })
+  })
+
+  it("clamps a missing or out-of-range percentage rather than drawing past the ring", () => {
+    assert.equal(resolveSidebarUpdate(state({ status: "downloading" }))?.percent, 0)
+    assert.equal(resolveSidebarUpdate(state({ status: "downloading", downloadPercent: 100.4 }))?.percent, 100)
+    assert.equal(resolveSidebarUpdate(state({ status: "downloading", downloadPercent: 133 }))?.percent, 100)
+    assert.equal(resolveSidebarUpdate(state({ status: "downloading", downloadPercent: -1 }))?.percent, 0)
+    assert.equal(resolveSidebarUpdate(state({ status: "downloading", downloadPercent: Number.NaN }))?.percent, 0)
   })
 })
 
