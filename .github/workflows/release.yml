@@ -35,6 +35,15 @@ jobs:
           NOTARIZE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           if [ -n "$MAC_CERT" ]; then
+            # A certificate without complete notarization credentials builds
+            # for 90s and then dies inside electron-builder ("APPLE_APP_
+            # SPECIFIC_PASSWORD env var needs to be set"). Say which secret is
+            # empty, up front — reporting only set/empty, never the values.
+            state() { [ -n "$1" ] && echo present || echo EMPTY; }
+            if [ -z "$NOTARIZE_APPLE_ID" ] || [ -z "$NOTARIZE_PASSWORD" ] || [ -z "$NOTARIZE_TEAM_ID" ]; then
+              echo "::error::Signing certificate is set but notarization credentials are incomplete — APPLE_ID=$(state "$NOTARIZE_APPLE_ID") APPLE_APP_SPECIFIC_PASSWORD=$(state "$NOTARIZE_PASSWORD") APPLE_TEAM_ID=$(state "$NOTARIZE_TEAM_ID")"
+              exit 1
+            fi
             {
               echo "CSC_LINK=$MAC_CERT"
               echo "CSC_KEY_PASSWORD=$MAC_CERT_PASSWORD"
