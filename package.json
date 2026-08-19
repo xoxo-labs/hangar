@@ -12,6 +12,7 @@
     "dev:remotes:pair": "scripts/docker-headless/dev-remotes.sh pair",
     "dev:remotes:down": "scripts/docker-headless/dev-remotes.sh down",
     "build": "pnpm --filter @hangar/desktop build",
+    "icons": "node scripts/build-icons.mjs",
     "package:mac": "pnpm --filter @hangar/desktop package:mac",
     "dist:mac": "pnpm --filter @hangar/desktop dist:mac",
     "typecheck": "pnpm -r typecheck",

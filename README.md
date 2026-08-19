@@ -7,9 +7,9 @@ agents can manage the registry through the CLI instead of you doing it by hand.
 ## Install
 
 Download the latest DMG from the
-[releases page](https://github.com/xoxo-labs/hangar/releases/latest). Builds
-are unsigned for now: if Gatekeeper blocks the first launch, right-click
-`Hangar.app`, choose **Open**, then confirm **Open**.
+[releases page](https://github.com/xoxo-labs/hangar/releases/latest) and drag
+`Hangar.app` into Applications. Builds are Developer ID–signed and notarized,
+so it opens like any other Mac app.
 
 ## Architecture (t3code-inspired)
 
@@ -45,6 +45,10 @@ pnpm dist:mac       # also creates an installable DMG
 
 Local builds are intentionally unsigned. If Gatekeeper blocks the first launch,
 right-click `Hangar.app`, choose **Open**, then confirm **Open**.
+
+Every app icon — the macOS `.icns`, the iOS and Android ones, the favicons and
+the web app manifest — is generated from `assets/hangar.svg` and committed. After
+editing the artwork, run `pnpm icons` (needs `brew install librsvg`).
 
 ## Registry
 

@@ -554,6 +554,12 @@ async function startUpdater() {
 }
 
 app.whenReady().then(async () => {
+  // A packaged build takes its icon from the bundle. Development runs Electron's
+  // own binary, which shows Electron's own icon until it is told otherwise.
+  if (!app.isPackaged && process.platform === "darwin") {
+    app.dock?.setIcon(resolve(HERE, "assets/icon.png"))
+  }
+
   // Window first, server in parallel: the renderer is a local file and paints
   // fast, then its own "connecting…" state honestly covers the server boot.
   // Blocking the window on /health meant seconds of nothing on cold start.

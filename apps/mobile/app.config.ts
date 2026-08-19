@@ -11,6 +11,9 @@ const config: ExpoConfig = {
   scheme: "hangar-mobile",
   orientation: "portrait",
   userInterfaceStyle: "dark",
+  // Generated from assets/hangar.svg by scripts/build-icons.mjs; iOS rounds the
+  // square itself, so this one is full-bleed and opaque.
+  icon: "./assets/icon.png",
   ios: {
     bundleIdentifier: "com.hangar.mobile",
     // The iPad build is the split layout's reason to exist; it also runs on
@@ -38,6 +41,14 @@ const config: ExpoConfig = {
   },
   android: {
     package: "com.hangar.mobile",
+    // Launchers crop these two layers to their own shape and may parallax them,
+    // which is why the mark ships apart from its plate. `monochromeImage` is the
+    // Android 13 themed icon: one channel the system tints.
+    adaptiveIcon: {
+      foregroundImage: "./assets/adaptive-icon.png",
+      backgroundImage: "./assets/adaptive-icon-background.png",
+      monochromeImage: "./assets/adaptive-icon-monochrome.png",
+    },
   },
   plugins: [
     "expo-router",
