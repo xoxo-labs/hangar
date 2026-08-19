@@ -1,3 +1,14 @@
+# Hangar 0.7.0
+
+## Update from the sidebar
+
+- An update now arrives as a button you can act on, not a banner telling you to go open Settings. Click the download arrow to fetch it, watch the ring around it fill as it downloads, then click again to restart into the new version.
+- It is only there when there is something to do, and Settings keeps the full update row for checking on demand.
+
+## Commands find the tools your terminal finds
+
+- A process whose runtime comes from nvm, fnm, volta or asdf could fail to start with `command not found`, even though the same command worked in your terminal. Those tools install themselves into `.zshrc`, which the shell Hangar used was never reading. Commands now run the way your terminal runs them.
+
 # Hangar 0.6.1
 
 ## The disk image is notarized too
