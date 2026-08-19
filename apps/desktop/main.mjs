@@ -236,6 +236,13 @@ function installApplicationMenu(window) {
         label: app.name,
         submenu: [
           { role: "about" },
+          {
+            // The renderer runs the check and reports it: an explicit check
+            // that finds nothing must still say so, and the sidebar control
+            // only exists when there is something to act on.
+            label: "Check for Updates…",
+            click: () => window.webContents.send("hangar:check-updates"),
+          },
           { type: "separator" },
           {
             label: "Settings…",

@@ -13,6 +13,7 @@ import { StatusBar } from "./components/StatusBar"
 import { TabBar } from "./components/TabBar"
 import { TerminalPane } from "./components/TerminalPane"
 import { TutorialDialog } from "./components/TutorialDialog"
+import { UpdateCheckDialog } from "./components/UpdateCheckDialog"
 import { markCloseOnExit, useStore } from "./store"
 import { Button } from "./ui/Button"
 
@@ -21,6 +22,8 @@ const DEFAULT_SIDEBAR_WIDTH = 280
 
 export function App() {
   const [shortcutHintsVisible, setShortcutHintsVisible] = useState(false)
+  /** Zero while closed; each menu-driven check bumps it and remounts the dialog. */
+  const [updateCheck, setUpdateCheck] = useState(0)
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = Number(window.localStorage.getItem("hangar.sidebarWidth"))
     return Number.isFinite(saved) && saved >= MIN_SIDEBAR_WIDTH ? saved : DEFAULT_SIDEBAR_WIDTH
@@ -61,6 +64,10 @@ export function App() {
 
   useEffect(() => window.hangarDesktop?.onOpenSettings(openSettings), [openSettings])
   useEffect(() => window.hangarDesktop?.onOpenHelp(openHelp), [openHelp])
+  // Counted rather than a boolean, and used as the dialog's key: picking the
+  // menu item again while the answer is on screen re-runs the check instead of
+  // leaving the previous result sitting there.
+  useEffect(() => window.hangarDesktop?.onCheckUpdates(() => setUpdateCheck((n) => n + 1)), [])
 
   // Holding the platform shortcut modifier reveals the remaining keys directly
   // on controls that have a shortcut. Capture makes this work over xterm too.
@@ -220,6 +227,7 @@ export function App() {
       <HelpDialog />
       <TutorialDialog />
       <ConfirmDialog />
+      {updateCheck > 0 && <UpdateCheckDialog key={updateCheck} onClose={() => setUpdateCheck(0)} />}
       {/* Mounted only while open: unmounting is what resets the query. */}
       {paletteOpen && <CommandPalette />}
     </div>

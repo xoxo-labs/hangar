@@ -1,7 +1,12 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import type { DesktopUpdateState } from "@hangar/contracts"
-import { resolveSidebarUpdate, resolveUpdateAction, updateStatusLine } from "./settingsUpdate.logic.ts"
+import {
+  describeCheckResult,
+  resolveSidebarUpdate,
+  resolveUpdateAction,
+  updateStatusLine,
+} from "./settingsUpdate.logic.ts"
 
 const state = (overrides: Partial<DesktopUpdateState>): DesktopUpdateState => ({
   status: "idle",
@@ -104,5 +109,30 @@ describe("updateStatusLine", () => {
     assert.equal(updateStatusLine(state({ status: "error", message: "network gone" })), "network gone")
     assert.equal(updateStatusLine(state({ status: "error" })), "Update failed.")
     assert.equal(updateStatusLine(state({})), "Hangar is up to date.")
+  })
+})
+
+describe("describeCheckResult", () => {
+  it("answers the boring outcome out loud, since nothing else would", () => {
+    const result = describeCheckResult(state({ currentVersion: "0.7.0" }))
+    assert.equal(result.title, "You are up to date")
+    assert.match(result.body, /Hangar 0\.7\.0 is the latest version/)
+  })
+
+  it("names the version for every outcome that has one", () => {
+    assert.match(describeCheckResult(state({ status: "available", availableVersion: "0.8.0" })).body, /0\.8\.0/)
+    assert.match(describeCheckResult(state({ status: "downloaded", downloadedVersion: "0.8.0" })).body, /0\.8\.0/)
+    assert.match(
+      describeCheckResult(state({ status: "downloading", availableVersion: "0.8.0", downloadPercent: 42 })).body,
+      /0\.8\.0.*42%/,
+    )
+  })
+
+  it("explains a disabled build or a failure instead of claiming to be current", () => {
+    const disabled = describeCheckResult(state({ status: "disabled", message: "no update feed" }))
+    assert.equal(disabled.title, "Updates are unavailable")
+    assert.equal(disabled.body, "no update feed")
+    assert.equal(describeCheckResult(state({ status: "error", message: "offline" })).body, "offline")
+    assert.match(describeCheckResult(state({ status: "error" })).body, /could not reach/)
   })
 })

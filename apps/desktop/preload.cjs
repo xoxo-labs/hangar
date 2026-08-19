@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld("hangarDesktop", {
   checkForUpdate: () => ipcRenderer.invoke("hangar:update-check"),
   downloadUpdate: () => ipcRenderer.invoke("hangar:update-download"),
   installUpdate: () => ipcRenderer.invoke("hangar:update-install"),
+  onCheckUpdates: (callback) => {
+    const listener = () => callback()
+    ipcRenderer.on("hangar:check-updates", listener)
+    return () => ipcRenderer.removeListener("hangar:check-updates", listener)
+  },
   onUpdateState: (callback) => {
     const listener = (_event, state) => callback(state)
     ipcRenderer.on("hangar:update-state", listener)

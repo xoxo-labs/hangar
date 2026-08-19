@@ -15,6 +15,7 @@ declare global {
       checkForUpdate: () => Promise<DesktopUpdateState>
       downloadUpdate: () => Promise<DesktopUpdateState>
       installUpdate: () => Promise<DesktopUpdateState>
+      onCheckUpdates: (callback: () => void) => () => void
       onUpdateState: (callback: (state: DesktopUpdateState) => void) => () => void
       openUrl: (url: string, browser: BrowserChoice) => Promise<string>
       openPath: (path: string) => Promise<string>

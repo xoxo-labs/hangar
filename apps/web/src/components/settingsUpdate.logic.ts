@@ -30,6 +30,35 @@ export function resolveUpdateAction(state: DesktopUpdateState): { label: string;
   return null
 }
 
+/**
+ * What an explicitly requested check should say when it comes back. The menu
+ * item has no other way to report itself: the sidebar control appears only when
+ * there is something to click, so "nothing found" would otherwise look like a
+ * menu item that does nothing at all.
+ */
+export function describeCheckResult(state: DesktopUpdateState): { title: string; body: string } {
+  switch (state.status) {
+    case "disabled":
+      return { title: "Updates are unavailable", body: state.message ?? "This build cannot check for updates." }
+    case "available":
+      return { title: "Update available", body: `Version ${state.availableVersion} is ready to download.` }
+    case "downloading":
+      return {
+        title: "Already downloading",
+        body: `Version ${state.availableVersion ?? "the update"} is downloading — ${state.downloadPercent ?? 0}% done.`,
+      }
+    case "downloaded":
+      return {
+        title: "Update ready",
+        body: `Version ${state.downloadedVersion} is staged. Restart Hangar to install it.`,
+      }
+    case "error":
+      return { title: "Check failed", body: state.message ?? "Hangar could not reach the update feed." }
+    default:
+      return { title: "You are up to date", body: `Hangar ${state.currentVersion} is the latest version.` }
+  }
+}
+
 export type SidebarUpdate = {
   kind: Exclude<UpdateActionKind, "check">
   /** Non-null exactly while a download runs — this is what the progress ring draws. */
