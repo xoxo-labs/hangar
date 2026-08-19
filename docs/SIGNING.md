@@ -2,21 +2,17 @@
 
 ## Current status (2026-08-19)
 
-The Developer ID Application certificate exists: **ART EXECUTIVES SRL**,
-team `824CY78JVJ`, valid until **2027-02-01** (short for a Developer ID —
-renew well before that date, and note that already-notarized builds keep
-working past it thanks to the secure timestamp).
+The whole chain is verified and working. All five secrets are set, and a
+`workflow_dispatch` run built, signed, notarized and stapled the app:
+`codesign --verify --deep --strict` passes with the leaf authority
+`Developer ID Application`, `xcrun stapler validate` finds the ticket, and
+`spctl --assess --type execute` reports *accepted*. Pushing a `v*` tag now
+produces a release users can open by double-clicking it.
 
-Signing is verified locally: `codesign --verify --deep --strict` passes,
-the chain reaches Apple Root CA, hardened runtime is on, and `node-pty`'s
-unpacked `pty.node` is signed. What is **not** yet in place is
-notarization — `APPLE_ID` and `APPLE_APP_SPECIFIC_PASSWORD` are still
-missing, so `spctl` reports `rejected / source=Unnotarized Developer ID`.
-
-Until those two secrets exist, **do not push a `v*` tag**: signing turns
-on as soon as `MAC_CERT_P12_BASE64` is set, notarization is skipped for
-lack of credentials, and the verify gate then fails the whole release on
-`xcrun stapler validate`. Set all five, or none.
+The certificate is **ART EXECUTIVES SRL**, team `824CY78JVJ`, valid until
+**2027-02-01** — short for a Developer ID, so renew well before that date.
+Already-notarized builds keep working past expiry thanks to the secure
+timestamp; what stops is the ability to sign new ones.
 
 Release builds are Developer ID–signed, hardened-runtime, and notarized.
 The CI workflow (`.github/workflows/release.yml`) does all of it; local
@@ -79,6 +75,32 @@ read -rs P && printf %s "$P" | gh secret set APPLE_APP_SPECIFIC_PASSWORD
 read -r  A && printf %s "$A" | gh secret set APPLE_ID
 ```
 
+### Prove the credentials before CI does
+
+Two failure modes cost three CI runs the first time around, and both will
+be back at renewal. `gh secret set` accepts an **empty** value without
+complaining — a `read` that consumed nothing leaves the secret defined and
+blank — and `gh secret list` prints it identically to a real one, since it
+only ever shows names and timestamps. The workflow's “Configure signing”
+step now fails in seconds and names the empty secret, but it cannot see
+inside a value that is merely *wrong*: a typo in `APPLE_ID` comes back from
+notarytool as a generic `HTTP 401 Invalid credentials`, which reads like a
+bad app-specific password and sends you re-minting the wrong secret.
+
+Both are settled locally, before anything is pushed:
+
+```sh
+xcrun notarytool store-credentials hangar-notarize \
+  --apple-id 'you@example.com' --team-id 824CY78JVJ
+xcrun notarytool history --keychain-profile hangar-notarize
+```
+
+`store-credentials` validates the Apple ID / password / team triple as it
+saves it, and `history` proves that account can actually reach the service.
+Whatever that pair accepts is exactly what the three `APPLE_*` secrets must
+contain — worth the thirty seconds, against a four-minute round trip
+through CI that ends in the same 401 either way.
+
 ## Checking the certificate without a build
 
 Signing can be exercised locally straight from the `.p12`, with no
@@ -102,13 +124,17 @@ that CI can prove.
 - electron-builder signs every binary in the bundle (including
   `node-pty`'s unpacked native module), notarizes the app with the
   `APPLE_*` env credentials, and staples the ticket.
-- The workflow's “Verify signature and notarization” step fails a tag
-  build that would otherwise silently ship unsigned.
+- The workflow's “Verify signature and notarization” step fails any signed
+  build that would otherwise silently ship unsigned — on every run, not
+  just on tags, so a `workflow_dispatch` proves the setup end to end.
 
 ## Auto-update transition note
 
-Installed copies from unsigned releases (≤ 0.3.1) update to the first
-signed release via electron-updater; Squirrel.Mac validates the *new*
-app's signature, which now passes Gatekeeper properly. Verify the hop on
-one machine with `scripts/mock-update-server.mjs` before tagging, then
-keep an eye on the first real rollout.
+Every release up to and including 0.5.0 is unsigned. Those installed
+copies update to the first signed release via electron-updater;
+Squirrel.Mac validates the *new* app's signature, which now passes
+Gatekeeper properly. Still an untested hop — before tagging, serve a signed
+build to an installed unsigned copy on one machine and watch it through
+(`pnpm --filter @hangar/desktop mock-updates`, in
+`apps/desktop/scripts/mock-update-server.mjs`), then keep an eye on the
+first real rollout.

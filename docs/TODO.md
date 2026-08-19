@@ -45,8 +45,8 @@ per machine and warn on skew, and let updating a headless host stay a deliberate
 ## Keep the npm package and the DMG in step
 
 `@xoxo-labs/hangar` publishes `apps/server` — the CLI and the server, bundled by
-esbuild, with no web UI — so a signing-free install exists while releases are
-unsigned ([SIGNING.md](SIGNING.md)): `npx @xoxo-labs/hangar`.
+esbuild, with no web UI — for machines that want no desktop app: a headless host,
+a container, a coding agent's box. `npx @xoxo-labs/hangar`.
 
 Its version now travels with the app's. A release that ships a DMG without
 publishing the package leaves the two out of step, and a paired client can drive
