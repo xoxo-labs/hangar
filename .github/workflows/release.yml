@@ -21,11 +21,10 @@ jobs:
       - uses: actions/checkout@v4
       # Developer ID signing + notarization, but only when the certificate
       # secret exists. A job-level `CSC_LINK: ${{ secrets... }}` would export
-      # an empty-but-defined variable on secretless runs (Apple account still
-      # under review, forks), which electron-builder resolves as a file path
-      # and dies with "not a file" — so the env is written conditionally, and
-      # unsigned interim builds still release (the site documents the xattr
-      # workaround until signing lands).
+      # an empty-but-defined variable on secretless runs (a fork, which never
+      # sees this repo's secrets), which electron-builder resolves as a file
+      # path and dies with "not a file" — so the env is written conditionally
+      # and a fork still gets a build, unsigned.
       - name: Configure signing
         env:
           MAC_CERT: ${{ secrets.MAC_CERT_P12_BASE64 }}
