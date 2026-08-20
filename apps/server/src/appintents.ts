@@ -1,4 +1,13 @@
-import { mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, watch, writeFileSync } from "node:fs"
+import {
+  type FSWatcher,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  watch,
+  writeFileSync,
+} from "node:fs"
 import { join } from "node:path"
 import type { Project, SessionInfo } from "@hangar/contracts"
 import { sessionId } from "@hangar/contracts"
@@ -21,7 +30,8 @@ const commandsDir = (): string => join(appIntentsDir(), "Commands")
 type ProjectRecord = { id: string; name: string; path: string; status: string }
 type ProcessRecord = { id: string; name: string; project: string; qualifiedName: string; state: string }
 
-export type AppIntentsCommand = { kind: string; targetId: string; issuedAt: string }
+/** Written by the Swift side, so every field is only as trustworthy as that file. */
+export type AppIntentsCommand = { kind: string; targetId: string; issuedAt?: string }
 
 function writeAtomic(file: string, records: unknown): void {
   const tmp = `${file}.tmp`
@@ -66,24 +76,45 @@ export function exportAppIntentsState(projects: Project[], sessions: SessionInfo
  * Consume every pending command file, oldest first, then keep watching for
  * new ones. Commands written while no server was running are drained on
  * startup — the disk is the queue.
+ *
+ * Returns the watcher so a caller (a test, mostly) can stop it; the server
+ * itself watches for as long as it runs.
  */
-export function watchAppIntentsCommands(execute: (command: AppIntentsCommand) => void): void {
-  if (process.platform !== "darwin") return
+export function watchAppIntentsCommands(execute: (command: AppIntentsCommand) => void): FSWatcher | null {
+  if (process.platform !== "darwin") return null
   const dir = commandsDir()
-  mkdirSync(dir, { recursive: true })
+  try {
+    mkdirSync(dir, { recursive: true })
+  } catch (error) {
+    // Same policy the callers apply to the export half: no Spotlight is a
+    // degraded server, not a dead one. The App Group container this now
+    // points at can refuse a directory the server has no business creating.
+    console.error(`[hangar] App Intents commands unavailable: ${(error as Error).message}`)
+    return null
+  }
 
   const drain = (): void => {
-    const files = readdirSync(dir)
-      .filter((name) => name.endsWith(".json"))
-      .sort()
-    for (const name of files) {
+    // File names are random UUIDs, so only issuedAt carries the order the user
+    // asked for. Parse the whole batch before executing any of it; a command
+    // missing the field sorts last rather than losing the batch.
+    const pending: { file: string; command: AppIntentsCommand }[] = []
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith(".json")) continue
       const file = join(dir, name)
-      let command: AppIntentsCommand
       try {
-        command = JSON.parse(readFileSync(file, "utf8")) as AppIntentsCommand
+        pending.push({ file, command: JSON.parse(readFileSync(file, "utf8")) as AppIntentsCommand })
       } catch {
         continue // partially written; the watch event for the rename will retry
       }
+    }
+    pending.sort((a, b) => {
+      const left = a.command.issuedAt
+      const right = b.command.issuedAt
+      if (!left || !right) return left ? -1 : right ? 1 : 0
+      return left.localeCompare(right)
+    })
+
+    for (const { file, command } of pending) {
       try {
         unlinkSync(file)
       } catch {
@@ -95,7 +126,7 @@ export function watchAppIntentsCommands(execute: (command: AppIntentsCommand) =>
 
   drain()
   let timer: ReturnType<typeof setTimeout> | null = null
-  watch(dir, () => {
+  return watch(dir, () => {
     if (timer) clearTimeout(timer)
     timer = setTimeout(drain, 50)
   })

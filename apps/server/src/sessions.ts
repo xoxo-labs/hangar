@@ -48,7 +48,7 @@ function diagnosisNotice(message: string): string {
   return `\x1b[90m[hangar] ${message}\x1b[0m\r\n`
 }
 /** Inherit the full environment except vars that would confuse dev servers. */
-const ENV_BLOCKLIST = new Set(["PORT", "ELECTRON_RUN_AS_NODE", "HANGAR_PORT"])
+const ENV_BLOCKLIST = new Set(["PORT", "ELECTRON_RUN_AS_NODE", "HANGAR_PORT", "HANGAR_APPINTENTS_DIR"])
 
 // pnpm installs node-pty's spawn-helper without the executable bit, which makes
 // every spawn die with "posix_spawnp failed." — chmod it once before first use.
