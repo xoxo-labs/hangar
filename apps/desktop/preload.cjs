@@ -19,6 +19,14 @@ contextBridge.exposeInMainWorld("hangarDesktop", {
     ipcRenderer.on("hangar:open-tutorial", listener)
     return () => ipcRenderer.removeListener("hangar:open-tutorial", listener)
   },
+  // A link that arrived before this renderer existed waits in the main process;
+  // the push below only reaches a window that is already up.
+  takeDeepLink: () => ipcRenderer.invoke("hangar:take-deep-link"),
+  onDeepLink: (callback) => {
+    const listener = (_event, url) => callback(url)
+    ipcRenderer.on("hangar:deep-link", listener)
+    return () => ipcRenderer.removeListener("hangar:deep-link", listener)
+  },
   chooseDirectory: (title) => ipcRenderer.invoke("hangar:choose-directory", title),
   updateState: () => ipcRenderer.invoke("hangar:update-state"),
   checkForUpdate: () => ipcRenderer.invoke("hangar:update-check"),

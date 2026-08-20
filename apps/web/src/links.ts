@@ -124,3 +124,41 @@ export async function openPortUrl(url: string, browser: BrowserChoice): Promise<
   }
   window.open(url, "_blank", "noopener,noreferrer")
 }
+
+/** What a `hangar://…` link from the App Intents surface points at. */
+export type DeepLinkTarget =
+  | { kind: "project"; project: string }
+  | { kind: "process"; project: string; process: string }
+
+/**
+ * Reads the two links Spotlight, Siri and Shortcuts hand back:
+ * `hangar://project/<name>` and `hangar://process/<project>/<process>`. Both ids
+ * are raw registry values in a URL path, so they arrive percent-encoded. Anything
+ * else is null — a link we do not recognise is not one to guess at.
+ */
+export function parseDeepLink(url: string): DeepLinkTarget | null {
+  let link: URL
+  try {
+    link = new URL(url)
+  } catch {
+    return null
+  }
+  if (link.protocol !== "hangar:") return null
+
+  // `hangar://project/<id>` parses the kind as the host and the id as the path.
+  let id: string
+  try {
+    id = decodeURIComponent(link.pathname.replace(/^\//, ""))
+  } catch {
+    return null // a malformed escape: nothing to look up
+  }
+  if (id === "") return null
+  if (link.host === "project") return { kind: "project", project: id }
+  if (link.host !== "process") return null
+
+  // The id is a sessionId(), which the server splits at its first slash; a
+  // process name that contains one therefore keeps it.
+  const slash = id.indexOf("/")
+  if (slash < 1 || slash === id.length - 1) return null
+  return { kind: "process", project: id.slice(0, slash), process: id.slice(slash + 1) }
+}

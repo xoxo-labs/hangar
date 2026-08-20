@@ -14,6 +14,7 @@ import { TabBar } from "./components/TabBar"
 import { TerminalPane } from "./components/TerminalPane"
 import { TutorialDialog } from "./components/TutorialDialog"
 import { UpdateCheckDialog } from "./components/UpdateCheckDialog"
+import { followDeepLinks } from "./deeplink"
 import { markCloseOnExit, useStore } from "./store"
 import { Button } from "./ui/Button"
 
@@ -63,6 +64,8 @@ export function App() {
   const openTutorial = useStore((s) => s.openTutorial)
   const paletteOpen = useStore((s) => s.paletteOpen)
 
+  // Deep links carry their own target, so they subscribe once and never restate.
+  useEffect(() => followDeepLinks(), [])
   useEffect(() => window.hangarDesktop?.onOpenSettings(openSettings), [openSettings])
   useEffect(() => window.hangarDesktop?.onOpenHelp(openHelp), [openHelp])
   useEffect(() => window.hangarDesktop?.onOpenTutorial(openTutorial), [openTutorial])

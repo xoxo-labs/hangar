@@ -11,6 +11,9 @@ declare global {
       onOpenSettings: (callback: () => void) => () => void
       onOpenHelp: (callback: () => void) => () => void
       onOpenTutorial: (callback: () => void) => () => void
+      /** The `hangar://…` link that launched this window, taken once; null if there was none. */
+      takeDeepLink: () => Promise<string | null>
+      onDeepLink: (callback: (url: string) => void) => () => void
       chooseDirectory: (title?: string) => Promise<string | null>
       updateState: () => Promise<DesktopUpdateState>
       checkForUpdate: () => Promise<DesktopUpdateState>

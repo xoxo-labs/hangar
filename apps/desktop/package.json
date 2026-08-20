@@ -12,6 +12,8 @@
     "package:mac": "pnpm build && electron-builder --mac dir --publish never",
     "dist:mac": "pnpm build && electron-builder --mac dmg zip --publish never",
     "release:mac": "pnpm build && electron-builder --mac dmg zip --publish always",
+    "appintents:generate": "cd appintents && bun \"${HANGAR_APPINTENTS_CODEGEN:-../../../../voicecraft/packages/appintents-codegen}/src/cli.ts\" appintents.config.json Generated --extension-scaffold IntentsExtension",
+    "appintents:project": "cd appintents && xcodegen generate",
     "mock-updates": "node scripts/mock-update-server.mjs",
     "test": "node --test updateReducer.test.mjs"
   },
@@ -47,6 +49,22 @@
     "directories": {
       "output": "release"
     },
+    "afterPack": "./scripts/embed-appintents.mjs",
+    "extraResources": [
+      {
+        "from": "appintents/Generated/store-contract.json",
+        "to": "store-contract.json"
+      }
+    ],
+    "protocols": [
+      {
+        "name": "Hangar",
+        "schemes": [
+          "hangar"
+        ],
+        "role": "Viewer"
+      }
+    ],
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "assets/icon.icns",
@@ -54,6 +72,9 @@
       "gatekeeperAssess": false,
       "entitlements": "assets/entitlements.mac.plist",
       "entitlementsInherit": "assets/entitlements.mac.plist",
+      "signIgnore": [
+        "Contents/Extensions/HangarIntents\\.appex"
+      ],
       "notarize": true,
       "target": [
         "dir",

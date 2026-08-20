@@ -74,6 +74,32 @@ async function probeHealth() {
 }
 
 /**
+ * Where the server should write the entity snapshots the App Intents
+ * extension reads: the location comes from store-contract.json, generated
+ * next to the Swift surface and shipped in Resources, so the App Group
+ * container is named in exactly one place.
+ *
+ * Gated on the extension actually being in this bundle. Embedding it is
+ * opt-in (see scripts/embed-appintents.mjs), and redirecting the store into
+ * a group container nothing reads would only move the snapshots out of reach
+ * and create a container this app has no business owning.
+ */
+function appIntentsEnv() {
+  if (process.platform !== "darwin") return {}
+  if (!existsSync(join(dirname(process.resourcesPath), "Extensions", "HangarIntents.appex"))) return {}
+  try {
+    const contract = JSON.parse(readFileSync(join(process.resourcesPath, "store-contract.json"), "utf8"))
+    const path = contract.storage?.macOSPath
+    if (typeof path !== "string") return {}
+    return { HANGAR_APPINTENTS_DIR: expandHome(path) }
+  } catch (error) {
+    // A build without the contract still runs; only Spotlight goes stale.
+    console.error(`[hangar] no App Intents store contract: ${error.message}`)
+    return {}
+  }
+}
+
+/**
  * Spawns the server in its own process group so we can take down the whole
  * tree later — the server starts child processes of its own.
  */
@@ -81,7 +107,7 @@ function spawnServer() {
   // Development sources require system Node 24. Packaged builds use Electron's
   // bundled Node runtime and the precompiled server, so the .app is standalone.
   const executable = app.isPackaged ? process.execPath : "node"
-  const env = app.isPackaged ? { ...process.env, ELECTRON_RUN_AS_NODE: "1" } : process.env
+  const env = app.isPackaged ? { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...appIntentsEnv() } : process.env
   const child = spawn(executable, [SERVER_ENTRY, "serve", "--port", String(PORT)], {
     stdio: "inherit",
     detached: true,
@@ -203,7 +229,12 @@ async function installCommandLineTool(window) {
     if (answer.response !== 1) return
   }
 
-  const launcher = `#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec ${shellQuote(process.execPath)} ${shellQuote(SERVER_ENTRY)} "$@"\n`
+  // Baked in, not inherited: a server started from a terminal has to write
+  // the Spotlight snapshots where this app's extension reads them, or the
+  // store location would depend on who happened to start the server.
+  const { HANGAR_APPINTENTS_DIR } = appIntentsEnv()
+  const storeEnv = HANGAR_APPINTENTS_DIR ? `HANGAR_APPINTENTS_DIR=${shellQuote(HANGAR_APPINTENTS_DIR)} ` : ""
+  const launcher = `#!/bin/sh\n${storeEnv}ELECTRON_RUN_AS_NODE=1 exec ${shellQuote(process.execPath)} ${shellQuote(SERVER_ENTRY)} "$@"\n`
   const temporary = `${destination}.${process.pid}.tmp`
   try {
     writeFileSync(temporary, launcher, { mode: 0o755 })
@@ -415,6 +446,11 @@ function createWindow() {
     retryTimer = setTimeout(load, LOAD_RETRY_INTERVAL_MS)
   }
 
+  // A link that arrived while this window was still loading (or sitting on the
+  // dev retry's error page) waits in the queue; the renderer usually claims it
+  // on mount, and this covers the reload case where nothing new mounts.
+  window.webContents.on("did-finish-load", () => flushDeepLink(window))
+
   window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
     if (!isMainFrame) return
     if (errorCode === -3) return // ERR_ABORTED — a navigation we replaced
@@ -500,6 +536,76 @@ ipcMain.handle("hangar:open-path", async (_event, path) => {
 
 ipcMain.handle("hangar:reveal-path", (_event, path) => {
   if (typeof path === "string" && path.trim() !== "") shell.showItemInFolder(expandHome(path))
+})
+
+// --- deep links --------------------------------------------------------------
+// `hangar://project/<name>` and `hangar://process/<project>/<process>`, opened by
+// the App Intents surface (Spotlight, Siri, Shortcuts). Both ids are raw registry
+// values sitting in a URL path, so they arrive percent-encoded; the renderer
+// decodes them and resolves them against the registry it already has.
+//
+// There is deliberately no single-instance lock. On macOS LaunchServices hands a
+// URL to the copy that is already running — as open-url, never as argv — so a
+// lock would buy nothing here, while the two Hangars this project runs on purpose
+// (a packaged one supervising a dev one, hence the userData split above) are
+// exactly what a lock is one HANGAR_HOME change away from breaking. second-instance
+// only ever fires for a lock holder, so there is nothing to listen for until
+// Hangar ships somewhere URLs arrive in argv.
+
+/** A link that arrived before a renderer could take it; claimed on mount. */
+let pendingDeepLink = null
+
+/** Focuses the window and hands the link over, or queues it for the renderer. */
+function deliverDeepLink(url) {
+  if (typeof url !== "string" || !url.startsWith("hangar://")) return
+  pendingDeepLink = url
+
+  const window = mainWindow
+  // No window yet means the link launched us and whenReady is still on its way
+  // (closing the last window quits). The renderer it creates will claim the link.
+  if (!window || window.isDestroyed()) return
+
+  if (window.isMinimized()) window.restore()
+  window.show()
+  window.focus()
+  // Spotlight can open a link while Hangar is hidden or buried behind another
+  // app; the user just asked for this window, so take the front.
+  app.focus({ steal: true })
+
+  flushDeepLink(window)
+}
+
+/**
+ * Hands a queued link to a renderer that can receive it, and only then drops
+ * it. `isLoading()` alone would also be false for the dev-server retry loop's
+ * error page, which has no preload bridge — a link sent there is lost, and
+ * the renderer that eventually loads has nothing left to claim.
+ */
+function flushDeepLink(window) {
+  if (pendingDeepLink === null) return
+  if (window.isDestroyed() || window.webContents.isLoading()) return
+  if (window.webContents.getURL() === "") return
+  window.webContents.send("hangar:deep-link", pendingDeepLink)
+  pendingDeepLink = null
+}
+
+// The bundle declares the scheme (electron-builder `protocols`); this claims the
+// handler when several copies are installed. Development runs Electron's own
+// bundle, which declares nothing, so the call could only fail there.
+if (app.isPackaged) app.setAsDefaultProtocolClient("hangar")
+
+// Subscribed at load rather than on ready: a cold start delivers the URL that
+// launched us well before the app is ready, let alone the window.
+app.on("open-url", (event, url) => {
+  event.preventDefault()
+  deliverDeepLink(url)
+})
+
+/** The renderer claims the queued link as it mounts, so a cold start never drops one. */
+ipcMain.handle("hangar:take-deep-link", () => {
+  const url = pendingDeepLink
+  pendingDeepLink = null
+  return url
 })
 
 // --- auto-updates ------------------------------------------------------------

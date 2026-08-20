@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
-import { openUrl, shareUrl } from "./links.ts"
+import { openUrl, parseDeepLink, shareUrl } from "./links.ts"
 
 const NONE = { lan: [], tailscale: [] }
 const BOTH = { lan: ["192.168.1.20"], tailscale: ["100.64.0.5"] }
@@ -50,5 +50,42 @@ describe("openUrl", () => {
     assert.equal(openUrl(3000, "tailscale", "", BOTH), shareUrl(3000, "tailscale", "", BOTH).url)
     assert.equal(openUrl(3000, "lan", "", BOTH), "http://192.168.1.20:3000")
     assert.equal(openUrl(8091, "custom", "127.0.0.1", BOTH, "10.0.0.4"), "http://127.0.0.1:8091")
+  })
+})
+
+describe("parseDeepLink", () => {
+  /** Registry names go into the path raw, so anything but [A-Za-z0-9] comes back escaped. */
+  it("decodes the ids the App Intents surface escaped", () => {
+    assert.deepEqual(parseDeepLink("hangar://project/my%20app"), { kind: "project", project: "my app" })
+    assert.deepEqual(parseDeepLink("hangar://process/my%20app%2Fdev%20server"), {
+      kind: "process",
+      project: "my app",
+      process: "dev server",
+    })
+  })
+
+  it("splits a process id at its first slash, escaped or not", () => {
+    assert.deepEqual(parseDeepLink("hangar://process/api/dev"), { kind: "process", project: "api", process: "dev" })
+    assert.deepEqual(parseDeepLink("hangar://process/api%2Fbuild%2Fweb"), {
+      kind: "process",
+      project: "api",
+      process: "build/web",
+    })
+  })
+
+  it("refuses every link it cannot act on", () => {
+    const refused = [
+      "",
+      "not a url",
+      "hangar://project/", // no id
+      "hangar://process/api", // a process id is always project/process
+      "hangar://process/api/", // …with both halves present
+      "hangar://process//dev",
+      "hangar://widget/api", // a kind we do not serve
+      "hangar:project/api", // scheme-relative, so nothing is a host
+      "https://example.com/project/api",
+      "hangar://project/%zz", // a malformed escape
+    ]
+    for (const url of refused) assert.equal(parseDeepLink(url), null, url)
   })
 })
