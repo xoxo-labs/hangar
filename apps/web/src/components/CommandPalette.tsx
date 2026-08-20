@@ -10,6 +10,7 @@ import { focusTerminal } from "../terminals"
 import { Overlay } from "../ui/Dialog"
 import { Dot } from "./Dot"
 import { RESULT } from "./HistoryWorkspace"
+import { type ProcessAction, processActions, resolveProcessAction } from "./processActions.logic"
 
 /*
  * The panel mirrors Dialog's border/shadow instead of reusing <Dialog>: this
@@ -38,6 +39,14 @@ const GLYPH = "w-3 flex-none text-center text-surface-9"
 
 /** Newest archived runs worth listing inline; the rest stay behind "All history…". */
 const HISTORY_LIMIT = 20
+
+/* Every run control names its process in full ("Stop web/dev", never "Stop"),
+ * because search can put one next to another project's row of the same verb. */
+const PROCESS_ACTION: Record<ProcessAction, { verb: string; glyph: string }> = {
+  start: { verb: "Start", glyph: "▶" },
+  restart: { verb: "Restart", glyph: "↻" },
+  stop: { verb: "Stop", glyph: "■" },
+}
 
 const THEMES: Array<[ThemeSetting, string]> = [
   ["light", "Light"],
@@ -89,6 +98,21 @@ export function CommandPalette() {
   const run = (action: () => void) => {
     closePalette()
     action()
+  }
+
+  /* The entries were rendered from a store slice that a WS message can replace
+   * before Enter lands, so the process is looked at again here rather than
+   * trusting the status it was drawn with. Both arguments stay scoped, as
+   * everywhere else in the palette — `actions` strips the scope and routes the
+   * message to the machine that owns the process. */
+  const runProcessAction = (action: ProcessAction, project: string, process: string) => {
+    const id = sessionId(project, process)
+    const live = useStore.getState().sessions.find((session) => session.id === id)
+    const resolved = resolveProcessAction(action, live?.status === "running")
+    if (resolved === null) return
+    // Stop and restart go through the same confirmation the sidebar uses.
+    if (resolved === "start") actions.start(project, process)
+    else requestConfirm({ action: resolved, project, process })
   }
 
   /* Leaving without picking anything hands the keyboard back to the terminal;
@@ -154,55 +178,24 @@ export function CommandPalette() {
                   const label = displayName(id)
                   const keywords = [displayName(project.name), proc.name, machine]
                   const running = byId.get(id)?.status === "running"
-                  if (!running) {
-                    return [
-                      <Command.Item
-                        key={`start ${id}`}
-                        value={tagged(`start ${label}`, machine)}
-                        keywords={keywords}
-                        className={ITEM}
-                        onSelect={() => run(() => actions.start(project.name, proc.name))}
-                      >
-                        <span className={GLYPH} aria-hidden="true">
-                          ▶
-                        </span>
-                        Start {label}
-                        {machineChip(machine)}
-                      </Command.Item>,
-                    ]
-                  }
-                  return [
+                  /* Rendered in the order processActions returns them: cmdk keeps
+                   * DOM order when scores tie, which is what a query naming only
+                   * the process does to every entry it has. */
+                  return processActions(running).map((action) => (
                     <Command.Item
-                      key={`restart ${id}`}
-                      value={tagged(`restart ${label}`, machine)}
+                      key={`${action} ${id}`}
+                      value={tagged(`${action} ${label}`, machine)}
                       keywords={keywords}
                       className={ITEM}
-                      onSelect={() =>
-                        run(() => requestConfirm({ action: "restart", project: project.name, process: proc.name }))
-                      }
+                      onSelect={() => run(() => runProcessAction(action, project.name, proc.name))}
                     >
                       <span className={GLYPH} aria-hidden="true">
-                        ↻
+                        {PROCESS_ACTION[action].glyph}
                       </span>
-                      Restart {label}
+                      {PROCESS_ACTION[action].verb} {label}
                       {machineChip(machine)}
-                    </Command.Item>,
-                    <Command.Item
-                      key={`stop ${id}`}
-                      value={tagged(`stop ${label}`, machine)}
-                      keywords={keywords}
-                      className={ITEM}
-                      onSelect={() =>
-                        run(() => requestConfirm({ action: "stop", project: project.name, process: proc.name }))
-                      }
-                    >
-                      <span className={GLYPH} aria-hidden="true">
-                        ■
-                      </span>
-                      Stop {label}
-                      {machineChip(machine)}
-                    </Command.Item>,
-                  ]
+                    </Command.Item>
+                  ))
                 })
 
                 return [
