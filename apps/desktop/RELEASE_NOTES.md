@@ -1,3 +1,19 @@
+# Hangar 0.8.0
+
+## Open a project straight from Spotlight
+
+- Links like `hangar://project/lust` now reach Hangar: the window comes forward and the project is selected, exactly as if you had clicked it in the sidebar. Opening never starts anything — that is still the play button's job.
+- A link that arrives while Hangar is starting up waits for the window instead of being dropped, so a link can be what launches the app.
+
+## The command palette knows what a process is doing
+
+- Choosing Stop for a process that had already exited used to ask you to confirm terminating it, then send the stop anyway. Actions are now resolved against the current state at the moment you press Enter, and one whose outcome already happened quietly does nothing.
+- For a running process, Restart comes before Stop, so a fast Enter lands on the harmless one.
+
+## Groundwork: Spotlight and Shortcuts
+
+- The App Intents surface — searching your projects, starting a process by voice or from Shortcuts — now builds as an extension inside Hangar itself, instead of only working through a development host. It is not enabled in this build: shipping it needs a provisioning profile that is still being set up, and an extension that ships without one looks installed while quietly failing to read anything.
+
 # Hangar 0.7.0
 
 ## Update from the sidebar
