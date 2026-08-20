@@ -3,7 +3,10 @@ import Foundation
 
 /// Hangar-side constants shared by the consumer files.
 enum HangarIntents {
-    static let appGroup = "group.works.xoxo.hangar"
+    /// Must match `app.storage.appGroup` in appintents.config.json — the
+    /// prefix is the team Hangar ships under, because an App Group cannot
+    /// span two teams.
+    static let appGroup = "824CY78JVJ.works.xoxo.hangar"
     /// The Electron app's bundle id — NOT the dev host's.
     static let hangarBundleId = "works.xoxo.hangar"
 

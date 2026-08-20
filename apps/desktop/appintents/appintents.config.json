@@ -1,9 +1,19 @@
 {
   "app": {
     "name": "Hangar",
-    "storage": { "appGroup": "group.works.xoxo.hangar" }
+    "bundleId": "works.xoxo.hangar",
+    "storage": { "kind": "appGroup", "appGroup": "824CY78JVJ.works.xoxo.hangar" }
   },
   "linking": { "scheme": "hangar" },
+  "deployment": {
+    "platform": "macOS",
+    "deploymentTarget": "26.0",
+    "teamId": { "env": "HANGAR_TEAM_ID" },
+    "extension": {
+      "bundleId": "works.xoxo.hangar.appintents",
+      "sources": ["Consumer"]
+    }
+  },
   "entities": [
     {
       "name": "Project",
@@ -39,7 +49,7 @@
         "subtitle": "state",
         "image": { "systemName": "terminal" }
       },
-      "indexed": false,
+      "indexed": true,
       "url": { "path": "process" }
     }
   ],

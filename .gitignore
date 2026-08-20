@@ -11,7 +11,13 @@ apps/desktop/release/
 .hiddenPassword
 *.p12
 
-# Xcode (regenerate with xcodegen from project.yml)
+# Xcode (regenerate with `pnpm --filter @hangar/desktop appintents:project`)
 apps/desktop/appintents/HangarIntents.xcodeproj/
 apps/desktop/appintents/DevHost/Info.plist
+# xcodegen writes the appex plist and entitlements next to the fragment that
+# declares them; the fragment itself is generated code and is committed.
+apps/desktop/appintents/Generated/HangarIntents-Info.plist
+apps/desktop/appintents/Generated/HangarIntents.entitlements
+# xcodebuild's derived data when the packaging hook builds the extension
+apps/desktop/appintents/build/
 *.tgz

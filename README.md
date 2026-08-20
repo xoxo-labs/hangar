@@ -50,6 +50,43 @@ Every app icon — the macOS `.icns`, the iOS and Android ones, the favicons and
 the web app manifest — is generated from `assets/hangar.svg` and committed. After
 editing the artwork, run `pnpm icons` (needs `brew install librsvg`).
 
+### Spotlight and Shortcuts
+
+The App Intents surface in `apps/desktop/appintents` is generated from
+`appintents.config.json` by `@xoxo/appintents-codegen`, which lives in the
+sibling `voicecraft` checkout — set `$HANGAR_APPINTENTS_CODEGEN` to that
+package's directory if yours is not at
+`../voicecraft/packages/appintents-codegen`. The Xcode project is not committed; it is
+regenerated from `project.yml` plus the generated target fragment, so it needs
+`brew install xcodegen`:
+
+```sh
+pnpm --filter @hangar/desktop appintents:generate   # Swift + target fragment
+HANGAR_TEAM_ID=… HANGAR_DEV_TEAM_ID=… \
+  pnpm --filter @hangar/desktop appintents:project  # HangarIntents.xcodeproj
+```
+
+Two teams, two variables: `HANGAR_TEAM_ID` signs the production extension and
+must match the App Group prefix in `appintents.config.json` (a group cannot
+span teams), while `HANGAR_DEV_TEAM_ID` is whatever local certificate builds
+the dev host — that one is nobody's business but yours, so it stays out of the
+repo.
+
+`HangarIntentsDev` is a throwaway host that runs the intents against
+`~/.hangar-dev` with no provisioning. `HangarIntents` is the extension meant to
+ship inside `Hangar.app`, and packaging embeds it only under
+`HANGAR_EMBED_APPINTENTS=1`:
+
+```sh
+HANGAR_EMBED_APPINTENTS=1 HANGAR_TEAM_ID=… pnpm dist:mac
+```
+
+It is opt-in because an App Group entitlement outside the App Store is only
+honoured with an `embedded.provisionprofile` carrying that group — pass it as
+`$HANGAR_APPINTENTS_PROFILE`. Without one, the build notarizes happily and the
+extension then cannot reach its store, so a default-on switch would ship a
+surface that looks fine and does nothing.
+
 ## Registry
 
 Lives in `~/.hangar/projects.json` (override the directory with `$HANGAR_HOME`).

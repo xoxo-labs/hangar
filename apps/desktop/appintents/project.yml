@@ -5,27 +5,49 @@ options:
   deploymentTarget:
     macOS: "26.0"
 
+# The production appex target is generated from appintents.config.json, so it
+# stays in step with the Swift surface it runs. Regenerate both together:
+#
+#   bun <voicecraft>/packages/appintents-codegen/src/cli.ts \
+#     appintents.config.json Generated --extension-scaffold IntentsExtension
+include:
+  - Generated/AppIntentsTargets.yml
+
 targets:
+  # A provisioning-free host for exercising the intents against a running dev
+  # server. Production does not go through here: it runs the same sources in
+  # the generated HangarIntents appex, embedded in Hangar.app.
   HangarIntentsDev:
     type: application
     platform: macOS
     sources:
-      - Generated
+      # Swift only, for the reason the generated fragment gives: the store
+      # contract, the fragment itself and xcodegen's plist output are not
+      # bundle resources.
+      - path: Generated
+        includes:
+          - "*.swift"
       - Consumer
       - DevHost
     info:
       path: DevHost/Info.plist
       properties:
-        CFBundleURLTypes:
-          - CFBundleURLName: works.xoxo.hangar.intents-dev
-            CFBundleURLSchemes:
-              - hangar
-    # No entitlements: the dev host reads ~/.hangar-dev/appintents directly,
-    # so it needs no App Group and therefore no provisioning profile. The
-    # production appex adds the group.works.xoxo.hangar entitlement.
+        # What \(.applicationName) speaks in Siri phrases. Without it the
+        # dev host teaches you "…in HangarIntentsDev".
+        CFBundleDisplayName: Hangar
+    # No CFBundleURLTypes: hangar: belongs to Hangar.app, which is what the
+    # appex hands opens off to. A claim here would hijack it system-wide —
+    # the dev host consumes OpenRequests in-process and needs no scheme.
+    #
+    # No entitlements either: it reads ~/.hangar-dev/appintents through the
+    # register-time provider override, so it needs no App Group and therefore
+    # no provisioning profile.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: works.xoxo.hangar.intents-dev
         SWIFT_VERSION: "5.0"
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: D998B4F552
+        # Whichever team your local dev certificate belongs to; the appex
+        # signs under $HANGAR_TEAM_ID instead, because the App Group prefix
+        # has to match the team Hangar ships under.
+        DEVELOPMENT_TEAM: "${HANGAR_DEV_TEAM_ID}"
