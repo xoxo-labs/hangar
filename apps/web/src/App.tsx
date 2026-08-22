@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import * as actions from "./actions"
 import { CommandPalette } from "./components/CommandPalette"
 import { ConfirmDialog } from "./components/ConfirmDialog"
+import { ErrorAlert } from "./components/ErrorAlert"
 import { HelpDialog } from "./components/HelpDialog"
 import { HistoryWorkspace } from "./components/HistoryWorkspace"
 import { ProjectDialog } from "./components/ProjectDialog"
@@ -227,6 +228,7 @@ export function App() {
         </div>
       </main>
       <StatusBar />
+      <ErrorAlert />
       <ProjectDialog />
       <SettingsDialog />
       <HelpDialog />

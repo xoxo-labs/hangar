@@ -1,5 +1,5 @@
-import { LOCAL_CONN_ID } from "@hangar/client-core"
-import type { AppSettings, PairingInfo, Project, SessionInfo } from "@hangar/contracts"
+import { LOCAL_CONN_ID, parseScoped } from "@hangar/client-core"
+import type { AppSettings, PairingInfo, PortShareKind, Project, SessionId, SessionInfo } from "@hangar/contracts"
 import { requestPairingToken, sendTo } from "./connections/manager"
 import { useStore } from "./store"
 import { send } from "./ws"
@@ -79,4 +79,26 @@ export function createPairingToken(connId: string): Promise<PairingInfo> {
 /** Revokes a paired client's session token on the given machine. */
 export function revokeAuthSession(connId: string, id: string): void {
   sendTo(connId, { type: "revokeAuthSession", id })
+}
+
+/*
+ * Sharing is per-machine, not per-session: Tailscale publishes a port on the
+ * host that owns it. So these name their connection the way settings and
+ * pairing do, rather than being routed by a scoped id.
+ */
+
+/** Publishes a detected port through Tailscale on the machine that owns it. */
+export function sharePort(connId: string, port: number, kind: PortShareKind, session?: SessionId): void {
+  sendTo(connId, {
+    type: "sharePort",
+    port,
+    kind,
+    // The owning server knows only its own bare ids.
+    ...(session === undefined ? {} : { session: parseScoped(session).value }),
+  })
+}
+
+/** Withdraws a share. Serve config Hangar did not create is left alone. */
+export function unsharePort(connId: string, port: number): void {
+  sendTo(connId, { type: "unsharePort", port })
 }

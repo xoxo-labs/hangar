@@ -7,7 +7,7 @@
     "dev": "vite --port 4790",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "node --test src/links.test.ts src/components/packageScripts.logic.test.ts src/components/processActions.logic.test.ts src/components/settingsUpdate.logic.test.ts"
+    "test": "node --test src/links.test.ts src/shares.logic.test.ts src/components/browsePath.logic.test.ts src/components/packageScripts.logic.test.ts src/components/processActions.logic.test.ts src/components/settingsUpdate.logic.test.ts"
   },
   "dependencies": {
     "@hangar/client-core": "workspace:*",

@@ -43,6 +43,33 @@ export function ConfirmDialog() {
 
   if (!confirming) return null
 
+  if (confirming.action === "share-public") {
+    const title = `Publish port ${confirming.port} to the internet?`
+    const publish = () => {
+      actions.sharePort(confirming.connId, confirming.port, "public", confirming.session)
+      closeConfirm()
+    }
+    return (
+      <Overlay onDismiss={closeConfirm}>
+        <Dialog label={title} role="alertdialog" className="max-w-[384px]">
+          <DialogHeader title={title} />
+          <DialogBody>
+            <p className="m-0 text-md leading-normal text-surface-11 [&_code]:text-surface-12">
+              Anyone with the link reaches <code>:{confirming.port}</code> — no Tailscale account and no password. Stop
+              sharing from the status bar when you are done.
+            </p>
+          </DialogBody>
+          <DialogFooter>
+            <Button onClick={closeConfirm}>Cancel</Button>
+            <Button key={`share:${confirming.connId}:${confirming.port}`} autoFocus variant="danger" onClick={publish}>
+              Publish
+            </Button>
+          </DialogFooter>
+        </Dialog>
+      </Overlay>
+    )
+  }
+
   const copy = COPY[confirming.action]
   const project = displayName(confirming.project)
   const target = confirming.process ? `${project}/${confirming.process}` : `every process of ${project}`

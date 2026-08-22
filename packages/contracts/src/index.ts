@@ -37,6 +37,27 @@ export type Registry = {
   projects: Project[]
 }
 
+/** One directory offered while picking a project folder. Never a file: browsing
+ * is for reaching a project root, and a file name is information the client has
+ * no use for. `git`/`pkg` are what let you tell a project apart from its parent. */
+export type BrowseEntry = {
+  name: string
+  /** Absolute path, so a client can select an entry without re-joining paths. */
+  path: string
+  git: boolean
+  pkg: boolean
+}
+
+export type BrowseResult = {
+  /** Absolute directory the entries were read from. */
+  parent: string
+  /** Prefix the last typed segment filtered by; "" when a whole directory is listed. */
+  prefix: string
+  entries: BrowseEntry[]
+  /** Set when a directory held more matches than one listing returns. */
+  truncated: boolean
+}
+
 export type BrowserChoice = "system" | "safari" | "chrome" | "arc" | "firefox" | "brave" | "edge"
 export type ShareHostChoice = "auto" | "lan" | "tailscale" | "custom"
 
@@ -55,6 +76,8 @@ export type AppSettings = {
     /** Address used when copying a detected-port link. */
     shareHost: ShareHostChoice
     customHost: string
+    /** Show and allow private Tailnet HTTPS (`tailscale serve`) controls. */
+    tailnetSharing: boolean
   }
   terminal: {
     copyOnSelect: boolean
@@ -92,6 +115,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     browser: "system",
     shareHost: "auto",
     customHost: "",
+    tailnetSharing: false,
   },
   terminal: {
     copyOnSelect: true,
@@ -229,6 +253,46 @@ export type SessionHistoryEntry = {
   exitDiagnosis?: ExitDiagnosis
 }
 
+/**
+ * How far a shared port reaches. `tailnet` is `tailscale serve` — HTTPS, but
+ * only for machines on the same tailnet. `public` is `tailscale funnel`: the
+ * open internet, no account and no client needed at the other end, which is
+ * what makes it the one piece of Hangar a stranger can reach.
+ */
+export type PortShareKind = "tailnet" | "public"
+
+/** One local port published through Tailscale. Owned by the machine, not the session. */
+export type PortShare = {
+  /** The local port being proxied, as detected on the session. */
+  port: number
+  kind: PortShareKind
+  /** What a QR encodes and a browser opens, e.g. "https://mac.tail1234.ts.net". */
+  url: string
+  /**
+   * The HTTPS port Tailscale terminates on. Funnel only accepts 443, 8443 and
+   * 10000, so this is also the reason a fourth public share is refused.
+   */
+  servePort: number
+  /**
+   * Session that owned the port when sharing started, so the UI can mark the
+   * row it came from. Absent for a share Hangar adopted rather than created.
+   */
+  session?: SessionId
+  createdAt: number
+}
+
+/** Whether this machine can share a port at all, and why not when it cannot. */
+export type TailscaleState = {
+  /** The `tailscale` CLI was found on this machine. */
+  installed: boolean
+  /** tailscaled is up and logged in — `BackendState: "Running"`. */
+  running: boolean
+  /** MagicDNS name of this node, e.g. "mac.tail1234.ts.net". Absent until running. */
+  dnsName?: string
+  /** Ready to show as-is when sharing is unavailable, e.g. "Tailscale is stopped". */
+  message?: string
+}
+
 /** A client from another machine that holds a session token for this server. */
 export type AuthSessionInfo = {
   id: string
@@ -288,6 +352,14 @@ export type ClientMsg =
   | { type: "createPairingToken" }
   /** Revoke a paired client's session token. */
   | { type: "revokeAuthSession"; id: string }
+  /**
+   * Publish a detected port through Tailscale. `session` is bare (the owning
+   * machine's own id), because the share belongs to the machine: the client
+   * strips its scope before sending, the way it does for every per-machine message.
+   */
+  | { type: "sharePort"; port: number; kind: PortShareKind; session?: SessionId }
+  /** Withdraw a share, leaving any serve config Hangar did not create untouched. */
+  | { type: "unsharePort"; port: number }
 
 /** Messages the server broadcasts to every connected UI. */
 export type ServerMsg =
@@ -302,6 +374,10 @@ export type ServerMsg =
       serverName?: string
       /** Paired clients, for the connections settings UI. Absent on older servers. */
       authSessions?: AuthSessionInfo[]
+      /** Ports this machine is currently publishing through Tailscale. Absent on older servers. */
+      shares?: PortShare[]
+      /** Whether this machine can share at all, for the offer/repair UI. Absent on older servers. */
+      tailscale?: TailscaleState
     }
   /** Lightweight resource updates, kept out of full state broadcasts. */
   | { type: "metrics"; id: SessionId; runId: string; metrics: SessionMetrics }

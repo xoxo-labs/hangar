@@ -1,14 +1,25 @@
 import { connIdOf, displayName } from "@hangar/client-core"
-import type { BrowserChoice, SessionHistoryEntry, SessionInfo } from "@hangar/contracts"
-import { Copy, ExternalLink, Info } from "lucide-react"
+import type {
+  BrowserChoice,
+  PortShareKind,
+  SessionHistoryEntry,
+  SessionId,
+  SessionInfo,
+  TailscaleState,
+} from "@hangar/contracts"
+import { Copy, ExternalLink, Info, QrCode } from "lucide-react"
+import { toDataURL } from "qrcode"
 import { useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import * as actions from "../actions"
 import { usePortLinks } from "../hooks/usePortLinks"
 import { browserLabel } from "../links"
+import { type ActiveShare, shareLabel, useSharesFor } from "../shares"
 import { hasHighCpu, toneOf } from "../status"
 import { type SessionMetricPoint, connectionOf, useStore } from "../store"
 import { Button } from "../ui/Button"
 import { cx } from "../ui/cx"
+import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/Dialog"
 import { IconButton } from "../ui/IconButton"
 import { Dot } from "./Dot"
 import { BrowserSelect } from "./BrowserSelect"
@@ -153,11 +164,17 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
     return project?.processes.find((item) => item.name === session.process)?.browser ?? project?.browser
   })
   const connId = connIdOf(session.id)
+  // null means the machine's server predates sharing; the QR dialog hides the share tiles then.
+  const tailscale = useStore((state) => connectionOf(state.connections, connId).tailscale)
+  const tailnetSharingEnabled = useStore(
+    (state) => connectionOf(state.connections, connId).settings.links.tailnetSharing,
+  )
   const {
     openPort,
     copyPort,
     linkForPort,
     urlForPort,
+    qrLinksForPort,
     isLoopbackOnly,
     browser: resolvedBrowser,
   } = usePortLinks(connId, metrics, browser)
@@ -245,7 +262,7 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
                 return (
                   <div
                     key={port}
-                    className="flex min-h-[44px] items-center gap-2 rounded-md bg-surface-a2 py-1.5 pr-1.5 pl-2.5"
+                    className="relative flex min-h-[44px] items-center gap-2 rounded-md bg-surface-a2 py-1.5 pr-1.5 pl-2.5"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="font-mono text-base font-medium tabular-nums text-surface-12">:{port}</div>
@@ -262,6 +279,15 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
                       >
                         <Copy className="size-[14px]" aria-hidden="true" />
                       </IconButton>
+                      <PortQrButton
+                        port={port}
+                        links={qrLinksForPort(port)}
+                        loopbackOnly={isLoopbackOnly(port)}
+                        connId={connId}
+                        session={session.id}
+                        tailscale={tailscale}
+                        tailnetSharingEnabled={tailnetSharingEnabled}
+                      />
                       <IconButton
                         className="size-[28px]"
                         title={`Open ${address(urlForPort(port))} in ${browserLabel(resolvedBrowser)}`}
@@ -302,6 +328,417 @@ export function SessionInspector({ session, onClose }: { session: SessionInfo; o
         <ProcessAdvancedSettings project={session.project} process={session.process} />
       </div>
     </aside>
+  )
+}
+
+export type QrLink = { kind: "lan" | "tailscale"; host: string; url: string }
+
+function PortQrButton({
+  port,
+  links,
+  loopbackOnly,
+  connId,
+  session,
+  tailscale,
+  tailnetSharingEnabled,
+}: {
+  port: number
+  links: QrLink[]
+  loopbackOnly: boolean
+  connId: string
+  session: SessionId
+  tailscale: TailscaleState | null
+  tailnetSharingEnabled: boolean
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <IconButton
+        className="size-[28px]"
+        title={`Show QR code for port ${port}`}
+        aria-label={`Show QR code for port ${port}`}
+        aria-expanded={open}
+        onClick={() => setOpen(true)}
+      >
+        <QrCode className="size-[14px]" aria-hidden="true" />
+      </IconButton>
+      {open &&
+        createPortal(
+          <PortQrDialog
+            port={port}
+            links={links}
+            loopbackOnly={loopbackOnly}
+            connId={connId}
+            session={session}
+            tailscale={tailscale}
+            tailnetSharingEnabled={tailnetSharingEnabled}
+            onClose={() => setOpen(false)}
+          />,
+          document.body,
+        )}
+    </>
+  )
+}
+
+/** The full port dialog opened from an already-live share outside the inspector. */
+export function ActiveShareQrDialog({ share, onClose }: { share: ActiveShare; onClose: () => void }) {
+  const session = useStore((state) => state.sessions.find((item) => item.id === share.session))
+  const tailscale = useStore((state) => connectionOf(state.connections, share.connId).tailscale)
+  const tailnetSharingEnabled = useStore(
+    (state) => connectionOf(state.connections, share.connId).settings.links.tailnetSharing,
+  )
+  const { qrLinksForPort, isLoopbackOnly } = usePortLinks(share.connId, session?.metrics)
+
+  return (
+    <PortQrDialog
+      port={share.port}
+      links={qrLinksForPort(share.port)}
+      loopbackOnly={isLoopbackOnly(share.port)}
+      connId={share.connId}
+      session={share.session}
+      tailscale={tailscale}
+      tailnetSharingEnabled={tailnetSharingEnabled}
+      initialKey={`share:${share.kind}`}
+      onClose={onClose}
+    />
+  )
+}
+
+export function PortQrDialog({
+  port,
+  links,
+  loopbackOnly,
+  connId,
+  session,
+  tailscale,
+  tailnetSharingEnabled,
+  initialKey,
+  onClose,
+}: {
+  port: number
+  links: QrLink[]
+  loopbackOnly: boolean
+  connId: string
+  session?: SessionId
+  tailscale: TailscaleState | null
+  tailnetSharingEnabled: boolean
+  /** Reach tile selected when the dialog opens, e.g. an active share from the status bar. */
+  initialKey?: string
+  onClose: () => void
+}) {
+  const shares = useSharesFor(connId)
+  const showNotice = useStore((state) => state.showNotice)
+  // The server keeps one share per port, so whichever tile matches its kind is the live one.
+  const share = shares.find((item) => item.port === port)
+  const [selectedKey, setSelectedKey] = useState<string | null>(initialKey ?? null)
+  const [pendingKind, setPendingKind] = useState<PortShareKind | null>(null)
+  const [qr, setQr] = useState<string | null>(null)
+
+  // Address tiles and a live share tile are the same thing to the QR: a URL to
+  // encode. Keying by a stable id (not the URL) lets a share tile stay selected
+  // while its URL goes from absent to real.
+  const options = [
+    ...links.map((link) => ({ key: link.url, url: link.url })),
+    ...(share === undefined ? [] : [{ key: `share:${share.kind}`, url: share.url }]),
+  ]
+  const fallback = options[0] ?? null
+  const activeKey = selectedKey ?? fallback?.key ?? null
+  const selected = options.find((option) => option.key === activeKey) ?? null
+  const url = selected?.url ?? null
+  // Public Funnel links stay available to everyone. The opt-in only reveals
+  // private Serve links; an existing tailnet share also remains visible so it
+  // can be stopped rather than hidden.
+  const shareKinds: PortShareKind[] =
+    tailnetSharingEnabled || share?.kind === "tailnet" ? ["tailnet", "public"] : ["public"]
+
+  // sharePort is fire-and-forget: success arrives as the share appearing in
+  // store state, failure only as a global error in the status bar. The pending
+  // flag bridges that gap, and the timeout (generous, because funnel can mint
+  // a cert on first use) keeps a failed share from spinning here forever.
+  useEffect(() => {
+    if (pendingKind === null) return
+    if (share?.kind === pendingKind) {
+      setPendingKind(null)
+      setSelectedKey(`share:${pendingKind}`)
+      return
+    }
+    const timer = setTimeout(() => setPendingKind(null), 30_000)
+    return () => clearTimeout(timer)
+  }, [pendingKind, share])
+
+  const selectReach = (key: string): void => setSelectedKey(key)
+
+  const turnOn = (kind: PortShareKind): void => {
+    setSelectedKey(kind === "public" ? "share:public" : null)
+    setPendingKind(kind)
+    actions.sharePort(connId, port, kind, session)
+  }
+
+  const requestPublic = (): void => setSelectedKey("share:public")
+
+  const copySelected = (): void => {
+    if (selected === null) return
+    void navigator.clipboard.writeText(selected.url).then(
+      () => showNotice("Copied link"),
+      () => showNotice("Could not copy link"),
+    )
+  }
+
+  useEffect(() => {
+    if (url === null) {
+      setQr(null)
+      return
+    }
+    let live = true
+    setQr(null)
+    void toDataURL(url, { margin: 1, width: 220 })
+      .then((dataUrl) => {
+        if (live) setQr(dataUrl)
+      })
+      .catch(() => {
+        if (live) setQr(null)
+      })
+    return () => {
+      live = false
+    }
+  }, [url])
+
+  return (
+    <Overlay onDismiss={onClose}>
+      <Dialog
+        label={`QR code for port ${port}`}
+        className="w-[min(400px,100%)]"
+        onKeyDown={(event) => event.key === "Escape" && onClose()}
+      >
+        <DialogHeader title={`Open :${port} on another device`} />
+        <DialogBody className="items-center">
+          {links.length === 0 && share === undefined && (tailscale === null || shareKinds.length === 0) ? (
+            <p className="m-0 py-8 text-center text-sm leading-normal text-surface-9">
+              No LAN or Tailscale address was detected for this machine.
+            </p>
+          ) : (
+            <>
+              <div className="grid w-full grid-cols-2 gap-2">
+                {links.map((link) => (
+                  <button
+                    key={link.url}
+                    type="button"
+                    className={cx(
+                      "min-w-0 rounded-md border px-2.5 py-2 text-left",
+                      link.url === activeKey
+                        ? "border-accent-8 bg-accent-a3 text-surface-12"
+                        : "border-surface-5 bg-surface-a2 text-surface-10 hover:bg-surface-a3",
+                    )}
+                    onClick={() => selectReach(link.url)}
+                  >
+                    <strong className="block text-xs font-semibold">
+                      {link.kind === "lan" ? "Local network" : "Tailscale"}
+                    </strong>
+                    <span className="block truncate font-mono text-2xs" title={link.host}>
+                      {link.host}
+                    </span>
+                  </button>
+                ))}
+                {tailscale !== null &&
+                  shareKinds.map((kind) => (
+                    <ShareTile
+                      key={kind}
+                      kind={kind}
+                      tailscale={tailscale}
+                      share={share}
+                      pending={pendingKind === kind}
+                      selected={activeKey === `share:${kind}`}
+                      onSelect={() => selectReach(`share:${kind}`)}
+                      onTurnOn={() => turnOn(kind)}
+                      onRequestPublic={requestPublic}
+                    />
+                  ))}
+              </div>
+              {selected === null ? (
+                <div className="grid size-[220px] place-content-center justify-items-center gap-2 rounded-md border border-dashed border-surface-5 bg-surface-a2 px-6 text-center text-xs leading-normal text-surface-8">
+                  <QrCode className="size-8 text-surface-7" aria-hidden="true" />
+                  <span>
+                    {activeKey === "share:public" ? "Available after publishing" : "No reachable address yet"}
+                  </span>
+                </div>
+              ) : qr === null ? (
+                <div className="grid size-[220px] place-items-center text-xs text-surface-9">Generating QR…</div>
+              ) : (
+                <img
+                  src={qr}
+                  alt={`QR code for ${selected.url}`}
+                  className="size-[220px] rounded-md bg-white"
+                  width={220}
+                  height={220}
+                />
+              )}
+              {activeKey !== null && (
+                <div className="flex w-full items-center gap-1.5 rounded-md bg-surface-a2 py-1 pr-1 pl-2.5">
+                  <code
+                    className={cx(
+                      "min-w-0 flex-1 truncate bg-transparent! p-0! text-xs",
+                      selected === null ? "text-surface-7" : "text-surface-10",
+                    )}
+                    title={selected?.url}
+                  >
+                    {selected?.url ?? "Public HTTPS link appears after publishing"}
+                  </code>
+                  {share !== undefined && activeKey === `share:${share.kind}` ? (
+                    <Button
+                      variant="danger"
+                      className="flex-none px-2! py-1! text-xs!"
+                      onClick={() => actions.unsharePort(connId, port)}
+                    >
+                      Stop sharing
+                    </Button>
+                  ) : activeKey === "share:public" ? (
+                    <button
+                      type="button"
+                      className="flex-none rounded-sm bg-warning-9 px-2 py-1 text-xs font-semibold text-black enabled:hover:bg-warning-10 disabled:opacity-40"
+                      disabled={pendingKind === "public"}
+                      onClick={() => turnOn("public")}
+                    >
+                      {pendingKind === "public" ? "Publishing…" : "Publish"}
+                    </button>
+                  ) : null}
+                  <IconButton
+                    className="size-7 flex-none"
+                    title={selected === null ? "Link available after publishing" : `Copy ${selected.url}`}
+                    aria-label="Copy QR link"
+                    disabled={selected === null}
+                    onClick={copySelected}
+                  >
+                    <Copy className="size-[14px]" aria-hidden="true" />
+                  </IconButton>
+                </div>
+              )}
+              {loopbackOnly &&
+                (tailscale?.running === true ? (
+                  <p className="m-0 rounded-md bg-surface-a2 px-2.5 py-2 text-xs leading-normal text-surface-9">
+                    This port is bound to localhost only, so the direct addresses above cannot reach it — but Tailscale
+                    publishing proxies in to <code>localhost:{port}</code>, so its HTTPS links work as-is.
+                  </p>
+                ) : (
+                  <p className="m-0 rounded-md bg-warning-a2 px-2.5 py-2 text-xs leading-normal text-warning-11">
+                    This port is bound to localhost only. Bind it to <code>0.0.0.0</code> before opening it from another
+                    device.
+                  </p>
+                ))}
+            </>
+          )}
+        </DialogBody>
+        <DialogFooter>
+          <Button data-dialog-action onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
+      </Dialog>
+    </Overlay>
+  )
+}
+
+const SHARE_TILE_TITLE: Record<PortShareKind, string> = { tailnet: "Tailnet HTTPS", public: "Public link" }
+/** What turning the tile on buys — reach, not mechanism, since the mechanism is Tailscale's problem. */
+const SHARE_TILE_PROMISE: Record<PortShareKind, string> = {
+  tailnet: "HTTPS · tailnet members only",
+  public: "Anyone with the link",
+}
+
+/**
+ * One reach mode backed by `tailscale serve`/`funnel` rather than a plain
+ * address. Off it offers "Turn on"; live it is selectable like an address tile.
+ * Public sharing is staged like every other reach: select it here, then use the
+ * warning-coloured Publish action beside the placeholder link.
+ */
+function ShareTile({
+  kind,
+  tailscale,
+  share,
+  pending,
+  selected,
+  onSelect,
+  onTurnOn,
+  onRequestPublic,
+}: {
+  kind: PortShareKind
+  tailscale: TailscaleState
+  /** The port's single live share, whichever kind it is. */
+  share: ActiveShare | undefined
+  pending: boolean
+  selected: boolean
+  onSelect: () => void
+  onTurnOn: () => void
+  onRequestPublic: () => void
+}) {
+  if (share?.kind === kind) {
+    return (
+      <button
+        type="button"
+        className={cx(
+          "min-w-0 rounded-md border px-2.5 py-2 text-left",
+          selected
+            ? "border-accent-8 bg-accent-a3 text-surface-12"
+            : "border-surface-5 bg-surface-a2 text-surface-10 hover:bg-surface-a3",
+        )}
+        title={shareLabel(kind)}
+        onClick={onSelect}
+      >
+        <span className="flex items-baseline justify-between gap-1">
+          <strong className="text-xs font-semibold">{SHARE_TILE_TITLE[kind]}</strong>
+          {/* Amber for public: a live funnel is the state worth noticing at a glance. */}
+          <span className={cx("text-2xs font-semibold", kind === "public" ? "text-warning-10" : "text-success-10")}>
+            Live
+          </span>
+        </span>
+        <span className="block truncate font-mono text-2xs" title={share.url}>
+          {address(share.url)}
+        </span>
+      </button>
+    )
+  }
+
+  if (pending) {
+    return (
+      <div className="min-w-0 animate-pulse rounded-md border border-surface-5 bg-surface-a2 px-2.5 py-2 text-surface-10">
+        <strong className="block text-xs font-semibold">{SHARE_TILE_TITLE[kind]}</strong>
+        <span className="block truncate text-2xs text-surface-8">Turning on…</span>
+      </div>
+    )
+  }
+
+  if (!tailscale.running) {
+    // A dead tile stays a plain div: a button that cannot work would be a lie.
+    const reason = tailscale.message ?? (tailscale.installed ? "Tailscale is stopped" : "Tailscale is not installed")
+    return (
+      <div className="min-w-0 rounded-md border border-dashed border-surface-5 px-2.5 py-2 text-surface-8">
+        <strong className="block text-xs font-semibold">{SHARE_TILE_TITLE[kind]}</strong>
+        <span className="block truncate text-2xs" title={reason}>
+          {reason}
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      className={cx(
+        "min-w-0 rounded-md border px-2.5 py-2 text-left",
+        selected
+          ? "border-accent-8 bg-accent-a3 text-surface-12"
+          : "border-surface-5 bg-surface-a2 text-surface-10 hover:bg-surface-a3",
+      )}
+      onClick={kind === "public" ? onRequestPublic : onTurnOn}
+    >
+      <span className="flex items-baseline justify-between gap-1">
+        <strong className="text-xs font-semibold">{SHARE_TILE_TITLE[kind]}</strong>
+        <span className={cx("text-2xs font-semibold", kind === "public" ? "text-surface-8" : "text-accent-10")}>
+          {kind === "public" ? "Off" : "Turn on"}
+        </span>
+      </span>
+      <span className="block truncate text-2xs text-surface-8">{SHARE_TILE_PROMISE[kind]}</span>
+    </button>
   )
 }
 

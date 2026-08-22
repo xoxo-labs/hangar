@@ -46,9 +46,16 @@ export function loadSettings(): AppSettings {
 }
 
 export function saveSettings(settings: AppSettings): void {
-  // Older clients send payloads without the connections section; keep what is saved rather than reset it.
-  const connections = (settings as Partial<AppSettings>).connections ?? loadSettings().connections
-  const merged: AppSettings = { ...settings, connections }
+  // Older clients omit settings introduced after they shipped; keep the saved
+  // value rather than resetting it when one of those clients changes something else.
+  const incoming = settings as Omit<Partial<AppSettings>, "links"> & { links?: Partial<AppSettings["links"]> }
+  const saved = loadSettings()
+  const connections = incoming.connections ?? saved.connections
+  const links = {
+    ...settings.links,
+    tailnetSharing: incoming.links?.tailnetSharing ?? saved.links.tailnetSharing,
+  }
+  const merged: AppSettings = { ...settings, links, connections }
   validateSettings(merged)
   mkdirSync(hangarHome(), { recursive: true })
   writeFileSync(settingsPath(), JSON.stringify(merged, null, 2) + "\n")
@@ -93,6 +100,9 @@ function validateSettings(settings: AppSettings): void {
     throw new Error("invalid share host setting")
   }
   if (typeof settings.links.customHost !== "string") throw new Error("invalid custom share host")
+  if (typeof settings.links.tailnetSharing !== "boolean") {
+    throw new Error("invalid tailnet sharing setting")
+  }
   const terminal = settings?.terminal
   if (
     typeof terminal?.copyOnSelect !== "boolean" ||

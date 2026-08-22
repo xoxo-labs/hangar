@@ -1,15 +1,19 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
-import { existsSync, globSync, mkdirSync, readFileSync, statSync, watch } from "node:fs"
+import { type Dirent, existsSync, globSync, mkdirSync, readdirSync, readFileSync, statSync, watch } from "node:fs"
 import { basename, dirname, join, resolve } from "node:path"
 import { hostname, networkInterfaces } from "node:os"
 import { WebSocketServer, WebSocket } from "ws"
 import type {
   AppSettings,
+  BrowseEntry,
+  BrowseResult,
   ClientMsg,
   PairResponse,
   PairingInfo,
+  PortShare,
   Project,
   ServerMsg,
+  TailscaleState,
   WsTicketResponse,
 } from "@hangar/contracts"
 import {
@@ -28,6 +32,7 @@ import { loadHistory, loadHistoryReplay } from "./history.ts"
 import { clearRuntimeState, writeRuntimeState } from "./runtime-state.ts"
 import { SessionManager } from "./sessions.ts"
 import { loadSettings, saveSettings } from "./settings.ts"
+import { listShares, startShare, stopShare, stopOwnShares, tailscaleState } from "./tailscale.ts"
 import { resolveWebRoot, serveWebUi } from "./webui.ts"
 
 const LOOPBACK_ADDRESSES = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"])
@@ -38,6 +43,12 @@ const CORS_HEADERS = {
   "access-control-allow-methods": "GET, POST, DELETE",
 }
 const MAX_BODY_BYTES = 64 * 1024
+/** One keystroke should not stat a home directory's worth of candidates. */
+const BROWSE_LIMIT = 500
+/** How long a quit may spend withdrawing published ports before it gives up. */
+const SHARE_TEARDOWN_MS = 3_000
+/** How often Tailscale is re-read while a UI is watching. Two subprocesses a minute. */
+const SHARE_POLL_MS = 30_000
 
 function isLoopback(req: IncomingMessage): boolean {
   return LOOPBACK_ADDRESSES.has(req.socket.remoteAddress ?? "")
@@ -213,6 +224,60 @@ function inspectProject(inputPath: string): object {
   }
 }
 
+/**
+ * Completes a path the way someone types one, not the way a shell resolves one:
+ * unless the input ends in a separator, its last segment is a filter over the
+ * directory above it rather than a directory of its own.
+ */
+export function browseDirectories(inputPath: string): BrowseResult {
+  const raw = inputPath.trim()
+  // A bare "~" names a directory as surely as a trailing slash does.
+  const whole = raw === "" || raw === "~" || /[\\/]$/.test(raw)
+  const resolved = resolve(expandHome(raw === "" ? "~" : raw))
+  const parent = whole ? resolved : dirname(resolved)
+  const prefix = whole ? "" : basename(resolved)
+  const lowered = prefix.toLowerCase()
+
+  let dirents: Dirent[]
+  try {
+    dirents = readdirSync(parent, { withFileTypes: true })
+  } catch {
+    // A directory we cannot read is a dead end, not a failure: typing past a
+    // permission wall should simply offer nothing to pick.
+    return { parent, prefix, entries: [], truncated: false }
+  }
+
+  const matches = dirents
+    .filter((dirent) => {
+      if (!dirent.name.toLowerCase().startsWith(lowered)) return false
+      // Dotfiles stay out of every listing until the dot is typed on purpose.
+      if (dirent.name.startsWith(".") && !prefix.startsWith(".")) return false
+      if (dirent.isDirectory()) return true
+      // ~/code is full of symlinked checkouts, and isDirectory() is false for
+      // each of them; a broken link resolves to nothing and drops out here.
+      if (!dirent.isSymbolicLink()) return false
+      try {
+        return statSync(join(parent, dirent.name)).isDirectory()
+      } catch {
+        return false
+      }
+    })
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  // Stat only what is returned, so a huge directory costs one readdir and not
+  // thousands of existsSync calls nobody will see the answers to.
+  const entries = matches.slice(0, BROWSE_LIMIT).map((dirent): BrowseEntry => {
+    const full = join(parent, dirent.name)
+    return {
+      name: dirent.name,
+      path: full,
+      git: existsSync(join(full, ".git")),
+      pkg: existsSync(join(full, "package.json")),
+    }
+  })
+  return { parent, prefix, entries, truncated: matches.length > BROWSE_LIMIT }
+}
+
 export function serve(port: number, hostOverride?: string): void {
   const clients = new Set<WebSocket>()
   let host = bindHost(loadSettings(), hostOverride)
@@ -296,11 +361,50 @@ export function serve(port: number, hostOverride?: string): void {
     httpServer.closeAllConnections()
   }
 
+  /*
+   * Published ports are machine state, not session state, so they are cached
+   * here and refreshed around every mutation: `stateMsg` is called from a dozen
+   * synchronous places and cannot wait on a `tailscale` subprocess.
+   */
+  let shares: PortShare[] = []
+  let tailscale: TailscaleState = { installed: false, running: false }
+
+  const refreshShares = async (): Promise<void> => {
+    tailscale = await tailscaleState()
+    shares = tailscale.running ? await listShares() : []
+  }
+
+  /**
+   * Re-reads Tailscale and broadcasts only when the answer moved. Without this
+   * the state is only ever sampled at startup, so a user who launches Tailscale
+   * after Hangar would be told it is stopped until they restarted the app — and
+   * a share withdrawn from the Tailscale UI would linger in ours.
+   */
+  const syncShares = async (): Promise<void> => {
+    const before = JSON.stringify([shares, tailscale])
+    await refreshShares().catch(() => undefined)
+    if (JSON.stringify([shares, tailscale]) !== before) broadcastState()
+  }
+
   const broadcast = (msg: ServerMsg): void => {
     const json = JSON.stringify(msg)
     for (const client of clients) {
       if (client.readyState === WebSocket.OPEN) client.send(json)
     }
+    // A share survives a restart, because the port comes back. It must not
+    // survive an ending: a funnel aimed at a dead port hands a stranger an
+    // error page from a machine they were told was ours.
+    if (msg.type === "exit" && !manager.restarting(msg.id) && shares.some((share) => share.session === msg.id)) {
+      void releaseSessionShares(msg.id)
+    }
+  }
+
+  const releaseSessionShares = async (id: string): Promise<void> => {
+    for (const share of shares.filter((entry) => entry.session === id)) {
+      await stopShare(share.port).catch(() => undefined)
+    }
+    await refreshShares()
+    broadcastState()
   }
 
   const stateMsg = (): ServerMsg => {
@@ -323,6 +427,8 @@ export function serve(port: number, hostOverride?: string): void {
       settings,
       serverName: hostname(),
       authSessions: listSessions(),
+      shares,
+      tailscale,
     }
   }
   const broadcastState = (): void => {
@@ -335,6 +441,16 @@ export function serve(port: number, hostOverride?: string): void {
   }
 
   const manager = new SessionManager(broadcast, broadcastState, loadSettings)
+
+  // Adopt whatever Tailscale is already publishing rather than assuming a clean
+  // slate: a share that outlived a crash is still live, and the only thing worse
+  // than an exposed port is an exposed port no UI admits to.
+  void refreshShares().then(broadcastState, () => undefined)
+  // Tailscale is driven from outside Hangar as much as from inside it, so its
+  // state is polled rather than assumed. Idle when nobody is watching.
+  setInterval(() => {
+    if (clients.size > 0) void syncShares()
+  }, SHARE_POLL_MS).unref()
 
   // Spotlight/Shortcuts bridge: export the current state, then drain any
   // commands queued while no server was running and keep watching.
@@ -440,6 +556,21 @@ export function serve(port: number, hostOverride?: string): void {
         const path = url.searchParams.get("path") ?? ""
         if (path.trim() === "") throw new Error("path is required")
         sendJson(res, 200, inspectProject(path))
+      } catch (error) {
+        sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) })
+      }
+      return
+    }
+    // A native folder picker only ever sees the machine it opened on, so it
+    // cannot name a directory on a paired Mac or a headless Linux box. Every
+    // client picks a project folder through this listing instead.
+    if (req.method === "GET" && url.pathname === "/browse") {
+      if (!authorize(req)) {
+        sendJson(res, 401, { error: "unauthorized" })
+        return
+      }
+      try {
+        sendJson(res, 200, browseDirectories(url.searchParams.get("path") ?? ""))
       } catch (error) {
         sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) })
       }
@@ -592,6 +723,9 @@ export function serve(port: number, hostOverride?: string): void {
   wss.on("connection", (socket) => {
     clients.add(socket)
     socket.send(JSON.stringify(stateMsg()))
+    // A UI opening is the moment its answer about Tailscale matters most, and
+    // the cached one may be a poll old.
+    void syncShares()
     for (const snapshot of manager.snapshots()) {
       socket.send(JSON.stringify({ type: "snapshot", ...snapshot } satisfies ServerMsg))
     }
@@ -683,6 +817,30 @@ export function serve(port: number, hostOverride?: string): void {
         revokeSession(msg.id)
         broadcastState()
         return
+      case "sharePort":
+      case "unsharePort": {
+        // Publishing shells out, so the reply cannot ride this synchronous
+        // handler's throw path; a failure goes back to the asking client alone,
+        // since nobody else's UI asked for it.
+        void (async () => {
+          try {
+            if (msg.type === "sharePort") {
+              if (msg.kind === "tailnet" && !loadSettings().links.tailnetSharing) {
+                throw new Error("Tailnet HTTPS sharing is disabled in Settings")
+              }
+              await startShare(msg.port, msg.kind, msg.session)
+            } else await stopShare(msg.port)
+            await refreshShares()
+            broadcastState()
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            if (socket.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify({ type: "error", message } satisfies ServerMsg))
+            }
+          }
+        })()
+        return
+      }
       case "getHistoryReplay": {
         const replay = loadHistoryReplay(msg.runId, loadSettings())
         socket.send(JSON.stringify({ type: "historyReplay", runId: msg.runId, ...replay } satisfies ServerMsg))
@@ -719,7 +877,17 @@ export function serve(port: number, hostOverride?: string): void {
     if (shuttingDown) return
     shuttingDown = true
     process.stdout.write("\nshutting down sessions...\n")
-    await manager.stopAll()
+    // Serve config outlives this process, so a port Hangar published would stay
+    // reachable with no UI left anywhere to show it. Only what this run created
+    // is withdrawn: a serve entry the user made by hand is not ours to undo.
+    // Bounded and run alongside the PTYs, because quitting must not wait on a
+    // wedged tailscaled — an orphaned share is recovered at the next startup.
+    await Promise.all([
+      Promise.race([stopOwnShares(), new Promise((resolve) => setTimeout(resolve, SHARE_TEARDOWN_MS))]).catch(
+        () => undefined,
+      ),
+      manager.stopAll(),
+    ])
     clearRuntimeState()
     process.exit(0)
   }

@@ -8,6 +8,7 @@ import {
 import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react"
 import * as actions from "../actions"
 import { useDesktopUpdate } from "../hooks/useDesktopUpdate"
+import { openPortUrl } from "../links"
 import { useStore } from "../store"
 import { ConnectionsSettings } from "./ConnectionsSettings"
 import { resolveUpdateAction, type UpdateActionKind, updateStatusLine } from "./settingsUpdate.logic"
@@ -39,6 +40,24 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <div className="mb-[9px] text-sm font-semibold tracking-label text-surface-10 uppercase">{title}</div>
       {children}
     </div>
+  )
+}
+
+function DocsLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="text-accent-10 underline underline-offset-2 hover:text-accent-11"
+      onClick={(event) => {
+        if (!window.hangarDesktop) return
+        event.preventDefault()
+        void openPortUrl(href, "system").catch((error) => useStore.getState().setError(String(error)))
+      }}
+    >
+      {children}
+    </a>
   )
 }
 
@@ -222,6 +241,20 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
             <p className="mt-2 mb-0 text-xs leading-normal text-surface-9">
               The address a detected port is opened and copied at. LAN links work on the same Wi-Fi, Tailscale links on
               devices in your tailnet; a custom host covers a port that answers somewhere else, like a forwarded one.
+            </p>
+            <div className="mt-3">
+              <ToggleRow
+                checked={links.tailnetSharing}
+                onChange={(tailnetSharing) => patchLinks({ tailnetSharing })}
+                title="Show Tailnet HTTPS sharing"
+                hint="Adds the private tailnet option alongside the public-link control."
+              />
+            </div>
+            <p className="mt-2 mb-0 text-xs leading-normal text-surface-9">
+              Tailnet HTTPS uses Tailscale{" "}
+              <DocsLink href="https://tailscale.com/kb/1242/tailscale-serve">Serve</DocsLink> and your tailnet&apos;s{" "}
+              <DocsLink href="https://tailscale.com/kb/1018/acls">access policy</DocsLink>. Public links use Funnel and
+              remain available when this is off.
             </p>
           </Section>
           <Section title="Terminal behavior">

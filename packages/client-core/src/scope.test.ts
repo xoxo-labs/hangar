@@ -72,6 +72,26 @@ describe("scopeInbound", () => {
     )
   })
 
+  it("scopes the session a share came from, and leaves an adopted share alone", () => {
+    const msg = {
+      type: "state",
+      projects: [],
+      sessions: [],
+      history: [],
+      settings: {},
+      shares: [
+        { port: 3000, kind: "public", url: "https://m.ts.net", servePort: 443, createdAt: 0, session: "api/web" },
+        { port: 9000, kind: "tailnet", url: "https://m.ts.net:8443", servePort: 8443, createdAt: 0 },
+      ],
+    } as unknown as ServerMsg
+    const scopedMsg = scopeInbound("c1", msg)
+    if (scopedMsg.type !== "state") return assert.fail("expected a state message")
+    assert.equal(scopedMsg.shares?.[0]?.session, "c1::api/web")
+    // A share Hangar adopted rather than created names no session; scoping
+    // `undefined` would invent one and glue the share to an arbitrary row.
+    assert.equal("session" in (scopedMsg.shares?.[1] ?? {}), false)
+  })
+
   it("scopes session-addressed messages", () => {
     assert.deepEqual(scopeInbound("c1", { type: "output", id: "api/web", data: "hi" }), {
       type: "output",

@@ -538,6 +538,15 @@ export class SessionManager {
   }
 
   /**
+   * A respawn is already queued for this session, so its exit is a seam rather
+   * than an ending. Anything tied to the session's lifetime — a published port,
+   * say — must not be torn down and rebuilt across a restart.
+   */
+  restarting(id: SessionId): boolean {
+    return this.pendingRestarts.has(id)
+  }
+
+  /**
    * Restart all (or one) of a project's processes: running sessions are stopped
    * and respawn when their exit lands; everything else just starts.
    */

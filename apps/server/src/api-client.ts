@@ -1,4 +1,12 @@
-import type { PairResponse, PairingInfo, Project, ServerMsg, SessionInfo, WsTicketResponse } from "@hangar/contracts"
+import type {
+  BrowseResult,
+  PairResponse,
+  PairingInfo,
+  Project,
+  ServerMsg,
+  SessionInfo,
+  WsTicketResponse,
+} from "@hangar/contracts"
 import type { CliTarget } from "./targets.ts"
 import { targetBase } from "./targets.ts"
 
@@ -86,6 +94,10 @@ export class HangarApi {
 
   detect(path: string): Promise<unknown> {
     return this.request(`/project-info?path=${encodeURIComponent(path)}`)
+  }
+
+  browse(path: string): Promise<BrowseResult> {
+    return this.request(`/browse?path=${encodeURIComponent(path)}`)
   }
 
   upsertProject(project: Project): Promise<{ changed: boolean; project: Project }> {

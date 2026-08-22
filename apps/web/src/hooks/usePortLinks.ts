@@ -63,6 +63,14 @@ export function usePortLinks(connId: string, metrics: SessionMetrics | undefined
     [config, links.customHost, links.shareHost, showNotice],
   )
 
+  const qrLinksForPort = useCallback(
+    (port: number) => [
+      ...network.lan.map((host) => ({ kind: "lan" as const, host, url: `http://${host}:${port}` })),
+      ...network.tailscale.map((host) => ({ kind: "tailscale" as const, host, url: `http://${host}:${port}` })),
+    ],
+    [network],
+  )
+
   const isLoopbackOnly = useCallback(
     (port: number): boolean => {
       const bindings = metrics?.portBindings?.[port] ?? []
@@ -71,7 +79,7 @@ export function usePortLinks(connId: string, metrics: SessionMetrics | undefined
     [metrics?.portBindings],
   )
 
-  return { openPort, copyPort, linkForPort, urlForPort, isLoopbackOnly, browser }
+  return { openPort, copyPort, linkForPort, urlForPort, qrLinksForPort, isLoopbackOnly, browser }
 }
 
 function fallbackHost(config: { id: string; host: string }): string {

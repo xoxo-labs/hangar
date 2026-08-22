@@ -76,12 +76,20 @@ export function ResourceMetrics({
           </IconButton>
         </div>
       </div>
-      <div className={cx("grid gap-[7px]", layout === "grid" ? "grid-cols-2" : "grid-cols-1 gap-[4px]")}>
+      <div
+        className={cx(
+          "grid",
+          layout === "grid"
+            ? "grid-cols-2 gap-[7px]"
+            : "grid-cols-[max-content_minmax(60px,1fr)_max-content] gap-x-[6px] gap-y-[4px]",
+        )}
+      >
         <Metric
           label="CPU"
           value={formatCpu(metrics.cpuPercent)}
           hoverValue={hovered && formatCpu(hovered.cpuPercent)}
-          peak={`peak ${formatCpu(metrics.peakCpuPercent)}`}
+          summaryLabel="Peak"
+          summaryValue={formatCpu(metrics.peakCpuPercent)}
           values={history.map((point) => point.cpuPercent)}
           tone="accent"
           {...shared}
@@ -90,7 +98,8 @@ export function ResourceMetrics({
           label="Memory"
           value={formatBytes(metrics.memoryBytes)}
           hoverValue={hovered && formatBytes(hovered.memoryBytes)}
-          peak={`peak ${formatBytes(metrics.peakMemoryBytes)}`}
+          summaryLabel="Peak"
+          summaryValue={formatBytes(metrics.peakMemoryBytes)}
           values={history.map((point) => point.memoryBytes)}
           tone="success"
           {...shared}
@@ -99,6 +108,8 @@ export function ResourceMetrics({
           label="Processes"
           value={String(metrics.processCount)}
           hoverValue={hovered && String(hovered.processCount ?? metrics.processCount)}
+          summaryLabel="Active"
+          summaryValue={String(metrics.processCount)}
           values={history.map((point) => point.processCount ?? metrics.processCount)}
           tone="accent"
           {...shared}
@@ -107,7 +118,8 @@ export function ResourceMetrics({
           label="Output"
           value={`${formatBytes(metrics.outputBytesPerSecond)}/s`}
           hoverValue={hovered && `${formatBytes(hovered.outputBytesPerSecond)}/s`}
-          peak={`${formatBytes(metrics.outputBytes)} total`}
+          summaryLabel="Total"
+          summaryValue={formatBytes(metrics.outputBytes)}
           values={history.map((point) => point.outputBytesPerSecond)}
           tone="warning"
           {...shared}
@@ -167,7 +179,8 @@ type MetricProps = {
   label: string
   value: string
   hoverValue?: string
-  peak?: string
+  summaryLabel?: string
+  summaryValue?: string
   values: number[]
   tone: "accent" | "success" | "warning"
   hoveredIndex: number | null
@@ -182,7 +195,8 @@ function Metric({
   label,
   value,
   hoverValue,
-  peak,
+  summaryLabel,
+  summaryValue,
   values,
   tone,
   hoveredIndex,
@@ -194,9 +208,11 @@ function Metric({
 }: MetricProps) {
   if (compact)
     return (
-      <div className="grid h-[42px] grid-cols-[48px_62px_minmax(60px,1fr)_auto] items-center gap-[6px] rounded-md border border-surface-5 bg-surface-a2 px-[8px]">
-        <span className="text-xs text-surface-9">{label}</span>
-        <strong className="text-base font-book tabular-nums text-surface-12">{hoverValue ?? value}</strong>
+      <div className="col-span-full grid h-[48px] grid-cols-subgrid items-center rounded-md border border-surface-5 bg-surface-a2 px-[8px]">
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate text-xs text-surface-9">{label}</span>
+          <strong className="truncate text-base font-book tabular-nums text-surface-12">{hoverValue ?? value}</strong>
+        </div>
         <Sparkline
           compact
           values={values}
@@ -207,9 +223,15 @@ function Metric({
           onHover={onHover}
           onSelect={onSelect}
         />
-        <small className="max-w-[82px] truncate text-right text-2xs text-surface-8" title={peak}>
-          {peak}
-        </small>
+        <div
+          className="flex min-w-0 flex-col items-end"
+          title={summaryLabel && summaryValue ? `${summaryLabel} ${summaryValue}` : undefined}
+        >
+          <span className="w-full truncate text-right text-2xs text-surface-8">{summaryLabel}</span>
+          <strong className="w-full truncate text-right text-xs font-book tabular-nums text-surface-10">
+            {summaryValue}
+          </strong>
+        </div>
       </div>
     )
 
@@ -226,7 +248,11 @@ function Metric({
         onHover={onHover}
         onSelect={onSelect}
       />
-      {peak && <small className="mt-auto text-xs text-surface-8">{peak}</small>}
+      {summaryLabel && summaryValue && (
+        <small className="mt-auto text-xs text-surface-8">
+          {summaryLabel.toLowerCase()} {summaryValue}
+        </small>
+      )}
     </div>
   )
 }
@@ -291,7 +317,7 @@ function Sparkline({
     <svg
       className={cx(
         "w-full cursor-crosshair overflow-visible",
-        compact ? "m-0 h-[22px]" : "mt-[5px] mb-[3px] h-[28px]",
+        compact ? "m-0 h-[28px]" : "mt-[5px] mb-[3px] h-[28px]",
         SPARKLINE_TONE[tone],
       )}
       viewBox="0 0 100 28"

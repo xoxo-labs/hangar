@@ -6,11 +6,13 @@ import {
   type AppSettings,
   type AuthSessionInfo,
   type HistoryOutputEvent,
+  type PortShare,
   type Project,
   type SessionHistoryEntry,
   type SessionId,
   type SessionInfo,
   type SessionMetrics,
+  type TailscaleState,
 } from "@hangar/contracts"
 import { create } from "zustand"
 import { disposeTerminal } from "./terminals"
@@ -26,6 +28,10 @@ export type ConnectionState = {
   serverName: string | null
   settings: AppSettings
   authSessions: AuthSessionInfo[]
+  /** Ports this machine is publishing through Tailscale, with `session` already scoped. */
+  shares: PortShare[]
+  /** Whether this machine can share a port; null until the server says. */
+  tailscale: TailscaleState | null
   /** A `state` has landed at least once, so the next one is a reconnect snapshot. */
   hasState: boolean
   /** Set while a reconnect snapshot is pending: its new sessions must not grab focus. */
@@ -55,6 +61,8 @@ function freshConnection(config: ConnectionConfig): ConnectionState {
     serverName: null,
     settings: structuredClone(DEFAULT_SETTINGS),
     authSessions: [],
+    shares: [],
+    tailscale: null,
     hasState: false,
     suppressFocus: false,
   }
@@ -81,12 +89,33 @@ export type SessionMetricPoint = {
 export type PendingTab = { id: SessionId; project: string; process: string }
 
 /** A destructive action waiting for the user's OK in the confirm dialog. */
-export type ConfirmRequest = {
-  /** "stop-close" also closes the session's tab once the exit lands. */
-  action: "stop" | "restart" | "stop-close"
-  project: string
-  /** Undefined targets every process of the project. */
-  process?: string
+export type ConfirmRequest =
+  | {
+      /** "stop-close" also closes the session's tab once the exit lands. */
+      action: "stop" | "restart" | "stop-close"
+      project: string
+      /** Undefined targets every process of the project. */
+      process?: string
+    }
+  | {
+      /**
+       * Publishing a port to the open internet. It earns a confirm for a reason
+       * the others do not share: every other action here is reversible and stays
+       * on this machine, while this one hands an address to strangers.
+       */
+      action: "share-public"
+      connId: string
+      port: number
+      session: SessionId
+    }
+
+/**
+ * The scoped id a pending confirm hangs off, so removing a machine can drop the
+ * question it was about. Every variant names its target differently; what they
+ * share is that the target lives on exactly one connection.
+ */
+function confirmScope(request: ConfirmRequest): string {
+  return request.action === "share-public" ? request.session : request.project
 }
 
 /**
@@ -172,6 +201,8 @@ type Store = {
       settings: AppSettings
       serverName?: string
       authSessions?: AuthSessionInfo[]
+      shares?: PortShare[]
+      tailscale?: TailscaleState
     },
   ) => void
   updateMetrics: (id: SessionId, runId: string, metrics: SessionMetrics) => void
@@ -375,6 +406,10 @@ export const useStore = create<Store>((set, get) => ({
             settings,
             serverName: incoming.serverName ?? connection.serverName,
             authSessions: incoming.authSessions ?? [],
+            shares: incoming.shares ?? [],
+            // An older server sends nothing here; keeping the last answer would
+            // claim a sharing capability this machine never reported.
+            tailscale: incoming.tailscale ?? null,
             hasState: true,
             suppressFocus: false,
           },
@@ -465,7 +500,7 @@ export const useStore = create<Store>((set, get) => ({
         activeId: state.activeId !== null && mine(state.activeId) ? (sessions.at(-1)?.id ?? null) : state.activeId,
         activeHistory: dropsActiveHistory ? (state.historyOpen ? "overview" : null) : state.activeHistory,
         inspectingId: state.inspectingId !== null && mine(state.inspectingId) ? null : state.inspectingId,
-        confirming: state.confirming !== null && mine(state.confirming.project) ? null : state.confirming,
+        confirming: state.confirming !== null && mine(confirmScope(state.confirming)) ? null : state.confirming,
       }
     })
   },

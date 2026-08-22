@@ -17,6 +17,7 @@ import {
   type PackageScript,
   SCRIPT_FILTER_THRESHOLD,
 } from "./packageScripts.logic"
+import { PathBrowser, type PathBrowserHandle } from "./PathBrowser"
 
 /* Ports of the retired `.field` / `.text-button` rules. The `Field` primitive
  * covers the plain label-wrapped case; these two fields need a `<div>` (a
@@ -86,8 +87,10 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
   const machines = Object.values(connections)
   const machine = connectionOf(connections, connId)
   const config = machine.config
-  // Only this Mac's folders can be browsed; a paired machine's paths are typed.
-  const canBrowse = window.hangarDesktop !== undefined && connId === LOCAL_CONN_ID
+  // The native picker only ever sees the Mac it opens on; every machine's folders
+  // are reachable through the server-side browser below, so this is an extra door,
+  // not the only one.
+  const canPickNatively = window.hangarDesktop !== undefined && connId === LOCAL_CONN_ID
   const [name, setName] = useState(existing === undefined ? "" : displayName(existing.name))
   const [path, setPath] = useState(existing?.path ?? initialPath)
   const [rows, setRows] = useState<Row[]>(() =>
@@ -109,9 +112,13 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
   const [scriptQuery, setScriptQuery] = useState("")
   const [inspecting, setInspecting] = useState(false)
   const [browsing, setBrowsing] = useState(false)
-  const [manual, setManual] = useState(editing === null && !window.hangarDesktop)
+  // The welcome screen is the first thing a new project shows; this is how you leave it
+  // without having picked anything yet.
+  const [showForm, setShowForm] = useState(editing !== null)
+  const [pathFocused, setPathFocused] = useState(false)
 
   const nameEdited = useRef(false)
+  const browserRef = useRef<PathBrowserHandle>(null)
 
   useEffect(() => {
     const candidate = path.trim()
@@ -199,7 +206,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
 
   const browse = async (): Promise<void> => {
     const choose = window.hangarDesktop?.chooseDirectory
-    if (!choose || !canBrowse || browsing) return
+    if (!choose || !canPickNatively || browsing) return
     setBrowsing(true)
     try {
       const selected = await choose("Choose a project folder")
@@ -230,7 +237,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
       </Field>
     )
 
-  const choosingFolder = editing === null && !manual && canBrowse && path.trim() === ""
+  const choosingFolder = editing === null && !showForm && path.trim() === ""
   if (choosingFolder) {
     return (
       <Overlay onDismiss={closeEditor}>
@@ -238,31 +245,45 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
           <DialogHeader title="Add project" />
           <DialogBody className="gap-3 py-5">
             {machineField}
+            {/* One screen, two doors: the native picker where there is one, and the
+             * server-side browser everywhere else — including a paired Mac, whose
+             * folders this Mac's picker could never have shown. */}
             <button
               type="button"
               autoFocus
               className="group flex min-h-[190px] w-full flex-col items-center justify-center rounded-lg border border-dashed border-surface-6 bg-surface-1 px-8 text-center hover:border-accent-8 hover:bg-accent-a2 focus:border-accent-9 focus:shadow-[0_0_0_2px_var(--color-accent-a3)] focus:outline-none"
               disabled={browsing}
-              onClick={() => void browse()}
+              onClick={() => (canPickNatively ? void browse() : setShowForm(true))}
             >
               <span className="grid size-11 place-items-center rounded-full border border-surface-5 bg-surface-a3 text-surface-10 group-hover:text-accent-10">
                 <FolderOpen size={21} strokeWidth={1.6} />
               </span>
               <strong className="mt-3 text-md font-semibold text-surface-12">
-                {browsing ? "Opening folder picker…" : "Choose a project folder"}
+                {browsing
+                  ? "Opening folder picker…"
+                  : canPickNatively
+                    ? "Choose a project folder"
+                    : `Browse folders on ${machineLabel(machine)}`}
               </strong>
               <span className="mt-1 max-w-[390px] text-base leading-relaxed text-surface-9">
                 Hangar will detect package.json scripts, the package manager, and monorepo workspaces.
               </span>
             </button>
-            <div className="flex items-center gap-3 text-xs text-surface-8">
-              <span className="h-px flex-1 bg-surface-5" />
-              or
-              <span className="h-px flex-1 bg-surface-5" />
-            </div>
-            <Button className="self-center" onClick={() => setManual(true)}>
-              Add manually
-            </Button>
+            {/* Offered only where the button above opens the native picker: without one
+             * it already leads to the browsable field, and two controls doing the same
+             * thing is worse than one. */}
+            {canPickNatively && (
+              <>
+                <div className="flex items-center gap-3 text-xs text-surface-8">
+                  <span className="h-px flex-1 bg-surface-5" />
+                  or
+                  <span className="h-px flex-1 bg-surface-5" />
+                </div>
+                <Button className="self-center" onClick={() => setShowForm(true)}>
+                  Type or browse a path
+                </Button>
+              </>
+            )}
           </DialogBody>
           <DialogFooter>
             <Button onClick={closeEditor}>Cancel</Button>
@@ -304,62 +325,52 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
 
         <DialogBody>
           {machineField}
-          {editing === null && !manual && canBrowse ? (
-            <div className={FIELD}>
-              <span className={FIELD_LABEL}>Project folder</span>
-              <div className="flex w-full min-w-0 items-center gap-2 rounded-md border border-surface-5 bg-surface-1 px-2 py-1.5">
-                <FolderOpen size={14} className="flex-none text-surface-9" />
-                <code className={cx(ELLIPSIS, "flex-1 text-sm text-surface-11")} title={path}>
-                  {path}
-                </code>
-                <button
-                  type="button"
-                  className={cx(TEXT_BUTTON, "flex-none")}
-                  disabled={browsing}
-                  onClick={() => void browse()}
-                >
-                  {browsing ? "Opening…" : "Change…"}
-                </button>
-              </div>
-              <span className={FIELD_HINT}>
-                {inspecting
-                  ? "Inspecting package.json and workspaces…"
-                  : "Folder selected; nothing will be copied or moved."}
-              </span>
+          {/* One field for both doors. The listing is a typeahead over the field's own
+           * value — a trailing "/" lists a folder, anything else filters it — so the
+           * path stays editable and browsable at once, on any machine. */}
+          <div className={FIELD}>
+            <label className={FIELD_LABEL} htmlFor="project-path">
+              Project folder
+            </label>
+            <div className="flex w-full gap-1.5">
+              <TextInput
+                mono
+                id="project-path"
+                autoFocus={editing === null}
+                value={path}
+                spellCheck={false}
+                autoComplete="off"
+                placeholder="~/code/my-app"
+                onChange={(e) => setPath(e.target.value)}
+                onFocus={() => setPathFocused(true)}
+                onBlur={() => setPathFocused(false)}
+                onKeyDown={(event) => {
+                  // The listing gets first refusal on the navigation keys; everything
+                  // it declines keeps bubbling to the dialog's own handler.
+                  if (browserRef.current?.handleKeyDown(event)) event.stopPropagation()
+                }}
+              />
+              {canPickNatively && (
+                <Button className="flex-none whitespace-nowrap" disabled={browsing} onClick={() => void browse()}>
+                  {browsing ? "Opening…" : "Choose…"}
+                </Button>
+              )}
             </div>
-          ) : (
-            <div className={FIELD}>
-              <label className={FIELD_LABEL} htmlFor="project-path">
-                Path
-              </label>
-              <div className="flex w-full gap-1.5">
-                <TextInput
-                  mono
-                  id="project-path"
-                  autoFocus={editing === null && manual}
-                  value={path}
-                  spellCheck={false}
-                  autoComplete="off"
-                  placeholder="~/code/my-app"
-                  onChange={(e) => setPath(e.target.value)}
-                />
-                {canBrowse && (
-                  <Button className="flex-none whitespace-nowrap" disabled={browsing} onClick={() => void browse()}>
-                    {browsing ? "Opening…" : "Choose…"}
-                  </Button>
-                )}
-              </div>
-              <span className={FIELD_HINT}>
-                {inspecting ? (
-                  "Inspecting package.json and workspaces…"
-                ) : (
-                  <>
-                    <code>~</code> expands to your home directory.
-                  </>
-                )}
-              </span>
-            </div>
-          )}
+            {pathFocused && <PathBrowser ref={browserRef} config={config} path={path} onPick={setPath} />}
+            <span className={FIELD_HINT}>
+              {inspecting ? (
+                "Inspecting package.json and workspaces…"
+              ) : pathFocused ? (
+                <>
+                  <kbd>↑↓</kbd> to move, <kbd>↵</kbd> to open a folder, <kbd>⇥</kbd> to complete.
+                </>
+              ) : (
+                <>
+                  <code>~</code> expands to the home directory on {machineLabel(machine)}.
+                </>
+              )}
+            </span>
+          </div>
 
           <Field
             label="Name"

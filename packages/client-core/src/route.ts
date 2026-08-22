@@ -24,6 +24,11 @@ export function scopeInbound(connId: string, msg: ServerMsg): ServerMsg {
           id: mark(entry.id),
           project: mark(entry.project),
         })),
+        // A share names the session it came from so the UI can mark that row;
+        // an adopted share names none, and marking `undefined` would invent one.
+        ...(msg.shares
+          ? { shares: msg.shares.map((share) => (share.session ? { ...share, session: mark(share.session) } : share)) }
+          : {}),
       }
     case "metrics":
       return { ...msg, id: mark(msg.id), runId: mark(msg.runId) }

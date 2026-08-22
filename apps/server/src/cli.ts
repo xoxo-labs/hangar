@@ -20,6 +20,7 @@ Usage:
   hangar [global options] rm <name>
   hangar [global options] path <name>
   hangar [global options] detect <path> [--json]
+  hangar [global options] browse [path] [--json]
   hangar [global options] status [project[/process]] [--running] [--json]
   hangar [global options] start|stop|restart <project[/process]> [--wait-port[=<n>]] [--json]
   hangar [global options] logs <project/process> [--tail <n>] [--ansi] [--json]
@@ -625,6 +626,20 @@ async function cmdDetect(argv: string[]): Promise<void> {
   if (!globalOptions.json) human(JSON.stringify(result, null, 2))
 }
 
+async function cmdBrowse(argv: string[]): Promise<void> {
+  // No path means the home directory: it is where picking a project starts.
+  const result = await (await api()).browse(argv[0] ?? "")
+  success(result)
+  if (globalOptions.json) return
+  human(result.parent)
+  const width = Math.max(0, ...result.entries.map((entry) => entry.name.length + 1))
+  for (const entry of result.entries) {
+    const tags = [entry.git ? "git" : "", entry.pkg ? "pkg" : ""].filter(Boolean).join(" ")
+    human(tags === "" ? `  ${entry.name}/` : `  ${`${entry.name}/`.padEnd(width)}  ${tags}`)
+  }
+  if (result.truncated) human(`  … capped at ${result.entries.length} entries; type more to narrow the listing`)
+}
+
 async function cmdRun(argv: string[]): Promise<void> {
   if (!isLocalTarget())
     throw new CliFailure("run is local-only; use start for supervised remote sessions", "invalid_usage", 2)
@@ -660,6 +675,8 @@ async function main(): Promise<void> {
       return cmdPath(rest)
     case "detect":
       return cmdDetect(rest)
+    case "browse":
+      return cmdBrowse(rest)
     case "status":
       return cmdStatus(rest)
     case "start":

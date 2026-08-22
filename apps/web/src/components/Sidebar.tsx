@@ -1,26 +1,29 @@
 import {
   buildSidebarModel,
+  connIdOf,
   displayName,
   flatEntries,
   LOCAL_CONN_ID,
   type SidebarEntry,
   type SidebarPart,
 } from "@hangar/client-core"
-import { type Project, type SessionInfo, sessionId } from "@hangar/contracts"
-import { ChevronRight, CircleHelp, History, Play, RotateCw, Settings, Square } from "lucide-react"
+import { type Project, type SessionId, type SessionInfo, sessionId } from "@hangar/contracts"
+import { ChevronRight, CircleHelp, Globe, History, Play, RotateCw, Settings, Square } from "lucide-react"
 import { type DragEvent, type FormEvent, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import * as actions from "../actions"
 import { removeConnection, retryConnection, updateConnection } from "../connections"
 import { useDesktopUpdate } from "../hooks/useDesktopUpdate"
+import { type ActiveShare, shareLabel, useShareForSession } from "../shares"
 import { CONNECTION_LABEL, connectionTone, describe, hasHighCpu, toneOf } from "../status"
-import { type ConfirmRequest, type ConnectionState, machineLabel, useStore } from "../store"
+import { type ConfirmRequest, type ConnectionState, connectionOf, machineLabel, useStore } from "../store"
 import { Button } from "../ui/Button"
 import { cx } from "../ui/cx"
 import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/Dialog"
 import { IconButton } from "../ui/IconButton"
 import { MENU_SEPARATOR, Menu, type MenuItem } from "../ui/Menu"
 import { Dot } from "./Dot"
+import { ActiveShareQrDialog } from "./SessionInspector"
 import { SidebarUpdateButton } from "./SidebarUpdateButton"
 
 /*
@@ -707,6 +710,52 @@ function MachineSection({ part, byId }: { part: SidebarPart; byId: Map<string, S
   )
 }
 
+/**
+ * The sharing group of a process row's menu, separator included, so a row with
+ * nothing to share contributes nothing at all. A share belongs to the machine,
+ * not to the process, so the row that already publishes one always offers the
+ * kill — a public port outlives the session behind it, still open to strangers.
+ */
+function shareMenuItems(
+  id: SessionId,
+  share: ActiveShare | undefined,
+  ports: number[],
+  canShare: boolean,
+  tailnetSharingEnabled: boolean,
+  setActive: (id: SessionId) => void,
+  showQr: () => void,
+  requestConfirm: (request: ConfirmRequest) => void,
+): MenuItem[] {
+  if (share) {
+    return [
+      MENU_SEPARATOR,
+      { label: `Show QR for :${share.port}`, onSelect: showQr },
+      { label: `Stop sharing :${share.port}`, onSelect: () => actions.unsharePort(share.connId, share.port) },
+    ]
+  }
+  // Offering to share on a machine whose Tailscale is stopped would spend a
+  // click to earn an error. The panel explains the state; the menu just omits it.
+  if (!canShare) return []
+  // Choosing between several ports wants the URL and the QR next to the choice,
+  // which is the session's own panel; from here the row only takes you there.
+  if (ports.length > 1) return [MENU_SEPARATOR, { label: "Share port…", onSelect: () => setActive(id) }]
+  const [only] = ports
+  if (only === undefined) return []
+  const connId = connIdOf(id)
+  return [
+    MENU_SEPARATOR,
+    ...(tailnetSharingEnabled
+      ? [{ label: `Share :${only} on tailnet`, onSelect: () => actions.sharePort(connId, only, "tailnet", id) }]
+      : []),
+    // Tailnet sharing is reversible and stays among machines the user already
+    // trusts; going public is neither, so it asks first wherever it is offered.
+    {
+      label: `Share :${only} publicly…`,
+      onSelect: () => requestConfirm({ action: "share-public", connId, port: only, session: id }),
+    },
+  ]
+}
+
 function ProcessRow({
   project,
   name,
@@ -726,10 +775,30 @@ function ProcessRow({
   const requestConfirm = useStore((s) => s.requestConfirm)
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
   const [renameOpen, setRenameOpen] = useState(false)
+  const [qrShare, setQrShare] = useState<ActiveShare | null>(null)
 
   const id = sessionId(project, name)
   const running = session?.status === "running"
   const selected = activeId === id
+  const share = useShareForSession(id)
+  const canShare = useStore((state) => connectionOf(state.connections, connIdOf(id)).tailscale?.running === true)
+  const tailnetSharingEnabled = useStore(
+    (state) => connectionOf(state.connections, connIdOf(id)).settings.links.tailnetSharing,
+  )
+  // Ports are detected on a live process, so a stopped row can only ever offer
+  // to withdraw a share it already has, never to start one.
+  const shareItems = shareMenuItems(
+    id,
+    share,
+    running ? (session?.metrics?.ports ?? []) : [],
+    canShare,
+    tailnetSharingEnabled,
+    setActive,
+    () => {
+      if (share) setQrShare(share)
+    },
+    requestConfirm,
+  )
 
   return (
     <li
@@ -751,6 +820,17 @@ function ProcessRow({
         onClick={() => (session ? setActive(id) : openPending(project, name))}
       >
         <Dot tone={toneOf(session)} small title={describe(session)} />
+        {share && (
+          /* The row's background is already spoken for by selection and hover,
+           * so reach is carried by this icon's tone alone: warning means anyone
+           * on the internet can reach it. */
+          <span className="flex-none" title={`:${share.port} — ${shareLabel(share.kind)}`}>
+            <Globe
+              className={cx("size-[11px]", share.kind === "public" ? "text-warning-10" : "text-surface-9")}
+              aria-hidden="true"
+            />
+          </span>
+        )}
         <span className={cx(LABEL, "text-base", FADE, running ? FADE_HOVER_TWO : FADE_HOVER_ONE)}>{name}</span>
       </button>
 
@@ -773,12 +853,14 @@ function ProcessRow({
             : []),
           MENU_SEPARATOR,
           { label: "Rename…", disabled: running, onSelect: () => setRenameOpen(true) },
+          ...shareItems,
         ]}
       />
 
       {renameOpen && (
         <RenameProcessDialog projectName={project} processName={name} onClose={() => setRenameOpen(false)} />
       )}
+      {qrShare && createPortal(<ActiveShareQrDialog share={qrShare} onClose={() => setQrShare(null)} />, document.body)}
 
       <div className={ROW_ACTIONS}>
         {running ? (
