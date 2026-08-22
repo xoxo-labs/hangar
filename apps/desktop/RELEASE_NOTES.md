@@ -1,3 +1,29 @@
+# Hangar 0.9.0
+
+## Share a port with whoever you choose
+
+- A detected port can now be published straight from its sharing window. **Public on the internet** gives you a link that works for anyone you send it to — no account, and nothing to install at the other end. It is the one thing in Hangar a stranger can reach, so it confirms before it goes live and stays marked wherever it appears.
+- **Tailnet HTTPS** does the same over real HTTPS for machines on your own tailnet. It stays out of sight until you turn it on under Settings → Links, because it only makes sense on a tailnet you manage.
+- Publishing proxies from the Tailscale edge into localhost, so a dev server bound to `127.0.0.1` becomes reachable without changing how you start it. That is the case the sharing window used to only warn about.
+- A published port is withdrawn when its process ends and when Hangar quits. A restart is not an ending: the link survives the seam instead of being torn down and built again.
+
+## Your Tailscale address, without rebinding the dev server
+
+- The Tailscale reach can now switch on a bridge into localhost, so the `100.x` address you already had answers even when the server listens on loopback alone. The link you hand out is unchanged — only the way it gets there is new.
+- It changes routing, not the origin the browser sees. If a login or an edge provider refuses a plain-IP address, Tailnet HTTPS with a proper hostname is still the answer.
+
+## Every port you have open, in one place
+
+- The status bar item used to appear only while something was shared, then vanish the moment it stopped. It is now a standing list of every port Hangar has open, grouped by machine, each one showing how far it reaches and offering a QR to pick it up on your phone.
+- Because the item no longer comes and goes, its icon carries the warning instead: quiet when nothing is listening, plain while ports are open but private, amber the moment one is public.
+- The count beside it tracks shared ports rather than open ones, so a dev server restarting all day never makes it flicker. Any row can stop its own share, and once more than one port is public there is a single control to stop them all.
+
+## Settings, sharing and the tour share one shape
+
+- Settings is no longer one long scroll. Categories run down the left and the panel beside them shows one at a time.
+- The sharing window follows suit: the reaches are a list on the left, and the QR, the link and its on/off button hold still on the right while you move between them. Warnings keep their space rather than shifting the content when something goes live.
+- The first-run tour is two panes as well, its steps down the side doubling as a map of how much is left. Replaying it for one thing no longer means clicking past everything else — and a new step covers publishing, including what Tailscale adds.
+
 # Hangar 0.8.0
 
 ## Open a project straight from Spotlight
