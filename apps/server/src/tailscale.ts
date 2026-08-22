@@ -1,11 +1,11 @@
 /**
- * Publishing a detected dev-server port through Tailscale — tailnet-only via
- * `tailscale serve`, or to the open internet via `tailscale funnel`.
+ * Exposing a detected dev-server port through Tailscale: a raw TCP bridge on
+ * the node's Tailscale address, tailnet-only HTTPS, or public Tailscale Funnel.
  *
  * The serve config is shared mutable state: the user may have hand-built
  * entries in it that Hangar must survive. So this module never runs `reset`,
- * only ever turns off the single `--https=<port>` entry a share owns, and
- * refuses to claim an HTTPS port that already carries someone else's handler.
+ * only ever turns off the single `--tcp=<port>` or `--https=<port>` entry a
+ * share owns, and refuses to claim a port carrying someone else's handler.
  * Every decision about that config is a pure function over its JSON, so the
  * rules are testable without a running tailscaled.
  */
@@ -58,7 +58,7 @@ export function tailscaleBin(): string | null {
 
 /** Shape of `tailscale serve status --json`, only the parts we read. */
 export type ServeConfig = {
-  TCP?: Record<string, { HTTPS?: boolean }>
+  TCP?: Record<string, { HTTP?: boolean; HTTPS?: boolean; TCPForward?: string }>
   Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }>
   AllowFunnel?: Record<string, boolean>
 }
@@ -66,7 +66,7 @@ export type ServeConfig = {
 /** Shape of `tailscale status --json`, only the parts we read. */
 export type BackendStatus = {
   BackendState?: string
-  Self?: { DNSName?: string; HostName?: string }
+  Self?: { DNSName?: string; HostName?: string; TailscaleIPs?: string[] }
 }
 
 /**
@@ -92,7 +92,16 @@ function shareTarget(entry: { Handlers?: Record<string, { Proxy?: string }> }): 
   return loopbackPort(handlers[0]?.[1]?.Proxy)
 }
 
-function shareUrl(dnsName: string, servePort: number): string {
+/** Local port behind the exact TCP-forward shape Hangar creates. */
+function tcpForwardPort(target: string | undefined): number | null {
+  const match = target?.match(/^(?:tcp:\/\/)?(?:127\.0\.0\.1|localhost):(\d{1,5})$/)
+  if (!match?.[1]) return null
+  const port = Number(match[1])
+  return port > 0 && port <= 65535 ? port : null
+}
+
+function shareUrl(dnsName: string, servePort: number, kind: PortShareKind): string {
+  if (kind === "proxy") return `http://${dnsName}:${servePort}`
   return `https://${dnsName}` + (servePort === 443 ? "" : `:${servePort}`)
 }
 
@@ -101,16 +110,23 @@ function shareUrl(dnsName: string, servePort: number): string {
  * HTTPS port first. Tailscale keeps no timestamps, so `createdAt` is 0 here;
  * listShares() overlays what it knows.
  */
-export function readShares(config: ServeConfig, dnsName: string): PortShare[] {
+export function readShares(config: ServeConfig, dnsName: string, proxyHost = dnsName): PortShare[] {
   const shares: PortShare[] = []
+  for (const [listenerPort, entry] of Object.entries(config.TCP ?? {})) {
+    const servePort = Number(listenerPort)
+    const port = tcpForwardPort(entry.TCPForward)
+    if (!Number.isInteger(servePort) || port === null) continue
+    shares.push({ port, kind: "proxy", url: shareUrl(proxyHost, servePort, "proxy"), servePort, createdAt: 0 })
+  }
   for (const [hostPort, entry] of Object.entries(config.Web ?? {})) {
     if (!hostPort.startsWith(`${dnsName}:`)) continue
     const servePort = Number(hostPort.slice(dnsName.length + 1))
     if (!Number.isInteger(servePort)) continue
     const port = shareTarget(entry)
     if (port === null) continue
+    if (config.TCP?.[String(servePort)]?.HTTPS !== true) continue
     const kind: PortShareKind = config.AllowFunnel?.[hostPort] === true ? "public" : "tailnet"
-    shares.push({ port, kind, url: shareUrl(dnsName, servePort), servePort, createdAt: 0 })
+    shares.push({ port, kind, url: shareUrl(dnsName, servePort, kind), servePort, createdAt: 0 })
   }
   return shares.sort((a, b) => a.servePort - b.servePort)
 }
@@ -139,13 +155,15 @@ export function pickServePort(config: ServeConfig, dnsName: string, kind: PortSh
   return candidates.find((port) => servePortOwner(config, dnsName, port) === "free") ?? null
 }
 
-/** PURE. Argument vector for turning a share on. `--yes` because there is no terminal to answer funnel's prompt. */
+/** PURE. Argument vector for turning a share on. `--yes` avoids an interactive Funnel prompt. */
 export function shareArgs(kind: PortShareKind, servePort: number, localPort: number): string[] {
+  if (kind === "proxy") return ["serve", "--bg", "--yes", `--tcp=${servePort}`, `tcp://localhost:${localPort}`]
   return [kind === "public" ? "funnel" : "serve", "--bg", "--yes", `--https=${servePort}`, String(localPort)]
 }
 
-/** PURE. Argument vector for turning a share off — always scoped to one `--https` entry, never `reset`. */
+/** PURE. Argument vector for turning one entry off, never the user's whole Serve config. */
 export function unshareArgs(kind: PortShareKind, servePort: number): string[] {
+  if (kind === "proxy") return ["serve", `--tcp=${servePort}`, "off"]
   return [kind === "public" ? "funnel" : "serve", `--https=${servePort}`, "off"]
 }
 
@@ -182,7 +200,8 @@ export function stateFromStatus(status: BackendStatus): Omit<TailscaleState, "in
     // MagicDNS names arrive fully qualified — "host.tailnet.ts.net." — but
     // browsers want them bare.
     const dnsName = status.Self?.DNSName?.replace(/\.$/, "")
-    return { running: true, ...(dnsName ? { dnsName } : {}) }
+    const ipv4 = status.Self?.TailscaleIPs?.find((address) => address.includes("."))
+    return { running: true, ...(dnsName ? { dnsName } : {}), ...(ipv4 ? { ipv4 } : {}) }
   }
   if (backend === "Stopped") return { running: false, message: "Tailscale is stopped" }
   if (backend === "NeedsLogin") return { running: false, message: "Tailscale is not logged in" }
@@ -260,7 +279,7 @@ export async function listShares(): Promise<PortShare[]> {
     // and let the next poll catch up.
     return []
   }
-  const shares = readShares(config, dnsName)
+  const shares = readShares(config, dnsName, state.ipv4)
   const live = new Set(shares.map((share) => share.port))
   for (const port of records.keys()) if (!live.has(port)) records.delete(port)
   return shares.map((share) => {
@@ -288,8 +307,9 @@ export async function startShare(port: number, kind: PortShareKind, session?: Se
     throw new Error(`Tailscale could not report its serve configuration: ${failureText(error)}`)
   }
 
-  const existing = readShares(config, dnsName).filter((share) => share.port === port)
-  const match = existing.find((share) => share.kind === kind)
+  const existing = readShares(config, dnsName, state.ipv4).filter((share) => share.port === port)
+  // An HTTP proxy must preserve the direct :port URL shown in the QR dialog.
+  const match = existing.find((share) => share.kind === kind && (kind !== "proxy" || share.servePort === port))
   if (match !== undefined) {
     // Already published the way the caller wants — adopt it rather than stack
     // a second entry on another HTTPS port.
@@ -300,9 +320,18 @@ export async function startShare(port: number, kind: PortShareKind, session?: Se
   // Flipping a share's reach must not leave the old entry behind: a port that
   // just went tailnet-only must stop being public, and vice versa.
   const flipped = existing.find((share) => share.servePort === records.get(port)?.servePort) ?? existing[0]
-  if (flipped !== undefined) await run(unshareArgs(flipped.kind, flipped.servePort))
+  if (flipped !== undefined) {
+    await run(unshareArgs(flipped.kind, flipped.servePort))
+    // A proxy needs the app's exact port. Re-read after a reach flip so the
+    // occupancy check below sees the entry we just removed, not stale JSON.
+    try {
+      config = await serveConfig()
+    } catch (error) {
+      throw new Error(`Tailscale could not report its serve configuration: ${failureText(error)}`)
+    }
+  }
 
-  const servePort = pickServePort(config, dnsName, kind)
+  const servePort = kind === "proxy" ? port : pickServePort(config, dnsName, kind)
   if (servePort === null) {
     throw new Error(
       kind === "public"
@@ -310,10 +339,11 @@ export async function startShare(port: number, kind: PortShareKind, session?: Se
         : "Every HTTPS port Tailscale can publish on is already taken",
     )
   }
-  // pickServePort only returns free ports, but this is the line that guards a
-  // hand-built serve config, so it does not trust its caller.
-  if (servePortOwner(config, dnsName, servePort) === "foreign") {
-    throw new Error(`HTTPS port ${servePort} already carries a serve config Hangar did not create`)
+  // Proxying keeps http://<tailscale-ip>:<port>, so unlike HTTPS publishing it
+  // cannot pick another listener when that exact port belongs to the user.
+  const owner = servePortOwner(config, dnsName, servePort)
+  if (owner === "foreign" || (kind === "proxy" && owner !== "free")) {
+    throw new Error(`Tailscale port ${servePort} already carries a Serve config Hangar did not create`)
   }
 
   try {
@@ -331,7 +361,7 @@ export async function startShare(port: number, kind: PortShareKind, session?: Se
   return {
     port,
     kind,
-    url: shareUrl(dnsName, servePort),
+    url: shareUrl(kind === "proxy" ? (state.ipv4 ?? dnsName) : dnsName, servePort, kind),
     servePort,
     ...(session ? { session } : {}),
     createdAt,

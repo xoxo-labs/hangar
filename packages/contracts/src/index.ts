@@ -254,12 +254,12 @@ export type SessionHistoryEntry = {
 }
 
 /**
- * How far a shared port reaches. `tailnet` is `tailscale serve` — HTTPS, but
- * only for machines on the same tailnet. `public` is `tailscale funnel`: the
- * open internet, no account and no client needed at the other end, which is
- * what makes it the one piece of Hangar a stranger can reach.
+ * How a local port is exposed through Tailscale. `proxy` keeps the existing
+ * Tailscale-IP HTTP address through a TCP bridge into localhost. `tailnet` is
+ * `tailscale serve` over HTTPS, while `public` is `tailscale funnel` on the
+ * open internet.
  */
-export type PortShareKind = "tailnet" | "public"
+export type PortShareKind = "proxy" | "tailnet" | "public"
 
 /** One local port published through Tailscale. Owned by the machine, not the session. */
 export type PortShare = {
@@ -269,8 +269,9 @@ export type PortShare = {
   /** What a QR encodes and a browser opens, e.g. "https://mac.tail1234.ts.net". */
   url: string
   /**
-   * The HTTPS port Tailscale terminates on. Funnel only accepts 443, 8443 and
-   * 10000, so this is also the reason a fourth public share is refused.
+   * The port Tailscale listens on. For `proxy` this matches `port`; HTTPS
+   * publishing allocates a separate port. Funnel accepts only 443, 8443 and
+   * 10000, which is why a fourth public share is refused.
    */
   servePort: number
   /**
@@ -289,6 +290,8 @@ export type TailscaleState = {
   running: boolean
   /** MagicDNS name of this node, e.g. "mac.tail1234.ts.net". Absent until running. */
   dnsName?: string
+  /** Tailscale IPv4 address used by direct proxy links, e.g. "100.64.0.5". */
+  ipv4?: string
   /** Ready to show as-is when sharing is unavailable, e.g. "Tailscale is stopped". */
   message?: string
 }

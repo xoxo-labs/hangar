@@ -66,6 +66,7 @@ describe("share copy and alarm", () => {
   it("names the reach in words, not jargon", () => {
     assert.equal(shareLabel("public"), "Public on the internet")
     assert.equal(shareLabel("tailnet"), "Shared on your tailnet")
+    assert.equal(shareLabel("proxy"), "Proxied to localhost on your tailnet")
   })
 
   it("raises the alarm only for shares that leave the tailnet", () => {

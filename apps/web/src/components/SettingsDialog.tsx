@@ -5,6 +5,7 @@ import {
   type ShareHostChoice,
   type ThemeSetting,
 } from "@hangar/contracts"
+import { FileText, History, Info, Link as LinkIcon, Network, Palette, SquareTerminal } from "lucide-react"
 import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react"
 import * as actions from "../actions"
 import { useDesktopUpdate } from "../hooks/useDesktopUpdate"
@@ -14,7 +15,7 @@ import { ConnectionsSettings } from "./ConnectionsSettings"
 import { resolveUpdateAction, type UpdateActionKind, updateStatusLine } from "./settingsUpdate.logic"
 import { Button } from "../ui/Button"
 import { cx } from "../ui/cx"
-import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/Dialog"
+import { Dialog, DialogBody, DialogFooter, Overlay } from "../ui/Dialog"
 import { Field, Select, TextInput } from "../ui/Field"
 import { ToggleRow } from "../ui/ToggleRow"
 
@@ -33,13 +34,102 @@ const FONT_SIZES = [10, 11, 12, 13, 14, 15, 16, 18, 20] as const
    shared Select primitive does not carry, kept here so the border still lifts. */
 const SELECT_HOVER = "enabled:hover:border-surface-7"
 
-/** Old `.settings-section` + `.settings-section-title`. */
-function Section({ title, children }: { title: string; children: ReactNode }) {
+const SETTINGS_CATEGORIES = [
+  {
+    id: "appearance",
+    title: "Appearance",
+    description: "Customize how Hangar looks and surfaces shortcuts.",
+    icon: Palette,
+  },
+  {
+    id: "terminal",
+    title: "Terminal",
+    description: "Adjust terminal interaction and typography.",
+    icon: SquareTerminal,
+  },
+  {
+    id: "links",
+    title: "Links",
+    description: "Choose how detected ports open and which address they use.",
+    icon: LinkIcon,
+  },
+  {
+    id: "connections",
+    title: "Connections",
+    description: "Pair this Mac with other Hangar clients and machines.",
+    icon: Network,
+  },
+  {
+    id: "history",
+    title: "Session history",
+    description: "Control local run summaries and replay retention.",
+    icon: History,
+  },
+  {
+    id: "logs",
+    title: "Terminal logs",
+    description: "Save standalone terminal output files and manage their retention.",
+    icon: FileText,
+  },
+  {
+    id: "about",
+    title: "About",
+    description: "Check the version, updates, release notes, and tutorial.",
+    icon: Info,
+  },
+] as const
+
+type SettingsCategory = (typeof SETTINGS_CATEGORIES)[number]["id"]
+
+function CategoryList({ active, onSelect }: { active: SettingsCategory; onSelect: (next: SettingsCategory) => void }) {
   return (
-    <div className="w-full">
-      <div className="mb-[9px] text-sm font-semibold tracking-label text-surface-10 uppercase">{title}</div>
-      {children}
-    </div>
+    <aside className="flex w-[158px] flex-none flex-col border-r border-surface-4 bg-surface-2">
+      <header className="flex min-h-[43px] flex-none items-center border-b border-surface-4 px-3.5">
+        <h2 className="m-0 text-xs font-semibold tracking-caps text-surface-9 uppercase">Settings</h2>
+      </header>
+      <nav aria-label="Settings categories" className="flex flex-col gap-0.5 p-2">
+        {SETTINGS_CATEGORIES.map((category) => {
+          const Icon = category.icon
+          const selected = category.id === active
+          return (
+            <button
+              key={category.id}
+              type="button"
+              aria-current={selected ? "page" : undefined}
+              className={cx(
+                "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-base outline-none transition-colors",
+                "focus-visible:shadow-[0_0_0_2px_var(--color-accent-a5)]",
+                selected
+                  ? "bg-accent-a4 font-book text-accent-11"
+                  : "text-surface-10 hover:bg-surface-a3 hover:text-surface-12",
+              )}
+              onClick={() => onSelect(category.id)}
+            >
+              <Icon className="size-[15px] flex-none" strokeWidth={1.75} aria-hidden="true" />
+              <span>{category.title}</span>
+            </button>
+          )
+        })}
+      </nav>
+    </aside>
+  )
+}
+
+function CategoryPage({
+  category,
+  active,
+  children,
+}: {
+  category: SettingsCategory
+  active: SettingsCategory
+  children: ReactNode
+}) {
+  const details = SETTINGS_CATEGORIES.find((item) => item.id === category)!
+  return (
+    <DialogBody className={cx("flex-1 gap-4", category !== active && "hidden!")} aria-hidden={category !== active}>
+      <p className="m-0 text-xs text-surface-9">{details.description}</p>
+      <div className="w-full">{children}</div>
+    </DialogBody>
   )
 }
 
@@ -74,6 +164,8 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
   const openTutorial = useStore((s) => s.openTutorial)
   const [version, setVersion] = useState("development")
   const [settings, setSettings] = useState(() => structuredClone(initial))
+  const [activeCategory, setActiveCategory] = useState<SettingsCategory>("appearance")
+  const activeCategoryDetails = SETTINGS_CATEGORIES.find((category) => category.id === activeCategory)!
   const update = useDesktopUpdate()
   const [confirmInstall, setConfirmInstall] = useState(false)
   const appearance = settings.appearance
@@ -165,303 +257,318 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
 
   return (
     <Overlay onDismiss={close}>
-      <Dialog label="Settings" className="w-[min(620px,100%)]" onKeyDown={onKeyDown}>
-        <DialogHeader title="Settings" />
-        <DialogBody>
-          <Section title="Appearance">
-            <Field label="Theme">
-              <Select
-                className={SELECT_HOVER}
-                value={appearance.theme}
-                onChange={(e) => patchAppearance({ theme: e.target.value as ThemeSetting })}
-              >
-                <option value="system">Match system</option>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-              </Select>
-            </Field>
-            <div className="mt-3">
-              <ToggleRow
-                checked={appearance.shortcutHints}
-                onChange={(shortcutHints) => patchAppearance({ shortcutHints })}
-                title="Show keyboard shortcut hints"
-                hint="Reveal keycaps on controls while holding Command."
-              />
-            </div>
-          </Section>
-          <Section title="Links">
-            <div className="grid max-w-[420px] grid-cols-2 gap-2.5">
-              <Field label="Open detected ports with">
+      <Dialog
+        label="Settings"
+        className="h-[min(620px,calc(100vh-48px))] w-[min(800px,100%)] overflow-hidden"
+        onKeyDown={onKeyDown}
+      >
+        <div className="flex min-h-0 flex-1">
+          <CategoryList active={activeCategory} onSelect={setActiveCategory} />
+          <main className="flex min-w-0 flex-1 flex-col">
+            <header className="flex min-h-[43px] flex-none items-center border-b border-surface-4 px-4">
+              <h2 className="m-0 text-md font-strong tracking-label">{activeCategoryDetails.title}</h2>
+            </header>
+            <CategoryPage category="appearance" active={activeCategory}>
+              <Field label="Theme">
                 <Select
                   className={SELECT_HOVER}
-                  value={links.browser}
-                  onChange={(e) => patchLinks({ browser: e.target.value as BrowserChoice })}
+                  value={appearance.theme}
+                  onChange={(e) => patchAppearance({ theme: e.target.value as ThemeSetting })}
                 >
-                  <option value="system">System default</option>
-                  {window.hangarDesktop && (
-                    <>
-                      <option value="safari">Safari</option>
-                      <option value="chrome">Google Chrome</option>
-                      <option value="arc">Arc</option>
-                      <option value="firefox">Firefox</option>
-                      <option value="brave">Brave</option>
-                      <option value="edge">Microsoft Edge</option>
-                    </>
-                  )}
+                  <option value="system">Match system</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
                 </Select>
               </Field>
-              <Field label="Reach ports at">
-                <Select
-                  className={SELECT_HOVER}
-                  value={links.shareHost}
-                  onChange={(e) => patchLinks({ shareHost: e.target.value as ShareHostChoice })}
-                >
-                  <option value="auto">Automatic</option>
-                  <option value="lan">Local network</option>
-                  <option value="tailscale">Tailscale</option>
-                  <option value="custom">Custom host</option>
-                </Select>
-              </Field>
-            </div>
-            {links.shareHost === "custom" && (
-              <Field
-                label="Custom host"
-                hint="Hostname or IP address, without a port."
-                className="mt-2.5 max-w-[260px]"
-              >
-                <TextInput
-                  mono
-                  value={links.customHost}
-                  placeholder="dev.example.test"
-                  spellCheck={false}
-                  onChange={(e) => patchLinks({ customHost: e.target.value })}
+              <div className="mt-3">
+                <ToggleRow
+                  checked={appearance.shortcutHints}
+                  onChange={(shortcutHints) => patchAppearance({ shortcutHints })}
+                  title="Show keyboard shortcut hints"
+                  hint="Reveal keycaps on controls while holding Command."
                 />
-              </Field>
-            )}
-            <p className="mt-2 mb-0 text-xs leading-normal text-surface-9">
-              The address a detected port is opened and copied at. LAN links work on the same Wi-Fi, Tailscale links on
-              devices in your tailnet; a custom host covers a port that answers somewhere else, like a forwarded one.
-            </p>
-            <div className="mt-3">
-              <ToggleRow
-                checked={links.tailnetSharing}
-                onChange={(tailnetSharing) => patchLinks({ tailnetSharing })}
-                title="Show Tailnet HTTPS sharing"
-                hint="Adds the private tailnet option alongside the public-link control."
-              />
-            </div>
-            <p className="mt-2 mb-0 text-xs leading-normal text-surface-9">
-              Tailnet HTTPS uses Tailscale{" "}
-              <DocsLink href="https://tailscale.com/kb/1242/tailscale-serve">Serve</DocsLink> and your tailnet&apos;s{" "}
-              <DocsLink href="https://tailscale.com/kb/1018/acls">access policy</DocsLink>. Public links use Funnel and
-              remain available when this is off.
-            </p>
-          </Section>
-          <Section title="Terminal behavior">
-            <ToggleRow
-              checked={terminal.copyOnSelect}
-              onChange={(next) => patchTerminal({ copyOnSelect: next })}
-              title="Copy on select"
-              hint="Automatically copies selected terminal text to the clipboard."
-            />
-            <div className="mt-3 grid grid-cols-[minmax(0,2fr)_110px] gap-2.5">
-              <Field label="Font family">
-                <Select
-                  mono
-                  className={SELECT_HOVER}
-                  value={terminal.fontFamily}
-                  onChange={(e) => patchTerminal({ fontFamily: e.target.value })}
-                >
-                  {!FONT_OPTIONS.some((option) => option.value === terminal.fontFamily) && (
-                    <option value={terminal.fontFamily}>Custom</option>
-                  )}
-                  {FONT_OPTIONS.map((option) => (
-                    <option key={option.label} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Font size (px)">
-                <Select
-                  className={SELECT_HOVER}
-                  value={terminal.fontSize}
-                  onChange={(e) => patchTerminal({ fontSize: Number(e.target.value) })}
-                >
-                  {!FONT_SIZES.some((size) => size === terminal.fontSize) && (
-                    <option value={terminal.fontSize}>{terminal.fontSize} px</option>
-                  )}
-                  {FONT_SIZES.map((size) => (
-                    <option key={size} value={size}>
-                      {size === DEFAULT_SETTINGS.terminal.fontSize ? `Default (${size} px)` : `${size} px`}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            </div>
-          </Section>
-          <Section title="Session history">
-            <ToggleRow
-              checked={history.enabled}
-              onChange={(next) => patchHistory({ enabled: next })}
-              title="Keep run history on this Mac"
-              hint="Saves timing, resources, and up to 10 MB of timestamped terminal output per run."
-            />
-            <div className={cx("mt-3 flex max-w-[180px] flex-col gap-3", !history.enabled && "opacity-55")}>
-              <Field label="Retention">
-                <Select
-                  className={SELECT_HOVER}
-                  disabled={!history.enabled}
-                  value={history.retentionDays ?? "forever"}
-                  onChange={(e) =>
-                    patchHistory({
-                      retentionDays: e.target.value === "forever" ? null : (Number(e.target.value) as 7 | 30 | 90),
-                    })
-                  }
-                >
-                  <option value={7}>7 days</option>
-                  <option value={30}>30 days</option>
-                  <option value={90}>90 days</option>
-                  <option value="forever">Forever</option>
-                </Select>
-              </Field>
-            </div>
-          </Section>
-          <Section title="Connections">
-            <ConnectionsSettings
-              acceptRemote={settings.connections?.acceptRemote === true}
-              onAcceptRemote={setAcceptRemote}
-            />
-          </Section>
-          <Section title="About">
-            <div className="flex items-center justify-between rounded-md border border-surface-5 p-[10px]">
-              <div>
-                <strong className="block text-base font-book">Hangar</strong>
-                <span className="text-xs tabular-nums text-surface-9">Version {version}</span>
               </div>
-              <div className="flex gap-1.5">
-                <Button
-                  onClick={() => {
-                    close()
-                    openTutorial()
-                  }}
-                >
-                  Replay tutorial
-                </Button>
-                <Button
-                  onClick={() => {
-                    close()
-                    openReleaseNotes()
-                  }}
-                >
-                  Release notes
-                </Button>
+            </CategoryPage>
+            <CategoryPage category="links" active={activeCategory}>
+              <div className="grid max-w-[420px] grid-cols-2 gap-2.5">
+                <Field label="Open detected ports with">
+                  <Select
+                    className={SELECT_HOVER}
+                    value={links.browser}
+                    onChange={(e) => patchLinks({ browser: e.target.value as BrowserChoice })}
+                  >
+                    <option value="system">System default</option>
+                    {window.hangarDesktop && (
+                      <>
+                        <option value="safari">Safari</option>
+                        <option value="chrome">Google Chrome</option>
+                        <option value="arc">Arc</option>
+                        <option value="firefox">Firefox</option>
+                        <option value="brave">Brave</option>
+                        <option value="edge">Microsoft Edge</option>
+                      </>
+                    )}
+                  </Select>
+                </Field>
+                <Field label="Reach ports at">
+                  <Select
+                    className={SELECT_HOVER}
+                    value={links.shareHost}
+                    onChange={(e) => patchLinks({ shareHost: e.target.value as ShareHostChoice })}
+                  >
+                    <option value="auto">Automatic</option>
+                    <option value="lan">Local network</option>
+                    <option value="tailscale">Tailscale</option>
+                    <option value="custom">Custom host</option>
+                  </Select>
+                </Field>
               </div>
-            </div>
-            {update !== null && update.status !== "disabled" && (
-              <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-surface-5 bg-surface-a2 p-[10px]">
-                <span className={cx("text-xs", update.status === "error" ? "text-danger-10" : "text-surface-9")}>
-                  {confirmInstall
-                    ? "Running processes will be stopped, then Hangar restarts on the new version."
-                    : updateStatusLine(update)}
-                </span>
-                {confirmInstall ? (
-                  <div className="flex shrink-0 gap-1.5">
-                    <Button onClick={() => setConfirmInstall(false)}>Cancel</Button>
-                    <Button variant="primary" onClick={() => runUpdateAction("install")}>
-                      Restart now
-                    </Button>
-                  </div>
-                ) : (
-                  updateAction !== null && (
-                    <Button
-                      className="shrink-0"
-                      variant={updateAction.kind === "check" ? "default" : "primary"}
-                      onClick={() => runUpdateAction(updateAction.kind)}
-                    >
-                      {updateAction.label}
-                    </Button>
-                  )
-                )}
-              </div>
-            )}
-          </Section>
-          <Section title="Terminal logs">
-            <ToggleRow
-              checked={log.enabled}
-              onChange={(next) => patch({ enabled: next })}
-              title="Save terminal output to disk"
-              hint="Applies to sessions started after saving."
-            />
-            <div className={cx("mt-3 flex flex-col gap-3", !log.enabled && "opacity-55")}>
-              <Field label="Logs directory">
-                <div className="flex w-full gap-1.5">
+              {links.shareHost === "custom" && (
+                <Field
+                  label="Custom host"
+                  hint="Hostname or IP address, without a port."
+                  className="mt-2.5 max-w-[260px]"
+                >
                   <TextInput
                     mono
-                    value={log.directory}
-                    disabled={!log.enabled}
-                    onChange={(e) => patch({ directory: e.target.value })}
+                    value={links.customHost}
+                    placeholder="dev.example.test"
+                    spellCheck={false}
+                    onChange={(e) => patchLinks({ customHost: e.target.value })}
                   />
-                  {window.hangarDesktop && (
-                    <Button disabled={!log.enabled} onClick={() => void browse()}>
-                      Choose…
-                    </Button>
-                  )}
-                  {window.hangarDesktop && (
-                    <Button disabled={!log.enabled} onClick={() => void window.hangarDesktop?.openPath(log.directory)}>
-                      Open
-                    </Button>
-                  )}
-                </div>
-              </Field>
-              <div className="grid grid-cols-[1fr_1.25fr_1fr] gap-2.5">
+                </Field>
+              )}
+              <p className="mt-2 mb-0 text-xs leading-normal text-surface-9">
+                The address a detected port is opened and copied at. LAN links work on the same Wi-Fi, Tailscale links
+                on devices in your tailnet; a custom host covers a port that answers somewhere else, like a forwarded
+                one.
+              </p>
+              <div className="mt-3">
+                <ToggleRow
+                  checked={links.tailnetSharing}
+                  onChange={(tailnetSharing) => patchLinks({ tailnetSharing })}
+                  title="Show Tailnet HTTPS sharing"
+                  hint="Adds the private tailnet option alongside the public-link control."
+                />
+              </div>
+              <p className="mt-2 mb-0 text-xs leading-normal text-surface-9">
+                Tailnet HTTPS uses Tailscale{" "}
+                <DocsLink href="https://tailscale.com/kb/1242/tailscale-serve">Serve</DocsLink> and your tailnet&apos;s{" "}
+                <DocsLink href="https://tailscale.com/kb/1018/acls">access policy</DocsLink>. Public links use Funnel
+                and remain available when this is off.
+              </p>
+            </CategoryPage>
+            <CategoryPage category="terminal" active={activeCategory}>
+              <ToggleRow
+                checked={terminal.copyOnSelect}
+                onChange={(next) => patchTerminal({ copyOnSelect: next })}
+                title="Copy on select"
+                hint="Automatically copies selected terminal text to the clipboard."
+              />
+              <div className="mt-3 grid grid-cols-[minmax(0,2fr)_110px] gap-2.5">
+                <Field label="Font family">
+                  <Select
+                    mono
+                    className={SELECT_HOVER}
+                    value={terminal.fontFamily}
+                    onChange={(e) => patchTerminal({ fontFamily: e.target.value })}
+                  >
+                    {!FONT_OPTIONS.some((option) => option.value === terminal.fontFamily) && (
+                      <option value={terminal.fontFamily}>Custom</option>
+                    )}
+                    {FONT_OPTIONS.map((option) => (
+                      <option key={option.label} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Font size (px)">
+                  <Select
+                    className={SELECT_HOVER}
+                    value={terminal.fontSize}
+                    onChange={(e) => patchTerminal({ fontSize: Number(e.target.value) })}
+                  >
+                    {!FONT_SIZES.some((size) => size === terminal.fontSize) && (
+                      <option value={terminal.fontSize}>{terminal.fontSize} px</option>
+                    )}
+                    {FONT_SIZES.map((size) => (
+                      <option key={size} value={size}>
+                        {size === DEFAULT_SETTINGS.terminal.fontSize ? `Default (${size} px)` : `${size} px`}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+            </CategoryPage>
+            <CategoryPage category="history" active={activeCategory}>
+              <ToggleRow
+                checked={history.enabled}
+                onChange={(next) => patchHistory({ enabled: next })}
+                title="Keep run history on this Mac"
+                hint="Saves timing, resources, and up to 10 MB of timestamped terminal output per run."
+              />
+              <div className={cx("mt-3 flex max-w-[180px] flex-col gap-3", !history.enabled && "opacity-55")}>
                 <Field label="Retention">
                   <Select
                     className={SELECT_HOVER}
-                    disabled={!log.enabled}
-                    value={log.retentionDays ?? "forever"}
+                    disabled={!history.enabled}
+                    value={history.retentionDays ?? "forever"}
                     onChange={(e) =>
-                      patch({ retentionDays: e.target.value === "forever" ? null : (Number(e.target.value) as 7 | 30) })
+                      patchHistory({
+                        retentionDays: e.target.value === "forever" ? null : (Number(e.target.value) as 7 | 30 | 90),
+                      })
                     }
                   >
                     <option value={7}>7 days</option>
                     <option value={30}>30 days</option>
+                    <option value={90}>90 days</option>
                     <option value="forever">Forever</option>
                   </Select>
                 </Field>
-                <Field label="Maximum file size (MB)">
-                  <TextInput
-                    type="number"
-                    min={1}
-                    max={1000}
-                    disabled={!log.enabled}
-                    value={log.maxFileSizeMb}
-                    onChange={(e) => patch({ maxFileSizeMb: Math.max(1, Number(e.target.value)) })}
-                  />
-                </Field>
-                <Field label="Format">
-                  <Select
-                    className={SELECT_HOVER}
-                    disabled={!log.enabled}
-                    value={log.format}
-                    onChange={(e) => patch({ format: e.target.value as "plain" | "ansi" })}
-                  >
-                    <option value="plain">Plain text</option>
-                    <option value="ansi">Raw ANSI</option>
-                  </Select>
-                </Field>
               </div>
-              <p className="m-0 text-sm text-warning-9">Logs can contain tokens, private URLs, and other secrets.</p>
-            </div>
-          </Section>
-        </DialogBody>
-        <DialogFooter>
-          <span className="flex-1" />
-          <Button onClick={close}>Cancel</Button>
-          <Button variant="primary" data-shortcut-hint="↵" onClick={save}>
-            Save
-          </Button>
-        </DialogFooter>
+            </CategoryPage>
+            <CategoryPage category="connections" active={activeCategory}>
+              <ConnectionsSettings
+                acceptRemote={settings.connections?.acceptRemote === true}
+                onAcceptRemote={setAcceptRemote}
+              />
+            </CategoryPage>
+            <CategoryPage category="about" active={activeCategory}>
+              <div className="flex items-center justify-between rounded-md border border-surface-5 p-[10px]">
+                <div>
+                  <strong className="block text-base font-book">Hangar</strong>
+                  <span className="text-xs tabular-nums text-surface-9">Version {version}</span>
+                </div>
+                <div className="flex gap-1.5">
+                  <Button
+                    onClick={() => {
+                      close()
+                      openTutorial()
+                    }}
+                  >
+                    Replay tutorial
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      close()
+                      openReleaseNotes()
+                    }}
+                  >
+                    Release notes
+                  </Button>
+                </div>
+              </div>
+              {update !== null && update.status !== "disabled" && (
+                <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-surface-5 bg-surface-a2 p-[10px]">
+                  <span className={cx("text-xs", update.status === "error" ? "text-danger-10" : "text-surface-9")}>
+                    {confirmInstall
+                      ? "Running processes will be stopped, then Hangar restarts on the new version."
+                      : updateStatusLine(update)}
+                  </span>
+                  {confirmInstall ? (
+                    <div className="flex shrink-0 gap-1.5">
+                      <Button onClick={() => setConfirmInstall(false)}>Cancel</Button>
+                      <Button variant="primary" onClick={() => runUpdateAction("install")}>
+                        Restart now
+                      </Button>
+                    </div>
+                  ) : (
+                    updateAction !== null && (
+                      <Button
+                        className="shrink-0"
+                        variant={updateAction.kind === "check" ? "default" : "primary"}
+                        onClick={() => runUpdateAction(updateAction.kind)}
+                      >
+                        {updateAction.label}
+                      </Button>
+                    )
+                  )}
+                </div>
+              )}
+            </CategoryPage>
+            <CategoryPage category="logs" active={activeCategory}>
+              <ToggleRow
+                checked={log.enabled}
+                onChange={(next) => patch({ enabled: next })}
+                title="Save terminal output to disk"
+                hint="Applies to sessions started after saving."
+              />
+              <div className={cx("mt-3 flex flex-col gap-3", !log.enabled && "opacity-55")}>
+                <Field label="Logs directory">
+                  <div className="flex w-full gap-1.5">
+                    <TextInput
+                      mono
+                      value={log.directory}
+                      disabled={!log.enabled}
+                      onChange={(e) => patch({ directory: e.target.value })}
+                    />
+                    {window.hangarDesktop && (
+                      <Button disabled={!log.enabled} onClick={() => void browse()}>
+                        Choose…
+                      </Button>
+                    )}
+                    {window.hangarDesktop && (
+                      <Button
+                        disabled={!log.enabled}
+                        onClick={() => void window.hangarDesktop?.openPath(log.directory)}
+                      >
+                        Open
+                      </Button>
+                    )}
+                  </div>
+                </Field>
+                <div className="grid grid-cols-[1fr_1.25fr_1fr] gap-2.5">
+                  <Field label="Retention">
+                    <Select
+                      className={SELECT_HOVER}
+                      disabled={!log.enabled}
+                      value={log.retentionDays ?? "forever"}
+                      onChange={(e) =>
+                        patch({
+                          retentionDays: e.target.value === "forever" ? null : (Number(e.target.value) as 7 | 30),
+                        })
+                      }
+                    >
+                      <option value={7}>7 days</option>
+                      <option value={30}>30 days</option>
+                      <option value="forever">Forever</option>
+                    </Select>
+                  </Field>
+                  <Field label="Maximum file size (MB)">
+                    <TextInput
+                      type="number"
+                      min={1}
+                      max={1000}
+                      disabled={!log.enabled}
+                      value={log.maxFileSizeMb}
+                      onChange={(e) => patch({ maxFileSizeMb: Math.max(1, Number(e.target.value)) })}
+                    />
+                  </Field>
+                  <Field label="Format">
+                    <Select
+                      className={SELECT_HOVER}
+                      disabled={!log.enabled}
+                      value={log.format}
+                      onChange={(e) => patch({ format: e.target.value as "plain" | "ansi" })}
+                    >
+                      <option value="plain">Plain text</option>
+                      <option value="ansi">Raw ANSI</option>
+                    </Select>
+                  </Field>
+                </div>
+                <p className="m-0 text-sm text-warning-9">Logs can contain tokens, private URLs, and other secrets.</p>
+              </div>
+            </CategoryPage>
+            <DialogFooter>
+              <span className="flex-1" />
+              <Button onClick={close}>Cancel</Button>
+              <Button variant="primary" data-shortcut-hint="↵" onClick={save}>
+                Save
+              </Button>
+            </DialogFooter>
+          </main>
+        </div>
       </Dialog>
     </Overlay>
   )

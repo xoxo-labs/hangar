@@ -1,14 +1,15 @@
-import { LOCAL_CONN_ID } from "@hangar/client-core"
-import { Globe, QrCode, Unlink2 } from "lucide-react"
-import { useEffect, useState } from "react"
+import { connIdOf, displayName, LOCAL_CONN_ID } from "@hangar/client-core"
+import { Globe, Network, QrCode, Unlink2 } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import { unsharePort } from "../actions"
 import { retryConnection } from "../connections"
+import { buildPortGroups, type PortGroup, type PortRow } from "../portManager.logic"
 import { type ActiveShare, shareLabel, useAllShares } from "../shares"
 import { CONNECTION_LABEL } from "../status"
 import { type ConnectionState, type ConnectionStatus, machineLabel, useStore } from "../store"
 import { cx } from "../ui/cx"
-import { ActiveShareQrDialog } from "./SessionInspector"
+import { PortShareDialog } from "./PortShareDialog"
 
 /*
  * Port of `.conn-dot` and its status variants. Every ConnectionStatus is covered
@@ -28,15 +29,28 @@ export function StatusBar() {
   const port = useStore((s) => s.port)
   const acceptRemote = useStore((s) => s.settings.connections?.acceptRemote === true)
   const connections = useStore((s) => s.connections)
+  const sessions = useStore((s) => s.sessions)
   const notice = useStore((s) => s.notice)
   const shares = useAllShares()
+  const groups = useMemo(
+    () =>
+      buildPortGroups(
+        Object.values(connections).map((connection) => ({
+          connId: connection.config.id,
+          machine: machineLabel(connection),
+          shares: connection.shares,
+          sessions: sessions.filter((session) => connIdOf(session.id) === connection.config.id),
+        })),
+      ),
+    [connections, sessions],
+  )
   /*
    * One slot rather than a boolean per panel: each trigger sits behind its own
    * `stopPropagation` wrapper, so opening one can never be the outside-click
    * that dismisses the other. Making the state exclusive is what keeps them from
    * overlapping in the same corner.
    */
-  const [openPanel, setOpenPanel] = useState<"details" | "shares" | null>(null)
+  const [openPanel, setOpenPanel] = useState<"details" | "ports" | null>(null)
   const detailsOpen = openPanel === "details"
 
   const paired = Object.values(connections).filter((connection) => connection.config.id !== LOCAL_CONN_ID)
@@ -49,25 +63,18 @@ export function StatusBar() {
     return () => window.removeEventListener("pointerdown", close)
   }, [openPanel])
 
-  // A share can also end from the machine that published it. Disarm the panel so
-  // it does not spring open on its own the next time someone shares a port.
-  useEffect(() => {
-    if (shares.length === 0) setOpenPanel((open) => (open === "shares" ? null : open))
-  }, [shares.length])
-
   return (
     <footer className="fixed right-1 bottom-0 z-10 flex h-7 select-none items-center gap-[10px] bg-transparent px-1 text-sm text-surface-9">
       {/* Errors are ErrorAlert's job now: they need room to wrap and a way to
           be dismissed, neither of which a 28px strip can offer. */}
       {notice !== null && <span className="animate-[status-notice-in_140ms_ease-out] text-success-10">✓ {notice}</span>}
       <span className="flex-1" />
-      {shares.length > 0 && (
-        <SharesIndicator
-          shares={shares}
-          open={openPanel === "shares"}
-          onToggle={() => setOpenPanel((open) => (open === "shares" ? null : "shares"))}
-        />
-      )}
+      <PortsIndicator
+        groups={groups}
+        shares={shares}
+        open={openPanel === "ports"}
+        onToggle={() => setOpenPanel((open) => (open === "ports" ? null : "ports"))}
+      />
       <div className="relative flex h-full items-center" onPointerDown={(event) => event.stopPropagation()}>
         {/*
          * The `!` here predates the reset's move into `@layer base`; plain
@@ -130,47 +137,77 @@ export function StatusBar() {
 
 /*
  * A public share is the only thing in Hangar a stranger can reach, so this is
- * both the alarm and the kill switch: the warning tone is the signal, not
- * decoration, and every row can end its own share without leaving the footer.
+ * both the alarm and the kill switch. The trigger is permanent now — the panel
+ * manages every port Hangar has open, not just shares — so mere presence no
+ * longer carries the warning. The state does instead: a dimmed Network icon is
+ * silence, a plain one is open-but-private, and the warning Globe with a count
+ * means someone beyond this machine can get in.
  */
-function SharesIndicator({ shares, open, onToggle }: { shares: ActiveShare[]; open: boolean; onToggle: () => void }) {
+function PortsIndicator({
+  groups,
+  shares,
+  open,
+  onToggle,
+}: {
+  groups: PortGroup[]
+  shares: ActiveShare[]
+  open: boolean
+  onToggle: () => void
+}) {
+  const rowCount = groups.reduce((total, group) => total + group.rows.length, 0)
   const publicCount = shares.filter((share) => share.kind === "public").length
-  const tailnetCount = shares.length - publicCount
+  const proxyCount = shares.filter((share) => share.kind === "proxy").length
+  const tailnetCount = shares.filter((share) => share.kind === "tailnet").length
   const exposed = publicCount > 0
+  const activity =
+    proxyCount === shares.length
+      ? `${proxyCount} proxied`
+      : proxyCount === 0
+        ? `${shares.length} shared`
+        : `${shares.length} active`
 
   // Spelled out rather than "1 shared" so the reach is legible to a screen
   // reader and on hover, where the count alone says nothing about who can get in.
   const reach: string[] = []
   if (publicCount > 0) reach.push(`${publicCount} port${publicCount === 1 ? " is" : "s are"} public on the internet`)
   if (tailnetCount > 0) reach.push(`${tailnetCount} port${tailnetCount === 1 ? " is" : "s are"} shared on your tailnet`)
-  const label = reach.join(", ")
-
-  // Machine headers only earn their space once shares actually span machines.
-  const groups: { connId: string; machine: string; shares: ActiveShare[] }[] = []
-  for (const share of shares) {
-    // `shares` arrives public-first, so the exposed machine heads the list too.
-    const group = groups.find((candidate) => candidate.connId === share.connId)
-    if (group) group.shares.push(share)
-    else groups.push({ connId: share.connId, machine: share.machine, shares: [share] })
-  }
+  if (proxyCount > 0) reach.push(`${proxyCount} port${proxyCount === 1 ? " is" : "s are"} proxied to localhost`)
+  const label =
+    shares.length > 0
+      ? reach.join(", ")
+      : rowCount > 0
+        ? `${rowCount} open port${rowCount === 1 ? "" : "s"}, none shared`
+        : "No open ports"
 
   return (
     <div className="relative flex h-full items-center" onPointerDown={(event) => event.stopPropagation()}>
       <button
         className={cx(
           "flex h-5 items-center gap-1.5 rounded-sm px-1! text-sm",
-          exposed ? "bg-warning-a2 text-warning-11 hover:bg-warning-a4!" : "text-surface-9 hover:bg-surface-a4!",
+          exposed
+            ? "bg-warning-a2 text-warning-11 hover:bg-warning-a4!"
+            : rowCount > 0 || shares.length > 0
+              ? "text-surface-9 hover:bg-surface-a4!"
+              : "text-surface-7 hover:bg-surface-a4! hover:text-surface-9",
         )}
         type="button"
         title={label}
         aria-label={label}
+        aria-expanded={open}
         onClick={onToggle}
       >
-        <Globe className="size-3" aria-hidden="true" />
-        <span>{shares.length} shared</span>
+        {shares.length > 0 ? (
+          <Globe className="size-3" aria-hidden="true" />
+        ) : (
+          <Network className="size-3" aria-hidden="true" />
+        )}
+        {/* The count tracks shares and proxies, not detected ports: dev servers
+            restart all day, and a number that flickers with every restart
+            teaches the eye to ignore it. Only a change in reach moves this badge. */}
+        {shares.length > 0 && <span>{activity}</span>}
       </button>
       {open && (
-        <div className="absolute right-0 bottom-[27px] z-[12] w-[290px] select-text rounded-lg border border-surface-6 bg-surface-3 p-2.5 text-surface-10 shadow-[0_10px_30px_#0008]">
+        <div className="absolute right-0 bottom-[27px] z-[12] w-[340px] select-text rounded-lg border border-surface-6 bg-surface-3 p-2.5 text-surface-10 shadow-[0_10px_30px_#0008]">
           <div
             className={cx(
               "mb-[9px] flex items-center gap-[7px] text-base font-book",
@@ -178,22 +215,29 @@ function SharesIndicator({ shares, open, onToggle }: { shares: ActiveShare[]; op
             )}
           >
             <Globe className="size-[14px] flex-none" aria-hidden="true" />
-            Shared ports
+            <span className="min-w-0 flex-1">Open ports</span>
+            {/* The per-row kill switch is enough for one exposure; from two up,
+                the panic path should not cost a click per port. */}
+            {publicCount >= 2 && (
+              <button
+                type="button"
+                className="flex-none rounded-sm px-1! text-xs! text-danger-11! hover:bg-danger-a3!"
+                onClick={() => {
+                  for (const share of shares) if (share.kind === "public") unsharePort(share.connId, share.port)
+                }}
+              >
+                Stop all public
+              </button>
+            )}
           </div>
-          <div className="flex flex-col gap-2.5">
+          {rowCount === 0 && (
+            <p className="m-0 text-xs text-surface-8">
+              Nothing is listening yet. Ports opened by sessions show up here.
+            </p>
+          )}
+          <div className="flex flex-col gap-2.5 border-t border-surface-5 pt-1">
             {groups.map((group) => (
-              <div key={group.connId}>
-                {groups.length > 1 && (
-                  <div className="mb-1.5 overflow-hidden text-ellipsis whitespace-nowrap text-2xs font-semibold tracking-caps text-surface-8 uppercase">
-                    {group.machine}
-                  </div>
-                )}
-                <div className="flex flex-col gap-2">
-                  {group.shares.map((share) => (
-                    <ShareRow key={`${share.connId}:${share.port}`} share={share} />
-                  ))}
-                </div>
-              </div>
+              <MachineGroup key={group.connId} group={group} showMachine={groups.length > 1} />
             ))}
           </div>
         </div>
@@ -202,46 +246,84 @@ function SharesIndicator({ shares, open, onToggle }: { shares: ActiveShare[]; op
   )
 }
 
-function ShareRow({ share }: { share: ActiveShare }) {
-  const exposed = share.kind === "public"
+function MachineGroup({ group, showMachine }: { group: PortGroup; showMachine: boolean }) {
   return (
-    <div
-      className={cx(
-        "rounded-md border px-2 py-1.5 text-xs",
-        exposed ? "border-warning-6 bg-warning-a2" : "border-surface-5 bg-surface-a2",
-      )}
-    >
-      <div className="flex items-center gap-1.5">
-        <span className="flex-none font-book text-surface-12 tabular-nums">:{share.port}</span>
-        <span
-          className={cx(
-            "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap",
-            exposed ? "text-warning-11" : "text-surface-8",
-          )}
-        >
-          {shareLabel(share.kind)}
-        </span>
-        <div className="flex flex-none items-center gap-px rounded-md border border-surface-5 bg-surface-a2 p-0.5">
-          <ShareQrButton share={share} />
-          <button
-            type="button"
-            className="grid size-6 flex-none place-items-center rounded-sm text-surface-8! hover:bg-danger-a3! hover:text-danger-11!"
-            title={`Stop sharing port ${share.port}`}
-            aria-label={`Stop sharing port ${share.port}`}
-            onClick={() => unsharePort(share.connId, share.port)}
-          >
-            <Unlink2 className="size-[13px]" aria-hidden="true" />
-          </button>
+    <div>
+      {/* Machine headers only earn their space once ports span machines. */}
+      {showMachine && (
+        <div className="mb-1.5 overflow-hidden text-ellipsis whitespace-nowrap text-2xs font-semibold tracking-caps text-surface-8 uppercase">
+          {group.machine}
         </div>
+      )}
+      <div className="divide-y divide-surface-5">
+        {group.rows.map((row) => (
+          <PortRowCard key={`${row.connId}:${row.port}:${row.session ?? "adopted"}`} row={row} />
+        ))}
       </div>
-      <code className="mt-1 block overflow-hidden text-ellipsis whitespace-nowrap bg-transparent! p-0! text-2xs! text-surface-9">
-        {share.url}
-      </code>
     </div>
   )
 }
 
-function ShareQrButton({ share }: { share: ActiveShare }) {
+function PortRowCard({ row }: { row: PortRow }) {
+  const exposed = row.share?.kind === "public"
+  const owner = row.project === undefined ? undefined : `${displayName(row.project)} / ${row.process}`
+  const reachText = row.share ? shareLabel(row.share.kind) : row.loopbackOnly ? "Local · loopback only" : "Local"
+  const compactReach =
+    row.share?.kind === "proxy"
+      ? "Proxy → localhost"
+      : row.share?.kind === "tailnet"
+        ? "Tailnet HTTPS"
+        : row.share?.kind === "public"
+          ? "Public link"
+          : reachText
+
+  return (
+    <div className={cx("py-2.5 text-xs", exposed && "border-l-2 border-l-warning-8 pl-2")}>
+      <div className="flex items-center gap-1.5">
+        <span className="flex-none font-book text-surface-12 tabular-nums">:{row.port}</span>
+        <span
+          className={cx(
+            "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap",
+            owner === undefined && exposed ? "text-warning-11" : "text-surface-9",
+          )}
+        >
+          {owner ?? reachText}
+        </span>
+        <div className="flex flex-none items-center gap-0.5">
+          <PortRowQrButton row={row} />
+          {row.share && (
+            <button
+              type="button"
+              className="grid size-6 flex-none place-items-center rounded-sm text-surface-8! hover:bg-danger-a3! hover:text-danger-11!"
+              title={`Stop sharing port ${row.port}`}
+              aria-label={`Stop sharing port ${row.port}`}
+              onClick={() => unsharePort(row.connId, row.port)}
+            >
+              <Unlink2 className="size-[13px]" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      </div>
+      {/* The second line spells out reach: the wording, not the tint, is the
+          part a screen reader and a tired reviewer both get. */}
+      {row.share ? (
+        <div className="mt-1 flex min-w-0 items-baseline gap-1.5 whitespace-nowrap" title={row.share.url}>
+          <span className={cx("flex-none text-2xs font-medium", exposed ? "text-warning-11" : "text-surface-9")}>
+            {compactReach}
+          </span>
+          <span className="text-surface-7">·</span>
+          <code className="block min-w-0 overflow-hidden text-ellipsis bg-transparent! p-0! text-2xs! text-surface-10">
+            {row.share.url}
+          </code>
+        </div>
+      ) : (
+        owner !== undefined && <div className="mt-1 text-2xs text-surface-8">{reachText}</div>
+      )}
+    </div>
+  )
+}
+
+function PortRowQrButton({ row }: { row: PortRow }) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -249,13 +331,25 @@ function ShareQrButton({ share }: { share: ActiveShare }) {
       <button
         type="button"
         className="grid size-6 flex-none place-items-center rounded-sm text-surface-8! hover:bg-surface-a4! hover:text-surface-12!"
-        title={`Show QR code for ${share.url}`}
-        aria-label={`Show QR code for shared port ${share.port}`}
+        title={row.share === undefined ? `Show QR code for port ${row.port}` : `Show QR code for ${row.share.url}`}
+        aria-label={`Show QR code for port ${row.port}`}
         onClick={() => setOpen(true)}
       >
         <QrCode className="size-[13px]" aria-hidden="true" />
       </button>
-      {open && createPortal(<ActiveShareQrDialog share={share} onClose={() => setOpen(false)} />, document.body)}
+      {open &&
+        createPortal(
+          // Keep one dialog component mounted while a share starts or stops.
+          // Switching between two component types here reset its selected reach.
+          <PortShareDialog
+            port={row.port}
+            connId={row.connId}
+            session={row.session}
+            loopbackOnly={row.loopbackOnly}
+            onClose={() => setOpen(false)}
+          />,
+          document.body,
+        )}
     </>
   )
 }

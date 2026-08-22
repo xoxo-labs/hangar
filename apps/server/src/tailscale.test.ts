@@ -31,9 +31,9 @@ function withHangarShare(base: ServeConfig): ServeConfig {
 // ---------------------------------------------------------------------------
 // The safety contract: a hand-made serve config survives everything Hangar does.
 
-test("hangar never resets and never reaches past its own --https entry", () => {
-  // No argument vector this module can emit contains `reset` or `clear`; the
-  // only off-switch is scoped to a single HTTPS port.
+test("hangar never resets and only disables one listener", () => {
+  // No argument vector this module can emit contains `reset` or `clear`; every
+  // off-switch is scoped to one TCP or HTTPS listener.
   for (const kind of ["tailnet", "public"] as const) {
     for (const servePort of [443, 8443, 10000, 10023]) {
       const on = shareArgs(kind, servePort, 3000)
@@ -45,6 +45,8 @@ test("hangar never resets and never reaches past its own --https entry", () => {
       assert.deepEqual(off.slice(1), [`--https=${servePort}`, "off"])
     }
   }
+  assert.deepEqual(shareArgs("proxy", 3000, 3000), ["serve", "--bg", "--yes", "--tcp=3000", "tcp://localhost:3000"])
+  assert.deepEqual(unshareArgs("proxy", 3000), ["serve", "--tcp=3000", "off"])
 })
 
 test("stopping hangar's share leaves the hand-made 443 entry untouched", () => {
@@ -115,18 +117,19 @@ test("reads the hand-made config as an adopted tailnet share", () => {
   ])
 })
 
-test("AllowFunnel is what makes a share public, and non-443 ports show in the url", () => {
+test("TCP is a direct-address proxy; HTTPS reach follows AllowFunnel", () => {
   const config: ServeConfig = {
-    TCP: { "443": { HTTPS: true }, "8443": { HTTPS: true } },
+    TCP: { "3000": { TCPForward: "localhost:3000" }, "443": { HTTPS: true }, "8443": { HTTPS: true } },
     Web: {
       [`${DNS}:443`]: { Handlers: { "/": { Proxy: "http://127.0.0.1:3021" } } },
-      [`${DNS}:8443`]: { Handlers: { "/": { Proxy: "http://localhost:3000" } } },
+      [`${DNS}:8443`]: { Handlers: { "/": { Proxy: "http://localhost:5173" } } },
     },
     AllowFunnel: { [`${DNS}:8443`]: true },
   }
-  assert.deepEqual(readShares(config, DNS), [
+  assert.deepEqual(readShares(config, DNS, "100.64.0.5"), [
     { port: 3021, kind: "tailnet", url: `https://${DNS}`, servePort: 443, createdAt: 0 },
-    { port: 3000, kind: "public", url: `https://${DNS}:8443`, servePort: 8443, createdAt: 0 },
+    { port: 3000, kind: "proxy", url: "http://100.64.0.5:3000", servePort: 3000, createdAt: 0 },
+    { port: 5173, kind: "public", url: `https://${DNS}:8443`, servePort: 8443, createdAt: 0 },
   ])
 })
 
@@ -164,8 +167,10 @@ test("an empty config starts at 443", () => {
 })
 
 test("share commands match the CLI the module drives", () => {
+  assert.deepEqual(shareArgs("proxy", 3000, 3000), ["serve", "--bg", "--yes", "--tcp=3000", "tcp://localhost:3000"])
   assert.deepEqual(shareArgs("public", 443, 3000), ["funnel", "--bg", "--yes", "--https=443", "3000"])
   assert.deepEqual(shareArgs("tailnet", 8443, 5173), ["serve", "--bg", "--yes", "--https=8443", "5173"])
+  assert.deepEqual(unshareArgs("proxy", 3000), ["serve", "--tcp=3000", "off"])
   assert.deepEqual(unshareArgs("public", 443), ["funnel", "--https=443", "off"])
   assert.deepEqual(unshareArgs("tailnet", 10000), ["serve", "--https=10000", "off"])
 })
@@ -174,10 +179,14 @@ test("share commands match the CLI the module drives", () => {
 // Backend state and error texts.
 
 test("backend state maps to ready-to-show messages", () => {
-  assert.deepEqual(stateFromStatus({ BackendState: "Running", Self: { DNSName: `${DNS}.` } }), {
-    running: true,
-    dnsName: DNS,
-  })
+  assert.deepEqual(
+    stateFromStatus({ BackendState: "Running", Self: { DNSName: `${DNS}.`, TailscaleIPs: ["100.64.0.5", "fd7a::1"] } }),
+    {
+      running: true,
+      dnsName: DNS,
+      ipv4: "100.64.0.5",
+    },
+  )
   assert.deepEqual(stateFromStatus({ BackendState: "Stopped" }), { running: false, message: "Tailscale is stopped" })
   assert.deepEqual(stateFromStatus({ BackendState: "NeedsLogin" }), {
     running: false,

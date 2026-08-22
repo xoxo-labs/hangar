@@ -1,4 +1,16 @@
-import { ChevronRight, Copy, ExternalLink, Folder, Play, Search } from "lucide-react"
+import {
+  Activity,
+  ChartLine,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  Folder,
+  Globe,
+  Network,
+  Play,
+  Search,
+  type LucideIcon,
+} from "lucide-react"
 import { useState, type KeyboardEvent, type ReactNode } from "react"
 import * as actions from "../actions"
 import { useStore } from "../store"
@@ -11,6 +23,12 @@ import { Dialog, DialogFooter, Overlay } from "../ui/Dialog"
  * still have `onboarding.tutorialSeen` unset (see ws.ts), and again on demand
  * from Settings → About or the ⌘K palette. Leaving it in any way — Skip, Done,
  * Escape, clicking the scrim — marks it seen, so it never nags twice.
+ *
+ * The shell borrows Settings' two-pane idiom: a rail of steps on the left, the
+ * active step's schematic and copy on the right. The rail doubles as a progress
+ * map — steps already seen read brighter than the ones still ahead — so it says
+ * what the dots used to. Below a 560px viewport the rail would squeeze the
+ * schematics, so it drops out and the dots take over; both drive `step`.
  *
  * Each step carries a small schematic built from the app's own tokens instead
  * of screenshots: screenshots rot, and the schematic reads in both themes.
@@ -204,6 +222,65 @@ function MockPorts() {
   )
 }
 
+/*
+ * The QR dialog's reach tiles resolving to a code. The QR is a fixed pattern,
+ * not a real encoding: it only has to read as "point your phone here", and the
+ * corner finder squares are what carry that at 63px.
+ */
+const QR_PATTERN = [
+  "111010111",
+  "101100101",
+  "111011111",
+  "000100000",
+  "101101001",
+  "011010110",
+  "111011010",
+  "101100101",
+  "111001101",
+]
+
+function MockShare() {
+  const reach = [
+    ["Local network", false],
+    ["Tailscale", false],
+    ["Public link", true],
+  ] as const
+
+  return (
+    <Frame>
+      <div className="flex items-center gap-2.5">
+        <ul className="m-0 w-[140px] list-none overflow-hidden rounded-md border border-surface-5 bg-surface-2 p-0">
+          {reach.map(([label, live]) => (
+            <li
+              key={label}
+              className={cx(
+                "flex items-center gap-1.5 border-b border-surface-5 px-2 py-1.5 text-2xs last:border-b-0",
+                live ? "bg-warning-a2 text-warning-11" : "text-surface-9",
+              )}
+            >
+              {live && <Globe size={10} className="flex-none" />}
+              {label}
+            </li>
+          ))}
+        </ul>
+        <span className="text-sm text-surface-8">→</span>
+        <div className="rounded-md border border-surface-5 bg-surface-2 p-1.5">
+          <div className="grid grid-cols-9 gap-px">
+            {QR_PATTERN.flatMap((row, y) =>
+              [...row].map((cell, x) => (
+                <span
+                  key={`${y}:${x}`}
+                  className={cx("size-[6px] rounded-[1px]", cell === "1" ? "bg-surface-12" : "bg-transparent")}
+                />
+              )),
+            )}
+          </div>
+        </div>
+      </div>
+    </Frame>
+  )
+}
+
 function MockPalette() {
   return (
     <Frame>
@@ -224,9 +301,21 @@ function MockPalette() {
   )
 }
 
-const STEPS = [
+type TutorialStep = {
+  /** Full sentence, shown as the detail pane's header. Unique — the dots key on it. */
+  title: string
+  /** One word for the rail, where a full title would wrap three lines. */
+  label: string
+  icon: LucideIcon
+  body: ReactNode
+  visual: ReactNode
+}
+
+const STEPS: TutorialStep[] = [
   {
     title: "Open a folder, get a project",
+    label: "Projects",
+    icon: Folder,
     body: (
       <>
         Point hangar at a folder that&apos;s already on your Mac — nothing is cloned or copied. Its{" "}
@@ -237,6 +326,8 @@ const STEPS = [
   },
   {
     title: "Resources, watched live",
+    label: "Resources",
+    icon: Activity,
     body: (
       <>
         Every session samples CPU, memory, and output rate every two seconds. High CPU turns the dots amber wherever the
@@ -247,6 +338,8 @@ const STEPS = [
   },
   {
     title: "Charts synced to output",
+    label: "Charts",
+    icon: ChartLine,
     body: (
       <>
         Click a point on a resource chart and the terminal jumps to what it was printing at that moment. Select terminal
@@ -256,7 +349,9 @@ const STEPS = [
     visual: <MockSync />,
   },
   {
-    title: "Ports, opened and shared",
+    title: "Ports, detected and opened",
+    label: "Ports",
+    icon: Network,
     body: (
       <>
         Listening ports are detected automatically. Click one to open it in your browser — or copy a LAN or Tailscale
@@ -266,7 +361,22 @@ const STEPS = [
     visual: <MockPorts />,
   },
   {
+    title: "Publish a port, scan the QR",
+    label: "Publishing",
+    icon: Globe,
+    body: (
+      <>
+        Tailscale widens the ladder. From a port&apos;s QR dialog you can share it with just your own devices, or make
+        it public on the internet — where whoever you send the link to needs no account and no client. Scan to open it
+        on your phone; the status bar turns amber while anything is public.
+      </>
+    ),
+    visual: <MockShare />,
+  },
+  {
     title: "Find anything",
+    label: "Search",
+    icon: Search,
     body: (
       <>
         <Key>⌘K</Key> searches processes, actions, and archived runs. History and terminal logs are opt-in, in Settings
@@ -287,8 +397,15 @@ function Tour() {
   const close = useStore((s) => s.closeTutorial)
   const settings = useStore((s) => s.settings)
   const [step, setStep] = useState(0)
+  // Every step reached so far, so the rail can show how much of the tour is left.
+  const [visited, setVisited] = useState<Set<number>>(() => new Set([0]))
   const last = step === STEPS.length - 1
   const current = STEPS[step]!
+
+  const go = (index: number) => {
+    setStep(index)
+    setVisited((seen) => (seen.has(index) ? seen : new Set(seen).add(index)))
+  }
 
   /** Leaving the tour in any way counts as having seen it. */
   const finish = () => {
@@ -300,44 +417,97 @@ function Tour() {
   }
 
   // Enter is left alone: the focused primary button already advances on it.
+  // Up/Down are here too because a vertical rail is what the arrows now face.
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") finish()
-    if (event.key === "ArrowRight" && !last) setStep(step + 1)
-    if (event.key === "ArrowLeft" && step > 0) setStep(step - 1)
+    if ((event.key === "ArrowRight" || event.key === "ArrowDown") && !last) go(step + 1)
+    if ((event.key === "ArrowLeft" || event.key === "ArrowUp") && step > 0) go(step - 1)
   }
 
   return (
     <Overlay onDismiss={finish}>
-      <Dialog label="Tutorial" className="w-[min(400px,100%)]!" onKeyDown={onKeyDown}>
-        <div className="flex flex-col gap-2.5 px-5 pt-5 pb-2">
-          {current.visual}
-          <h2 className="m-0 text-md font-semibold tracking-label">{current.title}</h2>
-          <p className="m-0 min-h-[60px] text-base leading-relaxed text-surface-10">{current.body}</p>
+      {/* Fixed height, not content height: the steps differ by a line or two of
+          copy, and a dialog that resized under the cursor would move Next out
+          from under it. The slack lands below the copy, which is top-aligned. */}
+      <Dialog
+        label="Tutorial"
+        className="h-[min(360px,calc(100vh-48px))] w-[min(660px,100%)]! overflow-hidden"
+        onKeyDown={onKeyDown}
+      >
+        <div className="flex min-h-0 flex-1">
+          {/* Below 560px the overlay leaves too little room for the widest
+              schematic once 158px goes to the rail, so the dots stand in. */}
+          <aside className="flex w-[158px] flex-none flex-col border-r border-surface-4 bg-surface-2 max-[560px]:hidden">
+            <header className="flex min-h-[43px] flex-none items-center border-b border-surface-4 px-3.5">
+              <h2 className="m-0 text-xs font-semibold tracking-caps text-surface-9 uppercase">Tutorial</h2>
+            </header>
+            <nav aria-label="Tutorial steps" className="flex flex-col gap-0.5 p-2">
+              {STEPS.map((entry, index) => {
+                const Icon = entry.icon
+                const selected = index === step
+                return (
+                  <button
+                    key={entry.title}
+                    type="button"
+                    aria-current={selected ? "step" : undefined}
+                    className={cx(
+                      "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-base outline-none transition-colors",
+                      "focus-visible:shadow-[0_0_0_2px_var(--color-accent-a5)]",
+                      selected
+                        ? "bg-accent-a4 font-book text-accent-11"
+                        : visited.has(index)
+                          ? "text-surface-11 hover:bg-surface-a3 hover:text-surface-12"
+                          : "text-surface-9 hover:bg-surface-a3 hover:text-surface-12",
+                    )}
+                    onClick={() => go(index)}
+                  >
+                    <Icon className="size-[15px] flex-none" strokeWidth={1.75} aria-hidden="true" />
+                    <span>{entry.label}</span>
+                  </button>
+                )
+              })}
+            </nav>
+          </aside>
+          <main className="flex min-w-0 flex-1 flex-col">
+            <header className="flex min-h-[43px] flex-none items-center justify-between gap-2 border-b border-surface-4 pr-2.5 pl-4">
+              <h2 className="m-0 min-w-0 truncate text-md font-strong tracking-label">{current.title}</h2>
+              {/* Leaving early is a corner affordance, not a step in the tour, so
+                  it sits out of the way of Back/Next rather than beside them. */}
+              {!last && (
+                <Button variant="ghost" className="flex-none" onClick={finish}>
+                  Skip
+                </Button>
+              )}
+            </header>
+            <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-3.5">
+              {current.visual}
+              <p className="m-0 text-base leading-relaxed text-surface-10">{current.body}</p>
+            </div>
+            <DialogFooter>
+              {/* `mr-auto` only bites while the dots exist; above 560px they are
+                  display:none and Back/Next keep the footer's own justify-end. */}
+              <span className="mr-auto flex items-center gap-1.5 min-[560px]:hidden">
+                {STEPS.map((entry, index) => (
+                  <button
+                    key={entry.title}
+                    type="button"
+                    aria-label={`Step ${index + 1}: ${entry.title}`}
+                    aria-current={index === step || undefined}
+                    className={cx(
+                      "size-1.5 rounded-full p-0",
+                      index === step ? "bg-accent-9" : "bg-surface-6 hover:bg-surface-8",
+                    )}
+                    onClick={() => go(index)}
+                  />
+                ))}
+              </span>
+              {step > 0 && <Button onClick={() => go(step - 1)}>Back</Button>}
+              <Button variant="primary" onClick={() => (last ? finish() : go(step + 1))}>
+                {last ? "Done" : "Next"}
+              </Button>
+            </DialogFooter>
+          </main>
         </div>
-        <DialogFooter className="grid grid-cols-[1fr_auto_1fr]">
-          <span className="justify-self-start">{!last && <Button onClick={finish}>Skip</Button>}</span>
-          <span className="flex items-center justify-center gap-1.5">
-            {STEPS.map((entry, index) => (
-              <button
-                key={entry.title}
-                type="button"
-                aria-label={`Step ${index + 1}: ${entry.title}`}
-                aria-current={index === step || undefined}
-                className={cx(
-                  "size-1.5 rounded-full p-0",
-                  index === step ? "bg-accent-9" : "bg-surface-6 hover:bg-surface-8",
-                )}
-                onClick={() => setStep(index)}
-              />
-            ))}
-          </span>
-          <span className="flex justify-self-end gap-2">
-            {step > 0 && <Button onClick={() => setStep(step - 1)}>Back</Button>}
-            <Button variant="primary" onClick={() => (last ? finish() : setStep(step + 1))}>
-              {last ? "Done" : "Next"}
-            </Button>
-          </span>
-        </DialogFooter>
       </Dialog>
     </Overlay>
   )

@@ -18,8 +18,9 @@ export function flattenShares(sources: ShareSource[]): ActiveShare[] {
   const all = sources.flatMap((source) =>
     source.shares.map((share) => ({ ...share, connId: source.connId, machine: source.machine })),
   )
+  const rank = (share: PortShare): number => (share.kind === "public" ? 0 : share.kind === "tailnet" ? 1 : 2)
   return all.sort((a, b) => {
-    if (a.kind !== b.kind) return a.kind === "public" ? -1 : 1
+    if (a.kind !== b.kind) return rank(a) - rank(b)
     if (a.machine !== b.machine) return a.machine.localeCompare(b.machine)
     return a.port - b.port
   })
@@ -35,7 +36,8 @@ export function shareForSession(shares: ActiveShare[], id: SessionId | undefined
 
 /** Copy for one share, kept in one place so every surface says the same thing. */
 export function shareLabel(kind: PortShare["kind"]): string {
-  return kind === "public" ? "Public on the internet" : "Shared on your tailnet"
+  if (kind === "public") return "Public on the internet"
+  return kind === "proxy" ? "Proxied to localhost on your tailnet" : "Shared on your tailnet"
 }
 
 /** Whether anything is reachable from outside the tailnet — the alarm condition. */

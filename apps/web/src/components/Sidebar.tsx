@@ -7,7 +7,7 @@ import {
   type SidebarEntry,
   type SidebarPart,
 } from "@hangar/client-core"
-import { type Project, type SessionId, type SessionInfo, sessionId } from "@hangar/contracts"
+import { type Project, type SessionInfo, sessionId } from "@hangar/contracts"
 import { ChevronRight, CircleHelp, Globe, History, Play, RotateCw, Settings, Square } from "lucide-react"
 import { type DragEvent, type FormEvent, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
@@ -16,14 +16,14 @@ import { removeConnection, retryConnection, updateConnection } from "../connecti
 import { useDesktopUpdate } from "../hooks/useDesktopUpdate"
 import { type ActiveShare, shareLabel, useShareForSession } from "../shares"
 import { CONNECTION_LABEL, connectionTone, describe, hasHighCpu, toneOf } from "../status"
-import { type ConfirmRequest, type ConnectionState, connectionOf, machineLabel, useStore } from "../store"
+import { type ConfirmRequest, type ConnectionState, machineLabel, useStore } from "../store"
 import { Button } from "../ui/Button"
 import { cx } from "../ui/cx"
 import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/Dialog"
 import { IconButton } from "../ui/IconButton"
 import { MENU_SEPARATOR, Menu, type MenuItem } from "../ui/Menu"
 import { Dot } from "./Dot"
-import { ActiveShareQrDialog } from "./SessionInspector"
+import { PortShareDialog } from "./PortShareDialog"
 import { SidebarUpdateButton } from "./SidebarUpdateButton"
 
 /*
@@ -711,49 +711,13 @@ function MachineSection({ part, byId }: { part: SidebarPart; byId: Map<string, S
 }
 
 /**
- * The sharing group of a process row's menu, separator included, so a row with
- * nothing to share contributes nothing at all. A share belongs to the machine,
- * not to the process, so the row that already publishes one always offers the
- * kill — a public port outlives the session behind it, still open to strangers.
+ * The process menu only navigates into sharing. Reach choices and every on/off
+ * action live in the modal, so this menu cannot drift into a second sharing UI.
  */
-function shareMenuItems(
-  id: SessionId,
-  share: ActiveShare | undefined,
-  ports: number[],
-  canShare: boolean,
-  tailnetSharingEnabled: boolean,
-  setActive: (id: SessionId) => void,
-  showQr: () => void,
-  requestConfirm: (request: ConfirmRequest) => void,
-): MenuItem[] {
-  if (share) {
-    return [
-      MENU_SEPARATOR,
-      { label: `Show QR for :${share.port}`, onSelect: showQr },
-      { label: `Stop sharing :${share.port}`, onSelect: () => actions.unsharePort(share.connId, share.port) },
-    ]
-  }
-  // Offering to share on a machine whose Tailscale is stopped would spend a
-  // click to earn an error. The panel explains the state; the menu just omits it.
-  if (!canShare) return []
-  // Choosing between several ports wants the URL and the QR next to the choice,
-  // which is the session's own panel; from here the row only takes you there.
-  if (ports.length > 1) return [MENU_SEPARATOR, { label: "Share port…", onSelect: () => setActive(id) }]
-  const [only] = ports
-  if (only === undefined) return []
-  const connId = connIdOf(id)
-  return [
-    MENU_SEPARATOR,
-    ...(tailnetSharingEnabled
-      ? [{ label: `Share :${only} on tailnet`, onSelect: () => actions.sharePort(connId, only, "tailnet", id) }]
-      : []),
-    // Tailnet sharing is reversible and stays among machines the user already
-    // trusts; going public is neither, so it asks first wherever it is offered.
-    {
-      label: `Share :${only} publicly…`,
-      onSelect: () => requestConfirm({ action: "share-public", connId, port: only, session: id }),
-    },
-  ]
+function shareMenuItems(share: ActiveShare | undefined, ports: number[], open: (port: number) => void): MenuItem[] {
+  const available = [...new Set([...(share === undefined ? [] : [share.port]), ...ports])]
+  if (available.length === 0) return []
+  return [MENU_SEPARATOR, ...available.map((port) => ({ label: `Share :${port}…`, onSelect: () => open(port) }))]
 }
 
 function ProcessRow({
@@ -775,30 +739,15 @@ function ProcessRow({
   const requestConfirm = useStore((s) => s.requestConfirm)
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
   const [renameOpen, setRenameOpen] = useState(false)
-  const [qrShare, setQrShare] = useState<ActiveShare | null>(null)
+  const [sharingPort, setSharingPort] = useState<number | null>(null)
 
   const id = sessionId(project, name)
   const running = session?.status === "running"
   const selected = activeId === id
   const share = useShareForSession(id)
-  const canShare = useStore((state) => connectionOf(state.connections, connIdOf(id)).tailscale?.running === true)
-  const tailnetSharingEnabled = useStore(
-    (state) => connectionOf(state.connections, connIdOf(id)).settings.links.tailnetSharing,
-  )
-  // Ports are detected on a live process, so a stopped row can only ever offer
-  // to withdraw a share it already has, never to start one.
-  const shareItems = shareMenuItems(
-    id,
-    share,
-    running ? (session?.metrics?.ports ?? []) : [],
-    canShare,
-    tailnetSharingEnabled,
-    setActive,
-    () => {
-      if (share) setQrShare(share)
-    },
-    requestConfirm,
-  )
+  // Ports are detected on a live process. An exited process can still open the
+  // modal for a live share so the user always has a route to stop it.
+  const shareItems = shareMenuItems(share, running ? (session?.metrics?.ports ?? []) : [], setSharingPort)
 
   return (
     <li
@@ -860,7 +809,18 @@ function ProcessRow({
       {renameOpen && (
         <RenameProcessDialog projectName={project} processName={name} onClose={() => setRenameOpen(false)} />
       )}
-      {qrShare && createPortal(<ActiveShareQrDialog share={qrShare} onClose={() => setQrShare(null)} />, document.body)}
+      {sharingPort !== null &&
+        session &&
+        createPortal(
+          <PortShareDialog
+            connId={connIdOf(id)}
+            port={sharingPort}
+            session={session.id}
+            metrics={session.metrics}
+            onClose={() => setSharingPort(null)}
+          />,
+          document.body,
+        )}
 
       <div className={ROW_ACTIONS}>
         {running ? (

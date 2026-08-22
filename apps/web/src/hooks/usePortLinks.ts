@@ -10,9 +10,8 @@ import {
   watchNetworkInfo,
   type NetworkInfo,
 } from "../links"
+import { loopbackOnly } from "../portManager.logic"
 import { connectionOf, useStore } from "../store"
-
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]", "::1", "localhost"])
 
 /**
  * Network discovery and open/copy actions for the inspector's detected ports.
@@ -72,10 +71,7 @@ export function usePortLinks(connId: string, metrics: SessionMetrics | undefined
   )
 
   const isLoopbackOnly = useCallback(
-    (port: number): boolean => {
-      const bindings = metrics?.portBindings?.[port] ?? []
-      return bindings.length > 0 && bindings.every((host) => LOOPBACK_HOSTS.has(host))
-    },
+    (port: number): boolean => loopbackOnly(metrics?.portBindings?.[port] ?? []),
     [metrics?.portBindings],
   )
 

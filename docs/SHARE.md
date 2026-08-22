@@ -14,13 +14,17 @@ same network. Publishing goes one step further:
 
 | Reach | Mechanism | Who can open it |
 |---|---|---|
-| Tailnet | `tailscale serve --bg --yes --https=<p> <port>` | machines on your tailnet, over real HTTPS |
+| Tailscale address | `tailscale serve --bg --yes --tcp=<port> tcp://localhost:<port>` | machines allowed by your tailnet policy, at the existing `100.x:<port>` link |
+| Tailnet HTTPS | `tailscale serve --bg --yes --https=<p> <port>` | machines on your tailnet, over real HTTPS |
 | Public | `tailscale funnel --bg --yes --https=<p> <port>` | anyone with the link — no account, no client |
 
-Both proxy from the Tailscale edge into `127.0.0.1:<port>`, which is why they
-work for a dev server bound to loopback only. That is the case the QR dialog
-used to merely warn about; when Tailscale is available it now offers the way out
-instead.
+All three proxy from the Tailscale edge into localhost, which is why they work
+for a dev server bound to loopback only. The Tailscale-address tile in the QR
+dialog can turn its TCP bridge on and off without changing the HTTP URL already
+shown to the user; the HTTPS modes allocate a separate Serve port. The bridge
+changes routing, not browser origin: authentication or edge providers may reject
+a private-IP HTTP origin, in which case Tailnet HTTPS plus an authorized MagicDNS
+hostname is the right option.
 
 ### Why not device sharing
 
@@ -74,10 +78,10 @@ are per-connection like everything else a machine owns.
 A published port is the only thing in Hangar a stranger can reach, so it is
 withdrawn at every natural ending and surfaced loudly while it lives.
 
-- **Process ends** → its shares are withdrawn. A *restart* is not an ending:
+- **Process ends** → its proxies and shares are withdrawn. A *restart* is not an ending:
   `SessionManager.restarting()` tells the exit handler that the port is coming
   back, so a share survives the seam rather than being torn down and rebuilt.
-- **Hangar quits** → `stopOwnShares()` withdraws only what this run created.
+- **Hangar quits** → `stopOwnShares()` withdraws only what this run created, including TCP bridges.
   Adopted and hand-made entries existed before Hangar and are left standing.
   Bounded to 3 s and run alongside PTY shutdown, so quitting never waits on a
   wedged daemon.
@@ -103,11 +107,12 @@ an exposed port.
 Three surfaces, one rule: **the reach is the signal.** Public shares carry the
 warning tone everywhere; tailnet shares stay calm.
 
-- **Port QR dialog** (`SessionInspector.tsx`) — the address tiles became reach
-  tiles: Local network, Tailscale, Tailnet HTTPS, Public link. A tile that is
-  off offers to turn it on; a tile that is live shows the QR for its `https://`
-  URL and a way to stop. Unavailability is stated honestly from `TailscaleState`
-  (not installed / stopped / an older server, which hides the tiles entirely).
+- **Port QR dialog** (`PortShareDialog.tsx`) — a Settings-style reach rail
+  switches among Local network, Tailscale, Tailnet HTTPS, and Public link while
+  a stable right pane holds the QR, URL, guidance, and on/off action. Warnings
+  use an inline accent lane rather than nested cards, and reserve their space so
+  live state changes do not move the content. Unavailability is stated honestly
+  from `TailscaleState` (not installed / stopped / an older server).
 - **Sidebar** (`Sidebar.tsx`) — a `Globe` beside the status dot on a publishing
   row, tinted by reach. Deliberately **not** a row background: selection and
   hover already contend for it, and a third meaning would lose to selection or

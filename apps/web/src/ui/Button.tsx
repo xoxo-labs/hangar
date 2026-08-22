@@ -10,6 +10,8 @@ const VARIANTS = {
   default: "border border-surface-5 bg-surface-a3 text-surface-12 enabled:hover:bg-surface-a4 disabled:opacity-35",
   primary: "border border-transparent bg-accent-9 font-book text-white enabled:hover:bg-accent-10 disabled:opacity-35",
   danger: "border border-transparent bg-transparent text-danger-10 enabled:hover:bg-danger-a3 disabled:opacity-35",
+  ghost:
+    "border border-transparent bg-transparent text-surface-9 enabled:hover:bg-surface-a3 enabled:hover:text-surface-12 disabled:opacity-35",
 } as const
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
