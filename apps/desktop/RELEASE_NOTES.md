@@ -1,3 +1,32 @@
+# Hangar 0.10.0
+
+## Session history you can curate
+
+- Any archived run can now be deleted — an ✕ on its row in History, or the Delete run button on the run's own page. Deleting forgets the run and its captured terminal output; log files on disk are yours and stay where they are.
+- A run's resource timeline now loads when you open that run instead of riding along with every state update, so a long history stops weighing on every connected window.
+
+## Grow a project without opening the editor
+
+- **Add process…** — from the + on a project's sidebar row or its context menu — opens a small dialog: the package.json scripts you haven't added yet (monorepo-aware, filterable), one click each; a custom command row; and the empty-terminal shortcut, now somewhere you can see it.
+- Processes and projects can be deleted from their context menus. The confirmation says exactly what happens — the entry goes, everything on disk stays — and ⇧-clicking the menu item skips it once you know. Accumulated terminal entries finally have a way out.
+- The project editor had a visual pass: detected scripts fold to one line while editing, the process list is one titled group — *What this project runs* — with its add actions in the header, and the browser preference no longer interrupts the flow between them.
+
+## An update you can actually see
+
+- The sidebar's update control grew from a 30-pixel icon into a labeled pill: *Update available*, *Downloading (42%)*, *Restart to update*. It can be dismissed until the next launch — though never a download in flight or a staged install, which you asked for.
+
+## The sharing window tells the truth about the proxy
+
+- The Tailscale address is a direct address, and now reads that way: **Direct**, like the local network. Only a port bound to localhost shows **Needs proxy** — the one case where the proxy genuinely is the fix, and the only case where its button insists. Everywhere else it is a quiet option.
+- When Tailscale is missing, stopped or logged out, publishing explains itself in place — installed-or-not, and what to do — instead of a disabled button with a hover tooltip.
+
+## Quieter and steadier underneath
+
+- A phone that wandered off mid-build no longer grows the server's memory without bound; heavy terminal output stopped churning allocations; closing a history tab releases its replay buffer.
+- The desktop shell restarts a crashed server instead of sitting on "connecting…" forever, and after an update it replaces a stale leftover server rather than silently driving the previous version. Updates now visibly apply.
+- Closing the main window while Help stayed open could crash the menu and strand the app with no way back; fixed, and a dock click brings the window back.
+- Native scrollbars are slim and match the rest of the app.
+
 # Hangar 0.9.0
 
 ## Share a port with whoever you choose
