@@ -1,13 +1,23 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react"
 import { IconButton } from "./IconButton"
 
 /** Drops a divider between two groups of items. */
 export const MENU_SEPARATOR = "separator"
 
-export type MenuItem = typeof MENU_SEPARATOR | { label: string; disabled?: boolean; onSelect: () => void }
+export type MenuItem =
+  | typeof MENU_SEPARATOR
+  | {
+      label: string
+      disabled?: boolean
+      /** Destructive items read red; keep them below a separator. */
+      danger?: boolean
+      /** The click event rides along so power users can ⇧-click past a confirm. */
+      onSelect: (event: ReactMouseEvent<HTMLButtonElement>) => void
+    }
 
 const ITEM =
   "w-full rounded-sm px-2 py-1 text-left text-base text-surface-11 enabled:hover:bg-surface-a3 enabled:hover:text-surface-12 disabled:cursor-default disabled:opacity-30"
+const ITEM_DANGER = "text-danger-10! enabled:hover:bg-danger-a3! enabled:hover:text-danger-11!"
 
 /** Breathing room between popup and trigger, and between popup and viewport. */
 const GAP = 4
@@ -127,11 +137,11 @@ export function Menu({
                 key={item.label}
                 type="button"
                 role="menuitem"
-                className={ITEM}
+                className={item.danger ? `${ITEM} ${ITEM_DANGER}` : ITEM}
                 disabled={item.disabled}
-                onClick={() => {
+                onClick={(event) => {
                   dismiss()
-                  item.onSelect()
+                  item.onSelect(event)
                 }}
               >
                 {item.label}

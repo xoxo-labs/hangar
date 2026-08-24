@@ -22,6 +22,7 @@ import { cx } from "../ui/cx"
 import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/Dialog"
 import { IconButton } from "../ui/IconButton"
 import { MENU_SEPARATOR, Menu, type MenuItem } from "../ui/Menu"
+import { AddProcessDialog } from "./AddProcessDialog"
 import { Dot } from "./Dot"
 import { PortShareDialog } from "./PortShareDialog"
 import { SidebarUpdateButton } from "./SidebarUpdateButton"
@@ -445,9 +446,11 @@ function projectMenuItems(
   running: boolean,
   openEditor: (project?: string) => void,
   requestConfirm: (request: ConfirmRequest) => void,
+  onAddProcess: () => void,
 ): MenuItem[] {
   return [
     { label: "Start all", onSelect: () => actions.start(project.name) },
+    { label: "Add process…", onSelect: onAddProcess },
     { label: "Open empty terminal", onSelect: () => actions.openEmptyTerminal(project) },
     {
       label: "Restart all",
@@ -461,6 +464,16 @@ function projectMenuItems(
     },
     MENU_SEPARATOR,
     { label: "Edit project…", onSelect: () => openEditor(project.name) },
+    {
+      label: "Delete project…",
+      // The server refuses removal while sessions run; disabling says it up front.
+      disabled: running,
+      danger: true,
+      onSelect: (event) =>
+        event.shiftKey
+          ? actions.removeProject(project.name)
+          : requestConfirm({ action: "remove-project", project: project.name }),
+    },
   ]
 }
 
@@ -496,6 +509,7 @@ function ProjectRow({
   const requestConfirm = useStore((s) => s.requestConfirm)
   const [menuOpen, setMenuOpen] = useState(false)
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
+  const [addingProcess, setAddingProcess] = useState(false)
 
   // Counted over every machine's whole project, not the filtered subset: the
   // header's dot, counter and "all processes" actions speak for the entry.
@@ -520,7 +534,7 @@ function ProjectRow({
     onDragOver(event.clientY < rect.top + rect.height / 2 ? "before" : "after")
   }
 
-  const menuItems = projectMenuItems(project, anchorRunning, openEditor, requestConfirm)
+  const menuItems = projectMenuItems(project, anchorRunning, openEditor, requestConfirm, () => setAddingProcess(true))
 
   return (
     <section
@@ -613,6 +627,8 @@ function ProjectRow({
         </div>
       </div>
 
+      {addingProcess && <AddProcessDialog project={project} onClose={() => setAddingProcess(false)} />}
+
       {expanded &&
         (merged ? (
           <div className="mt-[3px] mb-0 ml-2.5 border-l border-surface-5 pl-2">
@@ -649,6 +665,7 @@ function MachineSection({ part, byId }: { part: SidebarPart; byId: Map<string, S
   const requestConfirm = useStore((s) => s.requestConfirm)
   const [menuOpen, setMenuOpen] = useState(false)
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
+  const [addingProcess, setAddingProcess] = useState(false)
   const project = part.project
   const running = project.processes.some(
     (process) => byId.get(sessionId(project.name, process.name))?.status === "running",
@@ -694,10 +711,12 @@ function MachineSection({ part, byId }: { part: SidebarPart; byId: Map<string, S
               setMenuOpen(open)
               if (!open) setContextMenuPosition(null)
             }}
-            items={projectMenuItems(project, running, openEditor, requestConfirm)}
+            items={projectMenuItems(project, running, openEditor, requestConfirm, () => setAddingProcess(true))}
           />
         </div>
       </div>
+
+      {addingProcess && <AddProcessDialog project={project} onClose={() => setAddingProcess(false)} />}
 
       <ul className="m-0 list-none p-0">
         {part.processes.map((proc) => (
@@ -807,6 +826,15 @@ function ProcessRow({
             : []),
           MENU_SEPARATOR,
           { label: "Rename…", disabled: running, onSelect: () => setRenameOpen(true) },
+          {
+            label: "Delete process…",
+            disabled: running,
+            danger: true,
+            onSelect: (event) =>
+              event.shiftKey
+                ? actions.removeProcess(project, name)
+                : requestConfirm({ action: "remove-process", project, process: name }),
+          },
           ...shareItems,
         ]}
       />

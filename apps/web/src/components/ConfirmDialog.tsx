@@ -70,6 +70,48 @@ export function ConfirmDialog() {
     )
   }
 
+  if (confirming.action === "remove-process" || confirming.action === "remove-project") {
+    const isProcess = confirming.action === "remove-process"
+    const project = displayName(confirming.project)
+    const title = isProcess ? `Delete ${confirming.process}?` : `Delete ${project}?`
+    const remove = () => {
+      if (confirming.action === "remove-process") actions.removeProcess(confirming.project, confirming.process)
+      else actions.removeProject(confirming.project)
+      closeConfirm()
+    }
+    return (
+      <Overlay onDismiss={closeConfirm}>
+        <Dialog label={title} role="alertdialog" className="max-w-[384px]">
+          <DialogHeader title={title} />
+          <DialogBody>
+            <p className="m-0 text-md leading-normal text-surface-11 [&_code]:text-surface-12">
+              {isProcess ? (
+                <>
+                  <code>
+                    {project}/{confirming.process}
+                  </code>{" "}
+                  leaves the project's process list. The folder, its files and its scripts are untouched.
+                </>
+              ) : (
+                <>
+                  <code>{project}</code> and its process list are removed from Hangar. The folder and everything in it
+                  stay on disk.
+                </>
+              )}
+            </p>
+            <p className="mt-2 mb-0 text-xs text-surface-8">⇧-click the menu item to skip this confirmation.</p>
+          </DialogBody>
+          <DialogFooter>
+            <Button onClick={closeConfirm}>Cancel</Button>
+            <Button key={`${confirming.action}:${confirming.project}`} autoFocus variant="danger" onClick={remove}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </Dialog>
+      </Overlay>
+    )
+  }
+
   const copy = COPY[confirming.action]
   const project = displayName(confirming.project)
   const target = confirming.process ? `${project}/${confirming.process}` : `every process of ${project}`

@@ -105,6 +105,17 @@ export type ConfirmRequest =
       process?: string
     }
   | {
+      /** Removing config, not files: the process leaves the project's list; disk is untouched. */
+      action: "remove-process"
+      project: string
+      process: string
+    }
+  | {
+      /** Same promise at project scope: the registry entry goes, the folder stays. */
+      action: "remove-project"
+      project: string
+    }
+  | {
       /**
        * Publishing a port to the open internet. It earns a confirm for a reason
        * the others do not share: every other action here is reversible and stays

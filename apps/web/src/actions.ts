@@ -1,5 +1,13 @@
 import { LOCAL_CONN_ID, parseScoped } from "@hangar/client-core"
-import type { AppSettings, PairingInfo, PortShareKind, Project, SessionId, SessionInfo } from "@hangar/contracts"
+import {
+  sessionId,
+  type AppSettings,
+  type PairingInfo,
+  type PortShareKind,
+  type Project,
+  type SessionId,
+  type SessionInfo,
+} from "@hangar/contracts"
 import { requestPairingToken, sendTo } from "./connections/manager"
 import { useStore } from "./store"
 import { send } from "./ws"
@@ -53,6 +61,24 @@ export function upsertProject(project: Project): void {
 /** The server refuses this while the project still has running sessions. */
 export function removeProject(project: string): void {
   send({ type: "removeProject", project })
+}
+
+/**
+ * Removes one process from its project's config. Files and scripts on disk are
+ * untouched — this is registry surgery, the counterpart of adding a process.
+ */
+export function removeProcess(projectName: string, processName: string): void {
+  const store = useStore.getState()
+  const project = store.projects.find((item) => item.name === projectName)
+  if (!project) return
+  upsertProject({ ...project, processes: project.processes.filter((process) => process.name !== processName) })
+  // Without these the process would live on as a tab: an exited session stays
+  // in the server's list until dismissed, and a pending tab is renderer state.
+  const id = sessionId(projectName, processName)
+  if (store.sessions.some((session) => session.id === id && session.status === "exited")) {
+    send({ type: "dismiss", id })
+  }
+  store.closePending(id)
 }
 
 /** Names may span machines; each server is told about its own projects only. */
