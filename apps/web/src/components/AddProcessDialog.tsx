@@ -82,15 +82,18 @@ export function AddProcessDialog({ project, onClose }: { project: Project; onClo
           <form className="flex w-full flex-col items-start gap-[5px]" onSubmit={addCustom}>
             <span className="text-sm tracking-label text-surface-10">Custom command</span>
             <div className="flex w-full gap-1.5">
-              <TextInput
-                className="w-[130px] flex-none"
-                value={customName}
-                spellCheck={false}
-                autoComplete="off"
-                placeholder="name"
-                aria-label="Process name"
-                onChange={(event) => setCustomName(event.target.value)}
-              />
+              {/* The wrapper owns the width: TextInput's own w-full would win
+               * the utility fight against a width class on the input itself. */}
+              <div className="w-[130px] flex-none">
+                <TextInput
+                  value={customName}
+                  spellCheck={false}
+                  autoComplete="off"
+                  placeholder="name"
+                  aria-label="Process name"
+                  onChange={(event) => setCustomName(event.target.value)}
+                />
+              </div>
               <TextInput
                 mono
                 value={customCmd}
@@ -114,6 +117,7 @@ export function AddProcessDialog({ project, onClose }: { project: Project; onClo
           </form>
         </DialogBody>
         <DialogFooter>
+          {/* An action, not a dismissal — it sits apart from Done, on the left. */}
           <Button
             onClick={() => {
               actions.openEmptyTerminal(project)
@@ -122,6 +126,7 @@ export function AddProcessDialog({ project, onClose }: { project: Project; onClo
           >
             Open empty terminal
           </Button>
+          <span className="flex-1" />
           <Button variant="primary" onClick={onClose}>
             Done
           </Button>

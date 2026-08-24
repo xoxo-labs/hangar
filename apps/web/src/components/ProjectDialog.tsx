@@ -251,20 +251,24 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
           </Field>
 
           {projectInfo?.package && projectInfo.package.scripts.length > 0 && (
-            <div className={cx(FIELD, "w-full")}>
-              {/* Keyed by folder so the panel's filter resets with the script list. */}
-              <DetectedScripts
-                key={projectInfo.path}
-                pkg={projectInfo.package}
-                addedNames={new Set(rows.map((row) => row.name.trim()))}
-                onAdd={addPackageScript}
-              />
-              <span className={FIELD_HINT}>
-                {projectInfo.package.workspaceScriptCount
-                  ? "Workspace scripts use package/script names and run from that package's folder."
-                  : "Add any scripts you want, then edit them or add custom commands below."}
-              </span>
-            </div>
+            /* Keyed by folder so the panel's filter resets with the script list.
+             * Collapsed in Edit mode: processes are the errand there, and the
+             * list was pushing them below the fold. */
+            <DetectedScripts
+              key={projectInfo.path}
+              pkg={projectInfo.package}
+              addedNames={new Set(rows.map((row) => row.name.trim()))}
+              onAdd={addPackageScript}
+              collapsible
+              defaultOpen={editing === null}
+              hint={
+                <span className={FIELD_HINT}>
+                  {projectInfo.package.workspaceScriptCount
+                    ? "Workspace scripts use package/script names and run from that package's folder."
+                    : "Add any scripts you want, then edit them or add custom commands below."}
+                </span>
+              }
+            />
           )}
 
           <ProcessesField rows={rows} onChange={setRows} />
@@ -417,42 +421,49 @@ function FolderPickerScreen({
   )
 }
 
-/** The editable process list: one grid row each, plus the two add buttons. */
+/** The editable process list: one grid row each, in one visual group with its add actions. */
 function ProcessesField({ rows, onChange }: { rows: Row[]; onChange: (update: (current: Row[]) => Row[]) => void }) {
   const patchRow = (id: number, patch: Partial<Row>): void =>
     onChange((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)))
 
   return (
-    <div className={FIELD}>
-      <span className={FIELD_LABEL}>Processes</span>
-      <div className="grid w-full grid-cols-[1.1fr_2fr_1.2fr_24px] items-center gap-1">
-        <span className={PROC_HEAD}>name</span>
-        <span className={PROC_HEAD}>command</span>
-        <span className={PROC_HEAD}>cwd (optional)</span>
-        <span />
-        {rows.map((row) => (
-          <ProcRow
-            key={row.id}
-            row={row}
-            canRemove={rows.length > 1}
-            onChange={(patch) => patchRow(row.id, patch)}
-            onRemove={() => onChange((current) => current.filter((r) => r.id !== row.id))}
-          />
-        ))}
+    <div className={cx(FIELD, "w-full")}>
+      {/* The add actions live in the group's own header, so what the label
+       * names and what the buttons grow are visibly one thing. */}
+      <div className="flex w-full items-baseline gap-3">
+        <span className={FIELD_LABEL}>What this project runs</span>
+        <span className="flex-1" />
+        <button type="button" className={TEXT_BUTTON} onClick={() => onChange((current) => [...current, emptyRow()])}>
+          + Add process
+        </button>
+        <button
+          type="button"
+          className={TEXT_BUTTON}
+          onClick={() =>
+            onChange((current) => [...current, { ...emptyRow(), name: uniqueTerminalName(current), shell: true }])
+          }
+        >
+          + Add empty terminal
+        </button>
+      </div>
+      <div className="w-full rounded-md border border-surface-5 bg-surface-1 p-2">
+        <div className="grid w-full grid-cols-[1.1fr_2fr_1.2fr_24px] items-center gap-1">
+          <span className={PROC_HEAD}>name</span>
+          <span className={PROC_HEAD}>command</span>
+          <span className={PROC_HEAD}>cwd (optional)</span>
+          <span />
+          {rows.map((row) => (
+            <ProcRow
+              key={row.id}
+              row={row}
+              canRemove={rows.length > 1}
+              onChange={(patch) => patchRow(row.id, patch)}
+              onRemove={() => onChange((current) => current.filter((r) => r.id !== row.id))}
+            />
+          ))}
+        </div>
       </div>
       <span className={FIELD_HINT}>A cwd is relative to the project path and defaults to its root.</span>
-      <button type="button" className={TEXT_BUTTON} onClick={() => onChange((current) => [...current, emptyRow()])}>
-        + Add process
-      </button>
-      <button
-        type="button"
-        className={TEXT_BUTTON}
-        onClick={() =>
-          onChange((current) => [...current, { ...emptyRow(), name: uniqueTerminalName(current), shell: true }])
-        }
-      >
-        + Add empty terminal
-      </button>
     </div>
   )
 }

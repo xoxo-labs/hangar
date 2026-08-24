@@ -298,6 +298,31 @@
     border-radius: 4px;
     padding: 1px 4px;
   }
+
+  /* Native scrollbars (dialog bodies, script lists, the sidebar) — slim and
+   * surface-toned. macOS shows chunky always-on bars whenever a mouse is
+   * plugged in, which reads as foreign next to the styled xterm ones. */
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--color-surface-a4);
+    border-radius: 4px;
+    background-clip: padding-box;
+    border: 2px solid transparent;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--color-surface-a6);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+  }
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 }
 
 /* Holding ⌘ (or Ctrl in a browser) reveals a small shadcn-style keycap at a
