@@ -1,23 +1,20 @@
 import { connIdOf, displayName, LOCAL_CONN_ID, scoped } from "@hangar/client-core"
-import type { BrowserChoice, Project, ProjectProcess } from "@hangar/contracts"
+import type { BrowserChoice } from "@hangar/contracts"
 import { FolderOpen } from "lucide-react"
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
+import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react"
 import * as actions from "../actions"
-import { authHeaders, serverOrigin } from "../links"
-import { connectionOf, machineLabel, useStore } from "../store"
+import { useProjectInfo } from "../hooks/useProjectInfo"
+import { type ConnectionState, connectionOf, machineLabel, useStore } from "../store"
 import { Button } from "../ui/Button"
 import { cx } from "../ui/cx"
 import { Dialog, DialogBody, DialogFooter, DialogHeader, Overlay } from "../ui/Dialog"
 import { Field, Select, TextInput } from "../ui/Field"
 import { IconButton } from "../ui/IconButton"
 import { BrowserSelect } from "./BrowserSelect"
-import {
-  filterPackageScripts,
-  groupPackageScripts,
-  type PackageScript,
-  SCRIPT_FILTER_THRESHOLD,
-} from "./packageScripts.logic"
+import { DetectedScripts } from "./DetectedScripts"
+import type { PackageScript } from "./packageScripts.logic"
 import { PathBrowser, type PathBrowserHandle } from "./PathBrowser"
+import { type Row, toProject, uniqueTerminalName, validate } from "./projectForm.logic"
 
 /* Ports of the retired `.field` / `.text-button` rules. The `Field` primitive
  * covers the plain label-wrapped case; these two fields need a `<div>` (a
@@ -33,29 +30,6 @@ const TEXT_BUTTON =
   "py-[3px] text-base text-surface-10 enabled:hover:text-accent-9 disabled:cursor-default disabled:text-surface-7"
 const PROC_HEAD = "text-xs tracking-label text-surface-9"
 const ELLIPSIS = "overflow-hidden text-ellipsis whitespace-nowrap"
-
-/** A process being edited. `id` only keeps React keys stable across row removals.
- * `description` is edited in the session inspector, not here; the row carries it
- * through so saving the dialog doesn't drop it. */
-type Row = {
-  id: number
-  name: string
-  cmd: string
-  cwd: string
-  shell: boolean
-  description?: string
-  browser?: BrowserChoice
-}
-type ProjectInfo = {
-  path: string
-  exists: boolean
-  package: null | {
-    name: string | null
-    manager: string
-    scripts: PackageScript[]
-    workspaceScriptCount?: number
-  }
-}
 
 let nextRowId = 0
 function emptyRow(): Row {
@@ -107,10 +81,7 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
       : [emptyRow()],
   )
   const [browser, setBrowser] = useState<BrowserChoice | "">(existing?.browser ?? "")
-  const [confirmingRemove, setConfirmingRemove] = useState(false)
-  const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null)
-  const [scriptQuery, setScriptQuery] = useState("")
-  const [inspecting, setInspecting] = useState(false)
+  const { info: projectInfo, inspecting } = useProjectInfo(config, path)
   const [browsing, setBrowsing] = useState(false)
   // The welcome screen is the first thing a new project shows; this is how you leave it
   // without having picked anything yet.
@@ -119,44 +90,6 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
 
   const nameEdited = useRef(false)
   const browserRef = useRef<PathBrowserHandle>(null)
-
-  useEffect(() => {
-    const candidate = path.trim()
-    // A new folder brings a new script list; a query typed against the old one is meaningless.
-    setScriptQuery("")
-    if (candidate === "") {
-      setProjectInfo(null)
-      setInspecting(false)
-      return
-    }
-
-    setProjectInfo(null)
-    const controller = new AbortController()
-    const timer = window.setTimeout(() => {
-      setInspecting(true)
-      // The path is inspected on the machine the project will live on.
-      fetch(`${serverOrigin(config)}/project-info?path=${encodeURIComponent(candidate)}`, {
-        headers: authHeaders(config),
-        signal: controller.signal,
-      })
-        .then(async (response) => {
-          if (!response.ok) throw new Error("Could not inspect project")
-          return response.json() as Promise<ProjectInfo>
-        })
-        .then(setProjectInfo)
-        .catch((error: unknown) => {
-          if (!(error instanceof DOMException && error.name === "AbortError")) setProjectInfo(null)
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setInspecting(false)
-        })
-    }, 250)
-
-    return () => {
-      window.clearTimeout(timer)
-      controller.abort()
-    }
-  }, [path, config])
 
   useEffect(() => {
     if (editing !== null || nameEdited.current || projectInfo === null || !projectInfo.exists) return
@@ -179,16 +112,6 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
     closeEditor()
   }
 
-  const remove = (): void => {
-    if (editing === null) return
-    if (!confirmingRemove) {
-      setConfirmingRemove(true)
-      return
-    }
-    actions.removeProject(editing)
-    closeEditor()
-  }
-
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.key === "Escape") {
       event.stopPropagation()
@@ -201,9 +124,6 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
     }
   }
 
-  const patchRow = (id: number, patch: Partial<Row>): void =>
-    setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)))
-
   const browse = async (): Promise<void> => {
     const choose = window.hangarDesktop?.chooseDirectory
     if (!choose || !canPickNatively || browsing) return
@@ -214,83 +134,6 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
     } finally {
       setBrowsing(false)
     }
-  }
-
-  const machineField =
-    machines.length < 2 ? null : (
-      <Field
-        label="Machine"
-        hint={editing === null ? "The Mac this project is created on." : "A project stays on the Mac that owns it."}
-        className="w-full max-w-[260px]"
-      >
-        {editing === null ? (
-          <Select value={connId} onChange={(event) => setConnId(event.target.value)}>
-            {machines.map((item) => (
-              <option key={item.config.id} value={item.config.id}>
-                {machineLabel(item)}
-              </option>
-            ))}
-          </Select>
-        ) : (
-          <TextInput readOnly value={machineLabel(machine)} />
-        )}
-      </Field>
-    )
-
-  const choosingFolder = editing === null && !showForm && path.trim() === ""
-  if (choosingFolder) {
-    return (
-      <Overlay onDismiss={closeEditor}>
-        <Dialog label="Add project" className="w-[min(620px,100%)]!" onKeyDown={onKeyDown}>
-          <DialogHeader title="Add project" />
-          <DialogBody className="gap-3 py-5">
-            {machineField}
-            {/* One screen, two doors: the native picker where there is one, and the
-             * server-side browser everywhere else — including a paired Mac, whose
-             * folders this Mac's picker could never have shown. */}
-            <button
-              type="button"
-              autoFocus
-              className="group flex min-h-[190px] w-full flex-col items-center justify-center rounded-lg border border-dashed border-surface-6 bg-surface-1 px-8 text-center hover:border-accent-8 hover:bg-accent-a2 focus:border-accent-9 focus:shadow-[0_0_0_2px_var(--color-accent-a3)] focus:outline-none"
-              disabled={browsing}
-              onClick={() => (canPickNatively ? void browse() : setShowForm(true))}
-            >
-              <span className="grid size-11 place-items-center rounded-full border border-surface-5 bg-surface-a3 text-surface-10 group-hover:text-accent-10">
-                <FolderOpen size={21} strokeWidth={1.6} />
-              </span>
-              <strong className="mt-3 text-md font-semibold text-surface-12">
-                {browsing
-                  ? "Opening folder picker…"
-                  : canPickNatively
-                    ? "Choose a project folder"
-                    : `Browse folders on ${machineLabel(machine)}`}
-              </strong>
-              <span className="mt-1 max-w-[390px] text-base leading-relaxed text-surface-9">
-                Hangar will detect package.json scripts, the package manager, and monorepo workspaces.
-              </span>
-            </button>
-            {/* Offered only where the button above opens the native picker: without one
-             * it already leads to the browsable field, and two controls doing the same
-             * thing is worse than one. */}
-            {canPickNatively && (
-              <>
-                <div className="flex items-center gap-3 text-xs text-surface-8">
-                  <span className="h-px flex-1 bg-surface-5" />
-                  or
-                  <span className="h-px flex-1 bg-surface-5" />
-                </div>
-                <Button className="self-center" onClick={() => setShowForm(true)}>
-                  Type or browse a path
-                </Button>
-              </>
-            )}
-          </DialogBody>
-          <DialogFooter>
-            <Button onClick={closeEditor}>Cancel</Button>
-          </DialogFooter>
-        </Dialog>
-      </Overlay>
-    )
   }
 
   const addPackageScript = (script: PackageScript): void => {
@@ -308,10 +151,24 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
     })
   }
 
-  const detectedScripts = projectInfo?.package?.scripts ?? []
-  // A monorepo cumulates root plus every workspace's scripts, which is where a list stops being scannable.
-  const filterable = detectedScripts.length > SCRIPT_FILTER_THRESHOLD
-  const shownScripts = filterable ? filterPackageScripts(detectedScripts, scriptQuery) : detectedScripts
+  const machineField = (
+    <MachineField editing={editing} connId={connId} machines={machines} machine={machine} onChange={setConnId} />
+  )
+
+  if (editing === null && !showForm && path.trim() === "") {
+    return (
+      <FolderPickerScreen
+        machineField={machineField}
+        canPickNatively={canPickNatively}
+        browsing={browsing}
+        machineName={machineLabel(machine)}
+        onKeyDown={onKeyDown}
+        onBrowse={() => void browse()}
+        onTypePath={() => setShowForm(true)}
+        onClose={closeEditor}
+      />
+    )
+  }
 
   return (
     // mousedown (not click) so a drag that ends on the backdrop keeps the dialog up.
@@ -395,63 +252,13 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
 
           {projectInfo?.package && projectInfo.package.scripts.length > 0 && (
             <div className={cx(FIELD, "w-full")}>
-              <span className={FIELD_LABEL}>
-                {projectInfo.package.workspaceScriptCount
-                  ? `Monorepo scripts · ${projectInfo.package.manager}`
-                  : `package.json scripts · ${projectInfo.package.manager}`}
-              </span>
-              {filterable && (
-                <TextInput
-                  // Deliberately not autofocused: the dialog's own focus flow starts at the path field.
-                  className="py-1 text-sm"
-                  value={scriptQuery}
-                  spellCheck={false}
-                  autoComplete="off"
-                  placeholder="Filter scripts…"
-                  onChange={(event) => setScriptQuery(event.target.value)}
-                  onKeyDown={(event) => {
-                    // Escape is swallowed only when it clears something; otherwise it still closes the dialog.
-                    if (event.key !== "Escape" || scriptQuery === "") return
-                    event.stopPropagation()
-                    setScriptQuery("")
-                  }}
-                />
-              )}
-              <div className="max-h-[210px] w-full overflow-y-auto rounded-md border border-surface-5 bg-surface-1">
-                {shownScripts.length === 0 && <p className="px-2 py-2.5 text-sm text-surface-9">No matching scripts</p>}
-                {groupPackageScripts(shownScripts).map((group) => (
-                  <section key={group.label}>
-                    <div className="sticky top-0 z-[1] flex items-center border-b border-surface-5 bg-surface-2 px-2 py-1 text-2xs font-semibold tracking-caps text-surface-9 uppercase">
-                      <span className="truncate">{group.label}</span>
-                      <span className="ml-auto font-normal tabular-nums text-surface-8">{group.scripts.length}</span>
-                    </div>
-                    {group.scripts.map((script) => {
-                      const added = rows.some((row) => row.name.trim() === script.name)
-                      const displayName = script.workspace
-                        ? script.name.slice(script.workspace.length + 1)
-                        : script.name
-                      return (
-                        <div
-                          className="grid min-h-[28px] grid-cols-[minmax(70px,0.7fr)_minmax(120px,2fr)_42px] items-center gap-2 border-b border-surface-4 px-[7px] py-[3px] last:border-b-0"
-                          key={script.name}
-                          title={`${script.name}: ${script.value}`}
-                        >
-                          <code className={cx(ELLIPSIS, "text-sm text-surface-12")}>{displayName}</code>
-                          <span className={cx(ELLIPSIS, "font-mono text-xs text-surface-9")}>{script.value}</span>
-                          <button
-                            type="button"
-                            className={cx(TEXT_BUTTON, "justify-self-end")}
-                            disabled={added}
-                            onClick={() => addPackageScript(script)}
-                          >
-                            {added ? "Added" : "+ Add"}
-                          </button>
-                        </div>
-                      )
-                    })}
-                  </section>
-                ))}
-              </div>
+              {/* Keyed by folder so the panel's filter resets with the script list. */}
+              <DetectedScripts
+                key={projectInfo.path}
+                pkg={projectInfo.package}
+                addedNames={new Set(rows.map((row) => row.name.trim()))}
+                onAdd={addPackageScript}
+              />
               <span className={FIELD_HINT}>
                 {projectInfo.package.workspaceScriptCount
                   ? "Workspace scripts use package/script names and run from that package's folder."
@@ -468,61 +275,18 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
             />
           </Field>
 
-          <div className={FIELD}>
-            <span className={FIELD_LABEL}>Processes</span>
-            <div className="grid w-full grid-cols-[1.1fr_2fr_1.2fr_24px] items-center gap-1">
-              <span className={PROC_HEAD}>name</span>
-              <span className={PROC_HEAD}>command</span>
-              <span className={PROC_HEAD}>cwd (optional)</span>
-              <span />
-              {rows.map((row) => (
-                <ProcRow
-                  key={row.id}
-                  row={row}
-                  canRemove={rows.length > 1}
-                  onChange={(patch) => patchRow(row.id, patch)}
-                  onRemove={() => setRows((current) => current.filter((r) => r.id !== row.id))}
-                />
-              ))}
-            </div>
-            <span className={FIELD_HINT}>A cwd is relative to the project path and defaults to its root.</span>
-            <button
-              type="button"
-              className={TEXT_BUTTON}
-              onClick={() => setRows((current) => [...current, emptyRow()])}
-            >
-              + Add process
-            </button>
-            <button
-              type="button"
-              className={TEXT_BUTTON}
-              onClick={() =>
-                setRows((current) => [...current, { ...emptyRow(), name: uniqueTerminalName(current), shell: true }])
-              }
-            >
-              + Add empty terminal
-            </button>
-          </div>
+          <ProcessesField rows={rows} onChange={setRows} />
         </DialogBody>
 
         <DialogFooter>
           {editing !== null && (
-            // The span carries the tooltip: browsers swallow hover on a disabled button.
-            <span
-              title={
-                running ? "Stop this project's processes before removing it" : "Remove this project from the registry"
-              }
-            >
-              <Button
-                variant="danger"
-                className={cx(confirmingRemove && "enabled:bg-danger-10 enabled:text-white")}
-                disabled={running}
-                onClick={remove}
-                onBlur={() => setConfirmingRemove(false)}
-              >
-                {confirmingRemove ? "Really remove?" : "Remove project"}
-              </Button>
-            </span>
+            <RemoveProjectButton
+              running={running}
+              onRemove={() => {
+                actions.removeProject(editing)
+                closeEditor()
+              }}
+            />
           )}
           <span className="flex-1" />
           {problem !== null && <span className={cx(ELLIPSIS, "text-sm text-surface-9")}>{problem}</span>}
@@ -539,6 +303,155 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
         </DialogFooter>
       </Dialog>
     </Overlay>
+  )
+}
+
+function MachineField({
+  editing,
+  connId,
+  machines,
+  machine,
+  onChange,
+}: {
+  editing: string | null
+  connId: string
+  machines: ConnectionState[]
+  machine: ConnectionState
+  onChange: (connId: string) => void
+}) {
+  if (machines.length < 2) return null
+  return (
+    <Field
+      label="Machine"
+      hint={editing === null ? "The Mac this project is created on." : "A project stays on the Mac that owns it."}
+      className="w-full max-w-[260px]"
+    >
+      {editing === null ? (
+        <Select value={connId} onChange={(event) => onChange(event.target.value)}>
+          {machines.map((item) => (
+            <option key={item.config.id} value={item.config.id}>
+              {machineLabel(item)}
+            </option>
+          ))}
+        </Select>
+      ) : (
+        <TextInput readOnly value={machineLabel(machine)} />
+      )}
+    </Field>
+  )
+}
+
+/** The welcome screen of a new project: pick a folder before seeing the form. */
+function FolderPickerScreen({
+  machineField,
+  canPickNatively,
+  browsing,
+  machineName,
+  onKeyDown,
+  onBrowse,
+  onTypePath,
+  onClose,
+}: {
+  machineField: ReactNode
+  canPickNatively: boolean
+  browsing: boolean
+  machineName: string
+  onKeyDown: (event: KeyboardEvent) => void
+  onBrowse: () => void
+  onTypePath: () => void
+  onClose: () => void
+}) {
+  return (
+    <Overlay onDismiss={onClose}>
+      <Dialog label="Add project" className="w-[min(620px,100%)]!" onKeyDown={onKeyDown}>
+        <DialogHeader title="Add project" />
+        <DialogBody className="gap-3 py-5">
+          {machineField}
+          {/* One screen, two doors: the native picker where there is one, and the
+           * server-side browser everywhere else — including a paired Mac, whose
+           * folders this Mac's picker could never have shown. */}
+          <button
+            type="button"
+            autoFocus
+            className="group flex min-h-[190px] w-full flex-col items-center justify-center rounded-lg border border-dashed border-surface-6 bg-surface-1 px-8 text-center hover:border-accent-8 hover:bg-accent-a2 focus:border-accent-9 focus:shadow-[0_0_0_2px_var(--color-accent-a3)] focus:outline-none"
+            disabled={browsing}
+            onClick={() => (canPickNatively ? onBrowse() : onTypePath())}
+          >
+            <span className="grid size-11 place-items-center rounded-full border border-surface-5 bg-surface-a3 text-surface-10 group-hover:text-accent-10">
+              <FolderOpen size={21} strokeWidth={1.6} />
+            </span>
+            <strong className="mt-3 text-md font-semibold text-surface-12">
+              {browsing
+                ? "Opening folder picker…"
+                : canPickNatively
+                  ? "Choose a project folder"
+                  : `Browse folders on ${machineName}`}
+            </strong>
+            <span className="mt-1 max-w-[390px] text-base leading-relaxed text-surface-9">
+              Hangar will detect package.json scripts, the package manager, and monorepo workspaces.
+            </span>
+          </button>
+          {/* Offered only where the button above opens the native picker: without one
+           * it already leads to the browsable field, and two controls doing the same
+           * thing is worse than one. */}
+          {canPickNatively && (
+            <>
+              <div className="flex items-center gap-3 text-xs text-surface-8">
+                <span className="h-px flex-1 bg-surface-5" />
+                or
+                <span className="h-px flex-1 bg-surface-5" />
+              </div>
+              <Button className="self-center" onClick={onTypePath}>
+                Type or browse a path
+              </Button>
+            </>
+          )}
+        </DialogBody>
+        <DialogFooter>
+          <Button onClick={onClose}>Cancel</Button>
+        </DialogFooter>
+      </Dialog>
+    </Overlay>
+  )
+}
+
+/** The editable process list: one grid row each, plus the two add buttons. */
+function ProcessesField({ rows, onChange }: { rows: Row[]; onChange: (update: (current: Row[]) => Row[]) => void }) {
+  const patchRow = (id: number, patch: Partial<Row>): void =>
+    onChange((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)))
+
+  return (
+    <div className={FIELD}>
+      <span className={FIELD_LABEL}>Processes</span>
+      <div className="grid w-full grid-cols-[1.1fr_2fr_1.2fr_24px] items-center gap-1">
+        <span className={PROC_HEAD}>name</span>
+        <span className={PROC_HEAD}>command</span>
+        <span className={PROC_HEAD}>cwd (optional)</span>
+        <span />
+        {rows.map((row) => (
+          <ProcRow
+            key={row.id}
+            row={row}
+            canRemove={rows.length > 1}
+            onChange={(patch) => patchRow(row.id, patch)}
+            onRemove={() => onChange((current) => current.filter((r) => r.id !== row.id))}
+          />
+        ))}
+      </div>
+      <span className={FIELD_HINT}>A cwd is relative to the project path and defaults to its root.</span>
+      <button type="button" className={TEXT_BUTTON} onClick={() => onChange((current) => [...current, emptyRow()])}>
+        + Add process
+      </button>
+      <button
+        type="button"
+        className={TEXT_BUTTON}
+        onClick={() =>
+          onChange((current) => [...current, { ...emptyRow(), name: uniqueTerminalName(current), shell: true }])
+        }
+      >
+        + Add empty terminal
+      </button>
+    </div>
   )
 }
 
@@ -601,51 +514,23 @@ function ProcRow({
   )
 }
 
-/** Mirrors the server's `validateProject` so the form can refuse early. */
-function validate(name: string, path: string, rows: Row[]): string | null {
-  if (name.trim() === "") return "Name is required."
-  if (/[\s/]/.test(name)) return "Name can't contain spaces or slashes."
-  if (path.trim() === "") return "Path is required."
-  if (rows.length === 0) return "A project needs at least one process."
-  if (rows.some((row) => row.name.trim() === "" || (!row.shell && row.cmd.trim() === ""))) {
-    return "Every process needs a name and a command."
-  }
-  const names = new Set(rows.map((row) => row.name.trim()))
-  if (names.size !== rows.length) return "Process names must be unique."
-  return null
-}
-
-function toProject(
-  name: string,
-  path: string,
-  rows: Row[],
-  env: Record<string, string> | undefined,
-  browser: BrowserChoice | "",
-): Project {
-  const processes: ProjectProcess[] = rows.map((row) => {
-    const cwd = row.cwd.trim()
-    return {
-      name: row.name.trim(),
-      cmd: row.shell ? "" : row.cmd.trim(),
-      ...(row.shell ? { shell: true } : {}),
-      ...(cwd === "" ? {} : { cwd }),
-      ...(row.description === undefined ? {} : { description: row.description }),
-      ...(row.browser === undefined ? {} : { browser: row.browser }),
-    }
-  })
-  return {
-    name: name.trim(),
-    path: path.trim(),
-    processes,
-    ...(env === undefined ? {} : { env }),
-    ...(browser === "" ? {} : { browser }),
-  }
-}
-
-function uniqueTerminalName(rows: Row[]): string {
-  const names = new Set(rows.map((row) => row.name.trim()))
-  if (!names.has("terminal")) return "terminal"
-  let suffix = 2
-  while (names.has(`terminal-${suffix}`)) suffix += 1
-  return `terminal-${suffix}`
+/** Two-step remove: the first click arms the button, blurring disarms it. */
+function RemoveProjectButton({ running, onRemove }: { running: boolean; onRemove: () => void }) {
+  const [confirming, setConfirming] = useState(false)
+  return (
+    // The span carries the tooltip: browsers swallow hover on a disabled button.
+    <span
+      title={running ? "Stop this project's processes before removing it" : "Remove this project from the registry"}
+    >
+      <Button
+        variant="danger"
+        className={cx(confirming && "enabled:bg-danger-10 enabled:text-white")}
+        disabled={running}
+        onClick={() => (confirming ? onRemove() : setConfirming(true))}
+        onBlur={() => setConfirming(false)}
+      >
+        {confirming ? "Really remove?" : "Remove project"}
+      </Button>
+    </span>
+  )
 }

@@ -8,7 +8,7 @@ import {
   type SidebarPart,
 } from "@hangar/client-core"
 import { type Project, type SessionInfo, sessionId } from "@hangar/contracts"
-import { ChevronRight, CircleHelp, Globe, History, Play, RotateCw, Settings, Square } from "lucide-react"
+import { ChevronRight, CircleHelp, Globe, History, Play, Plus, RotateCw, Settings, Square } from "lucide-react"
 import { type DragEvent, type FormEvent, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import * as actions from "../actions"
@@ -52,6 +52,7 @@ const ROW_ACTIONS =
 const LABEL = "min-w-0 flex-1 overflow-hidden whitespace-nowrap"
 const FADE = "mask-r-from-[calc(100%-8px)]"
 const FADE_CLEARS_ONE = "mask-r-from-[calc(100%-30px)] mask-r-to-[calc(100%-22px)]"
+const FADE_CLEARS_TWO = "mask-r-from-[calc(100%-59px)] mask-r-to-[calc(100%-51px)]"
 const FADE_HOVER_ONE =
   "group-hover:mask-r-from-[calc(100%-30px)] group-hover:mask-r-to-[calc(100%-22px)] group-focus-within:mask-r-from-[calc(100%-30px)] group-focus-within:mask-r-to-[calc(100%-22px)]"
 const FADE_HOVER_TWO =
@@ -594,8 +595,8 @@ function ProjectRow({
             className={cx(
               LABEL,
               "text-md font-semibold text-surface-12",
-              menuOpen ? FADE_CLEARS_ONE : FADE,
-              FADE_HOVER_ONE,
+              menuOpen ? FADE_CLEARS_TWO : FADE,
+              FADE_HOVER_TWO,
             )}
           >
             {displayName(project.name)}
@@ -615,6 +616,14 @@ function ProjectRow({
         </button>
 
         <div className={cx(ROW_ACTIONS, menuOpen && "opacity-100")}>
+          {/* The menu keeps its Add entry; this is the discoverable door. */}
+          <IconButton
+            title={`Add process to ${displayName(project.name)}`}
+            aria-label={`Add process to ${displayName(project.name)}`}
+            onClick={() => setAddingProcess(true)}
+          >
+            <Plus className="size-[14px]" aria-hidden="true" />
+          </IconButton>
           <Menu
             title={`More actions for ${displayName(project.name)}`}
             contextPosition={contextMenuPosition}
