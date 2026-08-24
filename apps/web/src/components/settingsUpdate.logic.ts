@@ -61,14 +61,16 @@ export function describeCheckResult(state: DesktopUpdateState): { title: string;
 
 export type SidebarUpdate = {
   kind: Exclude<UpdateActionKind, "check">
-  /** Non-null exactly while a download runs — this is what the progress ring draws. */
+  /** Non-null exactly while a download runs. */
   percent: number | null
-  /** Accessible name and tooltip: the sidebar control is icon-only. */
+  /** Short copy shown inside the pill itself. */
+  text: string
+  /** Full sentence for the tooltip and accessible name. */
   label: string
 }
 
 /**
- * The sidebar's update control, or null when it must not render at all: in a
+ * The sidebar's update pill, or null when it must not render at all: in a
  * browser or on mobile (no desktop shell, so no state), while the updater is
  * disabled, idle or checking, and for errors only a fresh check could clear.
  * Checking stays in Settings — the sidebar only appears when a single click
@@ -78,16 +80,32 @@ export function resolveSidebarUpdate(state: DesktopUpdateState | null): SidebarU
   if (state === null) return null
   if (state.status === "downloading") {
     const percent = clampPercent(state.downloadPercent)
-    return { kind: "download", percent, label: `Downloading ${describeVersion(state.availableVersion)}… ${percent}%` }
+    return {
+      kind: "download",
+      percent,
+      text: `Downloading (${percent}%)`,
+      label: `Downloading ${describeVersion(state.availableVersion)}… ${percent}%`,
+    }
   }
 
   const action = resolveUpdateAction(state)
   if (action === null || action.kind === "check") return null
   if (action.kind === "install") {
-    return { kind: "install", percent: null, label: `Restart to install ${describeVersion(state.downloadedVersion)}` }
+    return {
+      kind: "install",
+      percent: null,
+      text: "Restart to update",
+      label: `Restart to install ${describeVersion(state.downloadedVersion)}`,
+    }
   }
+  // A failed download keeps the plain offer as its copy; the tooltip names the retry.
   const verb = state.status === "error" ? "Retry downloading" : "Download"
-  return { kind: "download", percent: null, label: `${verb} ${describeVersion(state.availableVersion)}` }
+  return {
+    kind: "download",
+    percent: null,
+    text: "Update available",
+    label: `${verb} ${describeVersion(state.availableVersion)}`,
+  }
 }
 
 /** Versions come off the feed and can in principle be missing; never say "version null". */

@@ -57,15 +57,17 @@ describe("resolveSidebarUpdate", () => {
     assert.equal(resolveSidebarUpdate(state({ status: "error", message: "feed unreachable" })), null)
   })
 
-  it("names the version in the icon's accessible label at each stage", () => {
+  it("names the version in the pill's accessible label at each stage", () => {
     assert.deepEqual(resolveSidebarUpdate(state({ status: "available", availableVersion: "0.3.0" })), {
       kind: "download",
       percent: null,
+      text: "Update available",
       label: "Download version 0.3.0",
     })
     assert.deepEqual(resolveSidebarUpdate(state({ status: "downloaded", downloadedVersion: "0.3.0" })), {
       kind: "install",
       percent: null,
+      text: "Restart to update",
       label: "Restart to install version 0.3.0",
     })
     assert.equal(
@@ -75,12 +77,17 @@ describe("resolveSidebarUpdate", () => {
     assert.equal(resolveSidebarUpdate(state({ status: "available" }))?.label, "Download the update")
   })
 
-  it("carries the percentage while downloading, in the label as well as the ring", () => {
+  it("carries the percentage while downloading, in the pill copy as well as the label", () => {
     const half = resolveSidebarUpdate(state({ status: "downloading", availableVersion: "0.3.0", downloadPercent: 42 }))
-    assert.deepEqual(half, { kind: "download", percent: 42, label: "Downloading version 0.3.0… 42%" })
+    assert.deepEqual(half, {
+      kind: "download",
+      percent: 42,
+      text: "Downloading (42%)",
+      label: "Downloading version 0.3.0… 42%",
+    })
   })
 
-  it("clamps a missing or out-of-range percentage rather than drawing past the ring", () => {
+  it("clamps a missing or out-of-range percentage rather than overstating progress", () => {
     assert.equal(resolveSidebarUpdate(state({ status: "downloading" }))?.percent, 0)
     assert.equal(resolveSidebarUpdate(state({ status: "downloading", downloadPercent: 100.4 }))?.percent, 100)
     assert.equal(resolveSidebarUpdate(state({ status: "downloading", downloadPercent: 133 }))?.percent, 100)

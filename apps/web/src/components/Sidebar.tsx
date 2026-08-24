@@ -235,44 +235,49 @@ export function Sidebar({
           </button>
         )}
       </nav>
-      <div className="flex flex-none items-center gap-1 border-t border-surface-5 p-2">
-        <button
-          type="button"
-          className={cx(
-            "flex h-[30px] min-w-0 flex-1 items-center gap-[8px] rounded-md px-[9px]! text-left text-base! leading-none",
-            activeHistory !== null ? "text-surface-12!" : "text-surface-9! hover:bg-surface-a3! hover:text-surface-12!",
-          )}
-          aria-pressed={activeHistory !== null}
-          onClick={activeHistory !== null ? closeHistory : openHistory}
-        >
-          <History className="size-[18px] flex-none" aria-hidden="true" />
-          <span className="flex-1 leading-[20px]">History</span>
-          {historyCount > 0 && (
-            <span className="rounded-full bg-surface-a4 px-[6px] py-px text-2xs tabular-nums text-surface-9">
-              {historyCount}
-            </span>
-          )}
-        </button>
-        <IconButton
-          className="size-[30px]"
-          title="Help & keyboard shortcuts"
-          aria-label="Help & keyboard shortcuts"
-          onClick={openHelp}
-        >
-          <CircleHelp className="size-[17px]" aria-hidden="true" />
-        </IconButton>
-        <IconButton
-          className="size-[30px]"
-          title="Settings (⌘,)"
-          data-shortcut-hint=","
-          data-shortcut-placement="top-left"
-          aria-label="Settings"
-          onClick={openSettings}
-        >
-          <Settings className="size-[17px]" aria-hidden="true" />
-        </IconButton>
-        {/* Last, so appearing and disappearing never shifts the buttons people aim at. */}
+      <div className="flex flex-none flex-col gap-1 border-t border-surface-5 p-2">
+        {/* Above the footer row, full width: complaints said the old 30px icon
+         * was invisible. Appearing shifts the row below, which is the point. */}
         <SidebarUpdateButton update={update} />
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            className={cx(
+              "flex h-[30px] min-w-0 flex-1 items-center gap-[8px] rounded-md px-[9px]! text-left text-base! leading-none",
+              activeHistory !== null
+                ? "text-surface-12!"
+                : "text-surface-9! hover:bg-surface-a3! hover:text-surface-12!",
+            )}
+            aria-pressed={activeHistory !== null}
+            onClick={activeHistory !== null ? closeHistory : openHistory}
+          >
+            <History className="size-[18px] flex-none" aria-hidden="true" />
+            <span className="flex-1 leading-[20px]">History</span>
+            {historyCount > 0 && (
+              <span className="rounded-full bg-surface-a4 px-[6px] py-px text-2xs tabular-nums text-surface-9">
+                {historyCount}
+              </span>
+            )}
+          </button>
+          <IconButton
+            className="size-[30px]"
+            title="Help & keyboard shortcuts"
+            aria-label="Help & keyboard shortcuts"
+            onClick={openHelp}
+          >
+            <CircleHelp className="size-[17px]" aria-hidden="true" />
+          </IconButton>
+          <IconButton
+            className="size-[30px]"
+            title="Settings (⌘,)"
+            data-shortcut-hint=","
+            data-shortcut-placement="top-left"
+            aria-label="Settings"
+            onClick={openSettings}
+          >
+            <Settings className="size-[17px]" aria-hidden="true" />
+          </IconButton>
+        </div>
       </div>
     </aside>
   )
