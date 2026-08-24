@@ -219,6 +219,8 @@ type Store = {
   closeHistory: () => void
   openHistoryRun: (runId: string) => void
   closeHistoryRun: (runId: string) => void
+  /** Optimistically forgets a deleted run — entry, tab and replay — ahead of the server's broadcast. */
+  removeHistoryEntry: (runId: string) => void
   openReleaseNotes: () => void
   closeReleaseNotes: () => void
   reorderTab: (source: string, target: string) => void
@@ -434,7 +436,12 @@ export const useStore = create<Store>((set, get) => ({
       return {
         sessions: state.sessions.map((session) => (session.id === id ? { ...session, metrics } : session)),
         // Keep up to six hours at the server's two-second sampling interval.
-        metricHistory: { ...state.metricHistory, [id]: [...previous, point].slice(-10_800) },
+        // Shift-then-append instead of append-then-slice: at the cap the latter
+        // copies the 10 800-point array twice per tick, per session.
+        metricHistory: {
+          ...state.metricHistory,
+          [id]: previous.length >= 10_800 ? [...previous.slice(1), point] : [...previous, point],
+        },
       }
     }),
 
@@ -475,6 +482,8 @@ export const useStore = create<Store>((set, get) => ({
     const mine = (value: string): boolean => connIdOf(value) === connId
     // Terminals are disposed first: each disposal writes `terminalIds` itself.
     for (const id of get().terminalIds.filter(mine)) disposeTerminal(id)
+    // A session on a removed machine will never report its exit here.
+    for (const id of [...closeOnExit].filter(mine)) closeOnExit.delete(id)
     set((state) => {
       const sessions = state.sessions.filter((session) => !mine(session.id))
       const pending = state.pending.filter((tab) => !mine(tab.id))
@@ -563,6 +572,23 @@ export const useStore = create<Store>((set, get) => ({
     set((state) => ({
       historyTabs: state.historyTabs.filter((id) => id !== runId),
       tabOrder: state.tabOrder.filter((key) => key !== `history:${runId}`),
+      // The replay cache dies with the tab: a single replay can be 10 MB, and
+      // reopening the run just re-requests it.
+      historyReplays: Object.fromEntries(Object.entries(state.historyReplays).filter(([id]) => id !== runId)),
+      ...(state.activeHistory === runId
+        ? {
+            activeHistory: state.historyOpen ? ("overview" as const) : null,
+            activeId: state.historyOpen ? null : (state.sessions.at(-1)?.id ?? null),
+          }
+        : {}),
+    })),
+
+  removeHistoryEntry: (runId) =>
+    set((state) => ({
+      history: state.history.filter((entry) => entry.runId !== runId),
+      historyTabs: state.historyTabs.filter((id) => id !== runId),
+      tabOrder: state.tabOrder.filter((key) => key !== `history:${runId}`),
+      historyReplays: Object.fromEntries(Object.entries(state.historyReplays).filter(([id]) => id !== runId)),
       ...(state.activeHistory === runId
         ? {
             activeHistory: state.historyOpen ? ("overview" as const) : null,

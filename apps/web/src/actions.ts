@@ -71,6 +71,15 @@ export function loadHistoryReplay(runId: string): void {
   send({ type: "getHistoryReplay", runId })
 }
 
+/**
+ * Deletes a run from its machine's history, along with its replay capture.
+ * The store forgets it immediately; the server's next state broadcast confirms.
+ */
+export function deleteHistoryRun(runId: string): void {
+  useStore.getState().removeHistoryEntry(runId)
+  send({ type: "deleteHistoryRun", runId })
+}
+
 /** Mints a one-time pairing code on the given machine, for another Mac to redeem. */
 export function createPairingToken(connId: string): Promise<PairingInfo> {
   return requestPairingToken(connId)

@@ -16,6 +16,7 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs"
 import { homedir } from "node:os"
@@ -205,9 +206,19 @@ function writableCliDirectory() {
   return directory
 }
 
-async function installCommandLineTool(window) {
+/**
+ * Dialogs anchored to the main window while it is alive, standalone otherwise:
+ * the app can outlive its main window (a help window keeps it running), and a
+ * destroyed parent throws.
+ */
+function messageBox(options) {
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+  return parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options)
+}
+
+async function installCommandLineTool() {
   if (!app.isPackaged) {
-    await dialog.showMessageBox(window, {
+    await messageBox({
       type: "info",
       message: "The packaged app installs the command-line tool",
       detail: "For this source checkout, run: cd apps/server && pnpm link --global",
@@ -218,7 +229,7 @@ async function installCommandLineTool(window) {
   const directory = writableCliDirectory()
   const destination = join(directory, "hangar")
   if (existsSync(destination)) {
-    const answer = await dialog.showMessageBox(window, {
+    const answer = await messageBox({
       type: "warning",
       message: `Replace the existing ${destination}?`,
       detail: "Hangar will replace it with a launcher for this installed application.",
@@ -241,7 +252,10 @@ async function installCommandLineTool(window) {
     chmodSync(temporary, 0o755)
     renameSync(temporary, destination)
   } catch (error) {
-    await dialog.showMessageBox(window, {
+    try {
+      unlinkSync(temporary)
+    } catch {}
+    await messageBox({
       type: "error",
       message: "Could not install the command-line tool",
       detail: error instanceof Error ? error.message : String(error),
@@ -250,7 +264,7 @@ async function installCommandLineTool(window) {
   }
 
   const onPath = (process.env.PATH ?? "").split(":").includes(directory)
-  await dialog.showMessageBox(window, {
+  await messageBox({
     type: "info",
     message: `Installed ${destination}`,
     detail: onPath
@@ -259,7 +273,17 @@ async function installCommandLineTool(window) {
   })
 }
 
-function installApplicationMenu(window) {
+/**
+ * Resolved at click time, never captured: the menu is a process-global
+ * singleton that outlives any window, and the app itself survives the main
+ * window closing while a help or release-notes window is up. Sending into a
+ * captured, destroyed window throws out of the menu handler.
+ */
+function sendToMainWindow(channel) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel)
+}
+
+function installApplicationMenu() {
   if (process.platform !== "darwin") return
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
@@ -272,17 +296,17 @@ function installApplicationMenu(window) {
             // that finds nothing must still say so, and the sidebar control
             // only exists when there is something to act on.
             label: "Check for Updates…",
-            click: () => window.webContents.send("hangar:check-updates"),
+            click: () => sendToMainWindow("hangar:check-updates"),
           },
           { type: "separator" },
           {
             label: "Settings…",
             accelerator: "CommandOrControl+,",
-            click: () => window.webContents.send("hangar:open-settings"),
+            click: () => sendToMainWindow("hangar:open-settings"),
           },
           {
             label: "Install Command Line Tool…",
-            click: () => void installCommandLineTool(window),
+            click: () => void installCommandLineTool(),
           },
           { type: "separator" },
           { role: "services" },
@@ -303,7 +327,7 @@ function installApplicationMenu(window) {
             // A dialog in the main window, unlike its two neighbours here,
             // which open windows of their own.
             label: "Tutorial",
-            click: () => window.webContents.send("hangar:open-tutorial"),
+            click: () => sendToMainWindow("hangar:open-tutorial"),
           },
           {
             label: "Hangar Help & Shortcuts",
@@ -317,6 +341,18 @@ function installApplicationMenu(window) {
       },
     ]),
   )
+}
+
+/**
+ * Defense in depth: the renderer already routes external links itself, but a
+ * missed target=_blank would otherwise become an untracked BrowserWindow that
+ * nobody closes — and that keeps window-all-closed from ever firing.
+ */
+function denyPopups(window) {
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/.test(url)) void shell.openExternal(url)
+    return { action: "deny" }
+  })
 }
 
 function openShortcutsWindow() {
@@ -342,6 +378,7 @@ function openShortcutsWindow() {
     },
   })
 
+  denyPopups(window)
   shortcutsWindow = window
   window.on("closed", () => {
     if (shortcutsWindow === window) shortcutsWindow = null
@@ -376,6 +413,7 @@ function openReleaseNotesWindow() {
     },
   })
 
+  denyPopups(window)
   releaseNotesWindow = window
   window.on("closed", () => {
     if (releaseNotesWindow === window) releaseNotesWindow = null
@@ -418,7 +456,7 @@ function createWindow() {
   // deadline the app would look like it never launched.
   const showDeadline = setTimeout(showWindow, 4_000)
 
-  installApplicationMenu(window)
+  denyPopups(window)
 
   // In dev the Vite server may still be booting. Keep retrying until it is up.
   const giveUpAt = Date.now() + LOAD_RETRY_TIMEOUT_MS
@@ -478,10 +516,12 @@ if (!app.isPackaged) {
   }, 2000).unref()
 }
 
-ipcMain.handle("hangar:app-info", () => ({
-  version: app.getVersion(),
-  releaseNotes: readFileSync(RELEASE_NOTES_ENTRY, "utf8"),
-}))
+/** Read once: three windows each ask on mount, and the file lives in the asar. */
+let releaseNotesCache = null
+ipcMain.handle("hangar:app-info", () => {
+  releaseNotesCache ??= readFileSync(RELEASE_NOTES_ENTRY, "utf8")
+  return { version: app.getVersion(), releaseNotes: releaseNotesCache }
+})
 ipcMain.handle("hangar:open-release-notes", openReleaseNotesWindow)
 ipcMain.handle("hangar:open-shortcuts", openShortcutsWindow)
 
@@ -490,7 +530,8 @@ ipcMain.handle("hangar:choose-directory", async (_event, requestedTitle) => {
     title: typeof requestedTitle === "string" ? requestedTitle : "Choose a folder",
     properties: ["openDirectory"],
   }
-  const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+  const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
   return result.canceled ? null : (result.filePaths[0] ?? null)
 })
 
@@ -521,9 +562,18 @@ ipcMain.handle("hangar:open-url", async (_event, rawUrl, browser) => {
   }
   const appName = BROWSER_APPS[browser]
   if (process.platform === "darwin" && appName) {
+    // A ChildProcess 'error' with no listener is an uncaught exception in the
+    // main process; a sandbox or odd system that lacks /usr/bin/open falls
+    // back to the default browser instead.
     const child = spawn("/usr/bin/open", ["-a", appName, url.href], { detached: true, stdio: "ignore" })
-    child.unref()
-    return ""
+    const launched = await new Promise((resolve) => {
+      child.once("spawn", () => resolve(true))
+      child.once("error", () => resolve(false))
+    })
+    if (launched) {
+      child.unref()
+      return ""
+    }
   }
   await shell.openExternal(url.href)
   return ""
@@ -672,23 +722,34 @@ async function startUpdater() {
   }
 }
 
-app.whenReady().then(async () => {
-  // A packaged build takes its icon from the bundle. Development runs Electron's
-  // own binary, which shows Electron's own icon until it is told otherwise.
-  if (!app.isPackaged && process.platform === "darwin") {
-    app.dock?.setIcon(resolve(HERE, "assets/icon.png"))
-  }
+app
+  .whenReady()
+  .then(async () => {
+    // A packaged build takes its icon from the bundle. Development runs Electron's
+    // own binary, which shows Electron's own icon until it is told otherwise.
+    if (!app.isPackaged && process.platform === "darwin") {
+      try {
+        app.dock?.setIcon(resolve(HERE, "assets/icon.png"))
+      } catch {
+        // A missing dev icon must not stop the window or the server below.
+      }
+    }
 
-  // Window first, server in parallel: the renderer is a local file and paints
-  // fast, then its own "connecting…" state honestly covers the server boot.
-  // Blocking the window on /health meant seconds of nothing on cold start.
-  createWindow()
-  void startUpdater()
-  await ensureServer()
-
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    // Window first, server in parallel: the renderer is a local file and paints
+    // fast, then its own "connecting…" state honestly covers the server boot.
+    // Blocking the window on /health meant seconds of nothing on cold start.
+    createWindow()
+    installApplicationMenu()
+    void startUpdater()
+    await ensureServer()
   })
+  .catch((error) => console.error("[hangar] startup failed:", error))
+
+// Not gated on window count: a help or release-notes window keeps the app
+// alive after the main window closes, and a dock click must still bring the
+// main window back rather than dead-end.
+app.on("activate", () => {
+  if (app.isReady() && (!mainWindow || mainWindow.isDestroyed())) createWindow()
 })
 
 // This is a launcher, not a document app — closing the window means done,

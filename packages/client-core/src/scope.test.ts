@@ -113,6 +113,9 @@ describe("routeOutbound", () => {
     assert.deepEqual(routeOutbound({ type: "getHistoryReplay", runId: "local::r1" }), [
       { connId: "local", msg: { type: "getHistoryReplay", runId: "r1" } },
     ])
+    assert.deepEqual(routeOutbound({ type: "deleteHistoryRun", runId: "c1::r1" }), [
+      { connId: "c1", msg: { type: "deleteHistoryRun", runId: "r1" } },
+    ])
   })
 
   it("splits a reorder across the machines it touches", () => {

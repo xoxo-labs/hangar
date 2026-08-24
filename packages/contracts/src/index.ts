@@ -351,6 +351,8 @@ export type ClientMsg =
   | { type: "updateSettings"; settings: AppSettings }
   /** Load timestamped output for one retained historical run. */
   | { type: "getHistoryReplay"; runId: string }
+  /** Forget one historical run: its entry and its replay capture. Session logs on disk stay. */
+  | { type: "deleteHistoryRun"; runId: string }
   /** Mint a one-time pairing code so a client on another machine can connect. */
   | { type: "createPairingToken" }
   /** Revoke a paired client's session token. */

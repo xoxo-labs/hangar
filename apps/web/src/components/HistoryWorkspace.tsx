@@ -27,8 +27,14 @@ function HistoryOverview() {
   const enabled = useStore((state) => state.settings.sessionHistory.enabled)
   const openRun = useStore((state) => state.openHistoryRun)
   const openSettings = useStore((state) => state.openSettings)
+  const showNotice = useStore((state) => state.showNotice)
   const [query, setQuery] = useState("")
   const [result, setResult] = useState<"all" | SessionHistoryEntry["reason"]>("all")
+
+  const deleteRun = (entry: SessionHistoryEntry) => {
+    actions.deleteHistoryRun(entry.runId)
+    showNotice(`Deleted ${displayName(entry.project)} / ${entry.process} run`)
+  }
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -120,6 +126,7 @@ function HistoryOverview() {
                     entry={entry}
                     last={index === entries.length - 1}
                     onOpen={() => openRun(entry.runId)}
+                    onDelete={() => deleteRun(entry)}
                   />
                 ))}
               </div>
@@ -131,45 +138,65 @@ function HistoryOverview() {
   )
 }
 
-function HistoryRow({ entry, last, onOpen }: { entry: SessionHistoryEntry; last: boolean; onOpen: () => void }) {
+function HistoryRow({
+  entry,
+  last,
+  onOpen,
+  onDelete,
+}: {
+  entry: SessionHistoryEntry
+  last: boolean
+  onOpen: () => void
+  onDelete: () => void
+}) {
   const result = RESULT[entry.reason]
   return (
-    <button
-      type="button"
-      className={cx(
-        "group grid w-full grid-cols-[minmax(180px,1.25fr)_100px_115px_130px_18px] items-center gap-[14px] px-[14px] py-[11px] text-left hover:bg-surface-a3",
-        !last && "border-b border-surface-4",
-      )}
-      onClick={onOpen}
-    >
-      <div className="flex min-w-0 items-center gap-[10px]">
-        <span
-          className={cx(
-            "grid size-[22px] flex-none place-items-center rounded-full bg-surface-a3 text-[12px]",
-            result.tone,
-          )}
-        >
-          {result.icon}
+    // A wrapper rather than nesting: the delete control cannot live inside the
+    // row, which is itself a button.
+    <div className={cx("group relative", !last && "border-b border-surface-4")}>
+      <button
+        type="button"
+        className="grid w-full grid-cols-[minmax(180px,1.25fr)_100px_115px_130px_18px] items-center gap-[14px] px-[14px] py-[11px] text-left hover:bg-surface-a3"
+        onClick={onOpen}
+      >
+        <div className="flex min-w-0 items-center gap-[10px]">
+          <span
+            className={cx(
+              "grid size-[22px] flex-none place-items-center rounded-full bg-surface-a3 text-[12px]",
+              result.tone,
+            )}
+          >
+            {result.icon}
+          </span>
+          <span className="flex min-w-0 flex-col">
+            <strong className="truncate text-base font-book text-surface-12">
+              {displayName(entry.project)} <span className="font-normal text-surface-8">/</span> {entry.process}
+            </strong>
+            <code className="truncate text-xs text-surface-8">{entry.cmd}</code>
+          </span>
+        </div>
+        <span className={cx("text-xs", result.tone)}>
+          {result.label}
+          {entry.exitCode === null ? "" : ` · ${entry.exitCode}`}
         </span>
-        <span className="flex min-w-0 flex-col">
-          <strong className="truncate text-base font-book text-surface-12">
-            {displayName(entry.project)} <span className="font-normal text-surface-8">/</span> {entry.process}
-          </strong>
-          <code className="truncate text-xs text-surface-8">{entry.cmd}</code>
+        <span className="text-xs tabular-nums text-surface-9 dark:text-surface-10">
+          {formatDuration(entry.durationMs)}
         </span>
-      </div>
-      <span className={cx("text-xs", result.tone)}>
-        {result.label}
-        {entry.exitCode === null ? "" : ` · ${entry.exitCode}`}
-      </span>
-      <span className="text-xs tabular-nums text-surface-9 dark:text-surface-10">
-        {formatDuration(entry.durationMs)}
-      </span>
-      <span className="text-xs tabular-nums text-surface-8 dark:text-surface-9">
-        {formatCpu(entry.peakCpuPercent)} · {formatBytes(entry.peakMemoryBytes)}
-      </span>
-      <span className="text-[15px] text-surface-7 group-hover:text-surface-11">›</span>
-    </button>
+        <span className="text-xs tabular-nums text-surface-8 dark:text-surface-9">
+          {formatCpu(entry.peakCpuPercent)} · {formatBytes(entry.peakMemoryBytes)}
+        </span>
+        <span className="text-[15px] text-surface-7 group-hover:text-surface-11">›</span>
+      </button>
+      <button
+        type="button"
+        aria-label={`Delete ${entry.process} run from history`}
+        title="Delete this run from history"
+        className="absolute top-1/2 right-[38px] grid size-[24px] -translate-y-1/2 place-items-center rounded-md bg-surface-2 text-[12px] text-surface-8 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:bg-danger-a3 hover:text-danger-11 focus-visible:opacity-100"
+        onClick={onDelete}
+      >
+        ✕
+      </button>
+    </div>
   )
 }
 
@@ -214,13 +241,25 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
               <span className={result.tone}>{result.label}</span>
             </p>
           </div>
-          <button
-            type="button"
-            className="rounded-md bg-accent-9 px-[11px] py-[7px] text-sm font-book text-white hover:bg-accent-10"
-            onClick={() => actions.start(entry.project, entry.process)}
-          >
-            ▶ Run again
-          </button>
+          <div className="flex flex-none items-center gap-[8px]">
+            <button
+              type="button"
+              className="rounded-md border border-surface-6 bg-surface-a3 px-[11px] py-[7px] text-sm text-surface-11 hover:border-danger-7 hover:bg-danger-a3 hover:text-danger-11"
+              onClick={() => {
+                actions.deleteHistoryRun(entry.runId)
+                showNotice(`Deleted ${displayName(entry.project)} / ${entry.process} run`)
+              }}
+            >
+              Delete run
+            </button>
+            <button
+              type="button"
+              className="rounded-md bg-accent-9 px-[11px] py-[7px] text-sm font-book text-white hover:bg-accent-10"
+              onClick={() => actions.start(entry.project, entry.process)}
+            >
+              ▶ Run again
+            </button>
+          </div>
         </header>
 
         <div className="mb-[12px] grid grid-cols-4 gap-[8px]">
@@ -392,12 +431,13 @@ function ArchivedOutput({
       } catch {}
     })
     observer.observe(container)
-    requestAnimationFrame(() => {
+    const frame = requestAnimationFrame(() => {
       try {
         fit.fit()
       } catch {}
     })
     return () => {
+      cancelAnimationFrame(frame)
       observer.disconnect()
       terminalRef.current = null
       terminal.dispose()

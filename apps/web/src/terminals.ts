@@ -125,13 +125,23 @@ export function recordMetricPosition(id: SessionId, sampledAt: number): void {
   const entry = ensure(id)
   entry.term.write("", () => {
     if (entries.get(id) !== entry) return
+    // A repeated timestamp disposes its predecessor before the map is written;
+    // done the other way round, the old marker's onDispose would evict the new
+    // one and orphan it in xterm's marker list.
+    entry.metricMarkers.get(sampledAt)?.dispose()
     const marker = entry.term.registerMarker()
     entry.metricMarkers.set(sampledAt, marker)
-    marker.onDispose(() => entry.metricMarkers.delete(sampledAt))
+    marker.onDispose(() => {
+      if (entry.metricMarkers.get(sampledAt) === marker) entry.metricMarkers.delete(sampledAt)
+    })
 
     // Metric history only retains 450 samples; avoid holding older markers.
+    // Delete before dispose so the loop terminates on its own count, not on
+    // onDispose firing synchronously.
     while (entry.metricMarkers.size > 450) {
-      entry.metricMarkers.values().next().value?.dispose()
+      const [key, oldest] = entry.metricMarkers.entries().next().value!
+      entry.metricMarkers.delete(key)
+      oldest.dispose()
     }
     notifyMetricSelection(entry)
   })

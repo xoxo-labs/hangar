@@ -39,16 +39,20 @@ export function App() {
 
   const startSidebarResize = (_clientX: number) => {
     const onMove = (event: PointerEvent) => resizeSidebar(event.clientX)
-    const onUp = () => {
+    // pointercancel too: an OS gesture or the window losing capture ends the
+    // stream without a pointerup, and these listeners must not outlive the drag.
+    const onEnd = () => {
       document.body.style.cursor = ""
       document.body.style.userSelect = ""
       window.removeEventListener("pointermove", onMove)
-      window.removeEventListener("pointerup", onUp)
+      window.removeEventListener("pointerup", onEnd)
+      window.removeEventListener("pointercancel", onEnd)
     }
     document.body.style.cursor = "col-resize"
     document.body.style.userSelect = "none"
     window.addEventListener("pointermove", onMove)
-    window.addEventListener("pointerup", onUp)
+    window.addEventListener("pointerup", onEnd)
+    window.addEventListener("pointercancel", onEnd)
   }
   const sessions = useStore((s) => s.sessions)
   const activeId = useStore((s) => s.activeId)

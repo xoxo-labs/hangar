@@ -35,6 +35,11 @@ export function createUpdater({ currentVersion, broadcast, prepareInstall, mockF
     broadcast({ ...state })
   }
 
+  // autoUpdater is a process-global singleton: a second createUpdater (a retry
+  // after a failed init, say) would otherwise stack every listener below and
+  // double-broadcast each event into the reducer.
+  autoUpdater.removeAllListeners()
+
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
 

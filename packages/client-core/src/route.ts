@@ -87,7 +87,8 @@ export function routeOutbound(msg: ClientMsg): Outbound[] {
       }
       return [...byConn].map(([connId, projects]) => ({ connId, msg: { type: "reorderProjects", projects } }))
     }
-    case "getHistoryReplay": {
+    case "getHistoryReplay":
+    case "deleteHistoryRun": {
       const { connId, value } = parseScoped(msg.runId)
       return [{ connId, msg: { ...msg, runId: value } }]
     }

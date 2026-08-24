@@ -28,7 +28,7 @@ import {
 import { expandHome, findProject, hangarHome, loadRegistry, saveRegistry, validateProject } from "./registry.ts"
 import { exportAppIntentsState, watchAppIntentsCommands } from "./appintents.ts"
 import { gitRemoteFor } from "./git.ts"
-import { loadHistory, loadHistoryReplay } from "./history.ts"
+import { deleteHistoryRun, loadHistory, loadHistoryReplay } from "./history.ts"
 import { clearRuntimeState, writeRuntimeState } from "./runtime-state.ts"
 import { SessionManager } from "./sessions.ts"
 import { loadSettings, saveSettings } from "./settings.ts"
@@ -49,6 +49,18 @@ const BROWSE_LIMIT = 500
 const SHARE_TEARDOWN_MS = 3_000
 /** How often Tailscale is re-read while a UI is watching. Two subprocesses a minute. */
 const SHARE_POLL_MS = 30_000
+/**
+ * A peer that sleeps or drops off the network never sends a close frame, and
+ * without TCP keepalive the socket stays OPEN forever — with every pty byte
+ * queuing into it. Ping on this interval; one unanswered round is fatal.
+ */
+const HEARTBEAT_MS = 30_000
+/**
+ * More than this much unsent data means the client is gone or hopelessly
+ * behind. Terminate rather than skip: a reconnect gets a clean snapshot, while
+ * silently dropped output frames would corrupt the stream it does receive.
+ */
+const MAX_BUFFERED_BYTES = 8 * 1024 * 1024
 
 function isLoopback(req: IncomingMessage): boolean {
   return LOOPBACK_ADDRESSES.has(req.socket.remoteAddress ?? "")
@@ -389,7 +401,12 @@ export function serve(port: number, hostOverride?: string): void {
   const broadcast = (msg: ServerMsg): void => {
     const json = JSON.stringify(msg)
     for (const client of clients) {
-      if (client.readyState === WebSocket.OPEN) client.send(json)
+      if (client.readyState !== WebSocket.OPEN) continue
+      if (client.bufferedAmount > MAX_BUFFERED_BYTES) {
+        client.terminate()
+        continue
+      }
+      client.send(json)
     }
     // A share survives a restart, because the port comes back. It must not
     // survive an ending: a funnel aimed at a dead port hands a stranger an
@@ -707,7 +724,26 @@ export function serve(port: number, hostOverride?: string): void {
 
   const wss = new WebSocketServer({ noServer: true })
 
+  // Browsers and ws both answer pings at the protocol level, so a missing pong
+  // means the peer is gone (asleep, off the network), not merely idle. Without
+  // this, a vanished peer's socket stays OPEN and buffers output forever.
+  const awaitingPong = new WeakSet<WebSocket>()
+  setInterval(() => {
+    for (const client of clients) {
+      if (awaitingPong.has(client)) {
+        client.terminate()
+        continue
+      }
+      if (client.readyState !== WebSocket.OPEN) continue
+      awaitingPong.add(client)
+      client.ping()
+    }
+  }, HEARTBEAT_MS).unref()
+
   const handleUpgrade = (req: IncomingMessage, socket: import("node:net").Socket, head: Buffer): void => {
+    // The HTTP server detaches its own error listener before 'upgrade'; a peer
+    // that RSTs mid-rejection must not crash the process with it missing.
+    socket.on("error", () => {})
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "127.0.0.1"}`)
     const ticket = url.searchParams.get("ticket")
     if (url.pathname !== "/ws" || (!isLoopback(req) && (!ticket || !consumeTicket(ticket)))) {
@@ -745,6 +781,7 @@ export function serve(port: number, hostOverride?: string): void {
         socket.send(JSON.stringify({ type: "error", message } satisfies ServerMsg))
       }
     })
+    socket.on("pong", () => awaitingPong.delete(socket))
     socket.on("close", () => clients.delete(socket))
     socket.on("error", () => clients.delete(socket))
   })
@@ -846,6 +883,11 @@ export function serve(port: number, hostOverride?: string): void {
         socket.send(JSON.stringify({ type: "historyReplay", runId: msg.runId, ...replay } satisfies ServerMsg))
         return
       }
+      case "deleteHistoryRun":
+        // Deleting an already-gone run is success, not an error to surface —
+        // but only an actual removal is news worth a full state broadcast.
+        if (deleteHistoryRun(msg.runId)) broadcastState()
+        return
       case "removeProject": {
         const registry = loadRegistry()
         if (!findProject(registry, msg.project)) {

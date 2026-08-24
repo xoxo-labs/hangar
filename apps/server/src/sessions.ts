@@ -40,6 +40,12 @@ const MAX_HISTORY_REPLAY_BYTES = 10 * 1024 * 1024
 const RESTART_DIVIDER = "\r\n\x1b[2m— restarted —\x1b[0m\r\n"
 /** A diagnosis costs one or two short probes; never let them outlive the answer. */
 const DIAGNOSIS_TIMEOUT_MS = 2_000
+/**
+ * ps and lsof must never hang the sampler: `sampling` stays true until they
+ * settle, and lsof famously blocks on dead network mounts. A kill here loses
+ * one sample, not the metrics loop.
+ */
+const SAMPLE_TIMEOUT_MS = 5_000
 function exitNotice(exitCode: number | null): string {
   const result = exitCode === null ? "after a signal" : `with code ${exitCode}`
   return `\r\n\x1b[90m[hangar] process exited ${result}\x1b[0m\r\n`
@@ -71,6 +77,49 @@ function ensureSpawnHelperExecutable(): void {
 }
 
 type SessionLog = Pick<Session, "logPath" | "logStream" | "logBytes" | "logMaxBytes" | "logFormat">
+
+/**
+ * Trimming only past this much overshoot keeps appends amortized O(1): a
+ * `(buffer + data).slice(-MAX)` on every pty chunk reallocates the full 512 KB
+ * scrollback per chunk, which for a 10 MB build log is gigabytes of churn.
+ */
+const SCROLLBACK_TRIM_SLACK = 64 * 1024
+
+/** Rolling scrollback capped at MAX_BUFFER_CHARS, stored as chunks so appends don't copy the whole buffer. */
+export class Scrollback {
+  private chunks: string[] = []
+  private chars = 0
+  private joined: string | null = ""
+
+  append(data: string): void {
+    if (data.length === 0) return
+    this.chunks.push(data)
+    this.chars += data.length
+    this.joined = null
+    if (this.chars <= MAX_BUFFER_CHARS + SCROLLBACK_TRIM_SLACK) return
+    while (this.chunks.length > 1 && this.chars - this.chunks[0]!.length >= MAX_BUFFER_CHARS) {
+      this.chars -= this.chunks.shift()!.length
+    }
+    const excess = this.chars - MAX_BUFFER_CHARS
+    if (excess > 0) {
+      this.chunks[0] = this.chunks[0]!.slice(excess)
+      this.chars = MAX_BUFFER_CHARS
+    }
+  }
+
+  get length(): number {
+    return this.chars
+  }
+
+  tail(count: number): string {
+    return this.toString().slice(-count)
+  }
+
+  toString(): string {
+    this.joined ??= this.chunks.length === 1 ? this.chunks[0]! : this.chunks.join("")
+    return this.joined
+  }
+}
 
 function safeSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-")
@@ -160,7 +209,7 @@ type Session = {
   replayStream: WriteStream | null
   replayBytes: number
   replayTruncated: boolean
-  buffer: string
+  buffer: Scrollback
   killTimer: NodeJS.Timeout | null
   exitDiagnosis: ExitDiagnosis | undefined
   logPath: string | undefined
@@ -237,7 +286,11 @@ function descendants(rootPid: number, samples: ProcessSample[]): ProcessSample[]
 async function listeningPorts(pids: number[]): Promise<{ ports: number[]; bindings: Record<number, string[]> }> {
   if (pids.length === 0) return { ports: [], bindings: {} }
   try {
-    const output = await run("lsof", ["-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-p", pids.join(","), "-Fn"])
+    const output = await run(
+      "lsof",
+      ["-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-p", pids.join(","), "-Fn"],
+      SAMPLE_TIMEOUT_MS,
+    )
     const byPort = new Map<number, Set<string>>()
     for (const line of output.split("\n")) {
       const match = line.match(/^n(.+):(\d+)(?: \(LISTEN\))?$/)
@@ -312,12 +365,14 @@ export class SessionManager {
   }
 
   snapshots(): Array<{ id: SessionId; data: string }> {
-    return [...this.sessions.values()].filter((s) => s.buffer.length > 0).map((s) => ({ id: s.id, data: s.buffer }))
+    return [...this.sessions.values()]
+      .filter((s) => s.buffer.length > 0)
+      .map((s) => ({ id: s.id, data: s.buffer.toString() }))
   }
 
   /** Current in-memory scrollback for one session. Used by bounded CLI log reads. */
   snapshot(id: SessionId): string | undefined {
-    return this.sessions.get(id)?.buffer
+    return this.sessions.get(id)?.buffer.toString()
   }
 
   /** Start all (or one) of a project's processes. Running sessions are left alone. */
@@ -361,6 +416,11 @@ export class SessionManager {
       const startedAt = Date.now()
       const runId = randomUUID()
       const replayStream = createHistoryReplay(runId, settings.sessionHistory.enabled)
+      // Reuse the old buffer so a restart keeps prior scrollback context. The
+      // replaced Session is dropped from the map below, so taking its Scrollback
+      // instance hands over ownership rather than sharing it.
+      const buffer = existing?.buffer ?? new Scrollback()
+      if (existing) buffer.append(RESTART_DIVIDER)
       const session: Session = {
         id,
         runId,
@@ -394,8 +454,7 @@ export class SessionManager {
         replayStream,
         replayBytes: 0,
         replayTruncated: false,
-        // Reuse the old buffer so a restart keeps prior scrollback context.
-        buffer: existing ? existing.buffer + RESTART_DIVIDER : "",
+        buffer,
         killTimer: null,
         exitDiagnosis: undefined,
         ...logging,
@@ -406,7 +465,7 @@ export class SessionManager {
       if (existing) this.broadcast({ type: "output", id, data: RESTART_DIVIDER })
 
       pty.onData((data) => {
-        session.buffer = (session.buffer + data).slice(-MAX_BUFFER_CHARS)
+        session.buffer.append(data)
         session.metrics.outputBytes += Buffer.byteLength(data)
         writeSessionLog(session, data)
         writeHistoryReplay(session, data)
@@ -422,7 +481,7 @@ export class SessionManager {
         // This is part of the server buffer, not renderer-only chrome, so it is
         // visible immediately and still present in snapshots after reconnect.
         const notice = exitNotice(exitCode)
-        session.buffer = (session.buffer + notice).slice(-MAX_BUFFER_CHARS)
+        session.buffer.append(notice)
         this.broadcast({ type: "output", id, data: notice })
         session.logStream?.end()
         session.logStream = null
@@ -449,7 +508,7 @@ export class SessionManager {
     if (diagnosis) {
       session.exitDiagnosis = diagnosis
       const notice = diagnosisNotice(diagnosis.message)
-      session.buffer = (session.buffer + notice).slice(-MAX_BUFFER_CHARS)
+      session.buffer.append(notice)
       this.broadcast({ type: "output", id, data: notice })
     }
     if (session.historyEnabled) {
@@ -476,6 +535,9 @@ export class SessionManager {
         },
         this.getSettings(),
       )
+      // Flushed to history.json above; an exited session would otherwise pin
+      // up to 10 800 samples (~1 MB) until it is dismissed.
+      session.historyMetrics = []
     }
     const restartAs = this.pendingRestarts.get(id)
     if (restartAs) {
@@ -498,7 +560,7 @@ export class SessionManager {
    * none.
    */
   private async diagnoseExit(session: Session): Promise<ExitDiagnosis | undefined> {
-    const tail = session.buffer.slice(-DIAGNOSIS_TAIL_CHARS)
+    const tail = session.buffer.tail(DIAGNOSIS_TAIL_CHARS)
     const named = conflictPorts(tail)
     // Python and Django say "address already in use" without ever naming the
     // port; the ports Hangar watched this session open answer for it.
@@ -528,7 +590,7 @@ export class SessionManager {
   }
 
   private async processSamples(): Promise<ProcessSample[]> {
-    const output = await run("ps", ["-axo", "pid=,ppid=,%cpu=,rss="])
+    const output = await run("ps", ["-axo", "pid=,ppid=,%cpu=,rss="], SAMPLE_TIMEOUT_MS)
     return output.split("\n").flatMap((line) => {
       const [pid, ppid, cpu, rssKb] = line.trim().split(/\s+/).map(Number)
       return Number.isFinite(pid) && Number.isFinite(ppid) && Number.isFinite(cpu) && Number.isFinite(rssKb)
@@ -591,6 +653,7 @@ export class SessionManager {
     if (!session) return
     if (session.status === "running") throw new Error(`cannot dismiss a running session: ${id}`)
     this.sessions.delete(id)
+    this.lastPorts.delete(id)
     this.notifyState()
   }
 
