@@ -203,7 +203,11 @@ function HistoryRow({
 function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
   const openHistory = useStore((state) => state.openHistory)
   const showNotice = useStore((state) => state.showNotice)
-  const samples = entry.metricSamples ?? []
+  const timeline = useStore((state) => state.historyMetrics[entry.runId])
+  // Older servers still inline the timeline on the entry; newer ones serve it
+  // on demand, keeping 10 800-sample runs out of every state broadcast.
+  const samples = entry.metricSamples ?? timeline?.samples ?? []
+  const timelineLoading = entry.metricSamples === undefined && (timeline === undefined || timeline.loading)
   const replay = useStore((state) => state.historyReplays[entry.runId])
   const [sampleIndex, setSampleIndex] = useState(Math.max(0, samples.length - 1))
   const sample = samples[sampleIndex]
@@ -213,7 +217,13 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
 
   useEffect(() => {
     if (entry.hasReplay) actions.loadHistoryReplay(entry.runId)
-  }, [entry.hasReplay, entry.runId])
+    if (entry.metricSamples === undefined) actions.loadHistoryMetrics(entry.runId)
+  }, [entry.hasReplay, entry.metricSamples, entry.runId])
+  // The timeline arrives after mount now; park the cursor at the end, where it
+  // started when the samples rode the entry itself.
+  useEffect(() => {
+    setSampleIndex(Math.max(0, samples.length - 1))
+  }, [samples.length])
   const revealLog = () => {
     if (entry.logPath && window.hangarDesktop) void window.hangarDesktop.revealPath(entry.logPath)
     else if (entry.logPath) void navigator.clipboard.writeText(entry.logPath).then(() => showNotice("Log path copied"))
@@ -281,7 +291,11 @@ function RunDetail({ entry }: { entry: SessionHistoryEntry }) {
               </time>
             )}
           </div>
-          {samples.length === 0 ? (
+          {timelineLoading ? (
+            <div className="grid h-[120px] place-items-center rounded-md border border-dashed border-surface-5 text-sm text-surface-8">
+              Loading timeline…
+            </div>
+          ) : samples.length === 0 ? (
             <div className="grid h-[120px] place-items-center rounded-md border border-dashed border-surface-5 text-center text-sm leading-normal text-surface-8">
               <span>
                 This run predates timeline capture.

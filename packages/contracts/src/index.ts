@@ -243,7 +243,11 @@ export type SessionHistoryEntry = {
   peakCpuPercent: number
   peakMemoryBytes: number
   totalOutputBytes: number
-  /** Downsampled resource timeline retained for historical inspection. */
+  /**
+   * Downsampled resource timeline retained for historical inspection. Absent
+   * from state broadcasts — up to 10 800 samples per run would dominate every
+   * broadcast — and served on demand via getHistoryMetrics instead.
+   */
   metricSamples?: SessionMetricSample[]
   /** A timestamped ANSI replay was captured in Hangar's private history store. */
   hasReplay?: boolean
@@ -351,6 +355,8 @@ export type ClientMsg =
   | { type: "updateSettings"; settings: AppSettings }
   /** Load timestamped output for one retained historical run. */
   | { type: "getHistoryReplay"; runId: string }
+  /** Load the resource timeline for one run; state broadcasts carry entries without it. */
+  | { type: "getHistoryMetrics"; runId: string }
   /** Forget one historical run: its entry and its replay capture. Session logs on disk stay. */
   | { type: "deleteHistoryRun"; runId: string }
   /** Mint a one-time pairing code so a client on another machine can connect. */
@@ -391,6 +397,8 @@ export type ServerMsg =
   | { type: "output"; id: SessionId; data: string }
   | { type: "exit"; id: SessionId; exitCode: number | null }
   | { type: "historyReplay"; runId: string; events: HistoryOutputEvent[]; truncated: boolean }
+  /** Reply to getHistoryMetrics. Empty for runs that predate timeline capture. */
+  | { type: "historyMetrics"; runId: string; samples: SessionMetricSample[] }
   /** Reply to createPairingToken, sent only to the requesting client. */
   | { type: "pairingToken"; pairing: PairingInfo }
   | { type: "error"; message: string }

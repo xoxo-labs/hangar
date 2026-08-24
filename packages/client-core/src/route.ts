@@ -39,6 +39,7 @@ export function scopeInbound(connId: string, msg: ServerMsg): ServerMsg {
     case "exit":
       return { ...msg, id: mark(msg.id) }
     case "historyReplay":
+    case "historyMetrics":
       return { ...msg, runId: mark(msg.runId) }
     default:
       return msg
@@ -88,6 +89,7 @@ export function routeOutbound(msg: ClientMsg): Outbound[] {
       return [...byConn].map(([connId, projects]) => ({ connId, msg: { type: "reorderProjects", projects } }))
     }
     case "getHistoryReplay":
+    case "getHistoryMetrics":
     case "deleteHistoryRun": {
       const { connId, value } = parseScoped(msg.runId)
       return [{ connId, msg: { ...msg, runId: value } }]

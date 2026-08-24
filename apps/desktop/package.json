@@ -6,7 +6,7 @@
   "main": "main.mjs",
   "scripts": {
     "dev": "electron .",
-    "build:server": "esbuild ../server/src/cli.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/server/cli.mjs --external:node-pty --external:ws",
+    "build:server": "esbuild ../server/src/cli.ts --bundle --platform=node --format=esm --target=node24 --define:__HANGAR_VERSION__=\\\"$npm_package_version\\\" --outfile=dist/server/cli.mjs --external:node-pty --external:ws",
     "build:updater": "esbuild updater.mjs --bundle --platform=node --format=cjs --target=node24 --external:electron --outfile=dist/updater.cjs",
     "build": "rm -rf dist && pnpm --filter @hangar/web build && mkdir -p dist/web && cp -R ../web/dist/. dist/web/ && pnpm build:server && pnpm build:updater",
     "package:mac": "pnpm build && electron-builder --mac dir --publish never",

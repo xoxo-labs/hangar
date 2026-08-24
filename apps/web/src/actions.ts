@@ -71,6 +71,14 @@ export function loadHistoryReplay(runId: string): void {
   send({ type: "getHistoryReplay", runId })
 }
 
+/** Loads an archived run's resource timeline; state broadcasts no longer carry it. */
+export function loadHistoryMetrics(runId: string): void {
+  const existing = useStore.getState().historyMetrics[runId]
+  if (existing?.loading || existing?.samples.length) return
+  useStore.getState().beginHistoryMetrics(runId)
+  send({ type: "getHistoryMetrics", runId })
+}
+
 /**
  * Deletes a run from its machine's history, along with its replay capture.
  * The store forgets it immediately; the server's next state broadcast confirms.

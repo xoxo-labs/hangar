@@ -59,6 +59,9 @@ function handle(connId: string, msg: ServerMsg): void {
     case "historyReplay":
       store.setHistoryReplay(msg.runId, msg.events, msg.truncated)
       return
+    case "historyMetrics":
+      store.setHistoryMetrics(msg.runId, msg.samples)
+      return
     case "exit":
       // A "stop & close" confirmed from the tab finishes here, once the
       // session is actually dead and the server will accept the dismiss.

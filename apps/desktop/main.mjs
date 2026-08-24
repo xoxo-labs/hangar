@@ -52,25 +52,42 @@ const HEALTH_POLL_INTERVAL_MS = 250
 const HEALTH_POLL_TIMEOUT_MS = 10_000
 const LOAD_RETRY_INTERVAL_MS = 1_000
 const LOAD_RETRY_TIMEOUT_MS = 30_000
+/** Backoff base for restarting a crashed server; attempt n waits n times this. */
+const SERVER_RESTART_DELAY_MS = 1_000
+/** A crash loop stops here; past this the server is broken, not unlucky. */
+const SERVER_RESTART_ATTEMPTS = 5
+/** A server alive this long has genuinely started; the crash counter resets. */
+const SERVER_STABLE_MS = 30_000
 
 /** The server process we started, if we started one. Null means "not ours". */
 let serverChild = null
+let serverRestartAttempts = 0
+let serverRestartTimer = null
 let mainWindow = null
 let releaseNotesWindow = null
 let shortcutsWindow = null
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms))
 
-/** Resolves true if the server answers /health, false on any failure. */
+/**
+ * Resolves the responding server's identity, or null when nothing answers.
+ * Version and pid headers arrived in 0.10; a server without them predates the
+ * check and reports both as null.
+ */
 async function probeHealth() {
   try {
     const response = await fetch(HEALTH_URL, {
       signal: AbortSignal.timeout(HEALTH_PROBE_TIMEOUT_MS),
       cache: "no-store",
     })
-    return response.ok
+    if (!response.ok) return null
+    const pid = Number(response.headers.get("x-hangar-pid"))
+    return {
+      version: response.headers.get("x-hangar-version"),
+      pid: Number.isInteger(pid) && pid > 0 ? pid : null,
+    }
   } catch {
-    return false
+    return null
   }
 }
 
@@ -115,19 +132,47 @@ function spawnServer() {
     env,
   })
 
+  // A server that survives this long has genuinely started; later exits are
+  // fresh crashes, not a continuation of a boot-time crash loop.
+  const stableTimer = setTimeout(() => {
+    if (serverChild === child) serverRestartAttempts = 0
+  }, SERVER_STABLE_MS)
+  stableTimer.unref()
+
   child.on("error", (error) => {
     console.error(`[hangar] failed to spawn server: ${error.message}`)
+    clearTimeout(stableTimer)
     if (serverChild === child) serverChild = null
+    scheduleServerRestart()
   })
 
   child.on("exit", (code, signal) => {
+    clearTimeout(stableTimer)
     if (serverChild === child) serverChild = null
-    if (!app.isQuitting) {
-      console.error(`[hangar] server exited (code ${code}, signal ${signal})`)
-    }
+    if (app.isQuitting) return
+    console.error(`[hangar] server exited (code ${code}, signal ${signal})`)
+    // The window sat on "connecting…" forever here; a crashed server gets
+    // brought back, bounded so a broken one cannot spin.
+    scheduleServerRestart()
   })
 
   return child
+}
+
+function scheduleServerRestart() {
+  if (serverRestartTimer !== null || app.isQuitting) return
+  if (serverRestartAttempts >= SERVER_RESTART_ATTEMPTS) {
+    console.error(`[hangar] server crashed ${SERVER_RESTART_ATTEMPTS} times in a row; giving up until relaunch`)
+    return
+  }
+  serverRestartAttempts += 1
+  serverRestartTimer = setTimeout(() => {
+    serverRestartTimer = null
+    if (app.isQuitting || serverChild !== null) return
+    console.error(`[hangar] restarting server (attempt ${serverRestartAttempts}/${SERVER_RESTART_ATTEMPTS})`)
+    void ensureServer()
+  }, SERVER_RESTART_DELAY_MS * serverRestartAttempts)
+  serverRestartTimer.unref()
 }
 
 /** Kills the server we spawned, process group first, child as a fallback. */
@@ -155,17 +200,58 @@ async function waitForHealth() {
     if (await probeHealth()) return true
     await sleep(HEALTH_POLL_INTERVAL_MS)
   }
-  return probeHealth()
+  return (await probeHealth()) !== null
 }
 
 /**
- * Ensures a server is listening on PORT. Returns nothing; whether we own the
- * process is recorded in `serverChild`.
+ * An already-running server is adopted only when it matches this app's
+ * version. After an update, the detached old server survives a crashed or
+ * killed app and would silently keep serving the previous release — the bug
+ * would present as "the update didn't apply". Never in the `pnpm dev` flow,
+ * where the supervisor owns the server; and a pre-0.10 server names no pid,
+ * so it can only be adopted with a warning.
+ */
+function shouldReplaceServer(health) {
+  if (process.env.HANGAR_NO_SPAWN) return false
+  if (health.version === app.getVersion()) return false
+  if (health.pid === null) {
+    console.error(`[hangar] adopting a server of unknown version on :${PORT} — restart it if it misbehaves`)
+    return false
+  }
+  return true
+}
+
+/** SIGTERM (the server shuts its ptys down itself), then SIGKILL as last resort. */
+async function replaceServer(pid) {
+  console.error(`[hangar] replacing stale server on :${PORT} (pid ${pid})`)
+  try {
+    process.kill(pid, "SIGTERM")
+  } catch {
+    return // already gone
+  }
+  const deadline = Date.now() + HEALTH_POLL_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    if ((await probeHealth()) === null) return
+    await sleep(HEALTH_POLL_INTERVAL_MS)
+  }
+  try {
+    process.kill(pid, "SIGKILL")
+  } catch {}
+  await sleep(HEALTH_POLL_INTERVAL_MS)
+}
+
+/**
+ * Ensures a server of this app's version is listening on PORT. Returns
+ * nothing; whether we own the process is recorded in `serverChild`.
  */
 async function ensureServer() {
-  if (await probeHealth()) {
-    console.log(`[hangar] server already running on :${PORT}`)
-    return
+  const health = await probeHealth()
+  if (health) {
+    if (!shouldReplaceServer(health)) {
+      console.log(`[hangar] server already running on :${PORT}`)
+      return
+    }
+    await replaceServer(health.pid)
   }
 
   // Under `pnpm dev` the server is owned by concurrently and just hasn't bound

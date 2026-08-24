@@ -12,6 +12,7 @@ import {
   type SessionId,
   type SessionInfo,
   type SessionMetrics,
+  type SessionMetricSample,
   type TailscaleState,
 } from "@hangar/contracts"
 import { create } from "zustand"
@@ -72,6 +73,12 @@ export type HistoryReplay = {
   loading: boolean
   events: HistoryOutputEvent[]
   truncated: boolean
+}
+
+/** Resource timeline of an archived run, loaded on demand like its replay. */
+export type HistoryMetrics = {
+  loading: boolean
+  samples: SessionMetricSample[]
 }
 
 export type SessionMetricPoint = {
@@ -160,6 +167,8 @@ type Store = {
   tabOrder: string[]
   /** Timestamped ANSI output loaded lazily for historical tabs. */
   historyReplays: Record<string, HistoryReplay>
+  /** Resource timelines loaded lazily for historical tabs. */
+  historyMetrics: Record<string, HistoryMetrics>
   /** Sessions that already own an xterm instance (panes are rendered for these). */
   terminalIds: SessionId[]
   /** Session whose details drawer is open. */
@@ -226,6 +235,8 @@ type Store = {
   reorderTab: (source: string, target: string) => void
   beginHistoryReplay: (runId: string) => void
   setHistoryReplay: (runId: string, events: HistoryOutputEvent[], truncated: boolean) => void
+  beginHistoryMetrics: (runId: string) => void
+  setHistoryMetrics: (runId: string, samples: SessionMetricSample[]) => void
   openInspector: (id: SessionId) => void
   toggleInspector: (id: SessionId) => void
   closeInspector: () => void
@@ -263,6 +274,7 @@ export const useStore = create<Store>((set, get) => ({
   releaseNotesActive: false,
   tabOrder: [],
   historyReplays: {},
+  historyMetrics: {},
   terminalIds: [],
   inspectingId: null,
   collapsed: {},
@@ -371,6 +383,9 @@ export const useStore = create<Store>((set, get) => ({
       const historyReplays = Object.fromEntries(
         Object.entries(state.historyReplays).filter(([runId]) => !staleRun(runId)),
       )
+      const historyMetrics = Object.fromEntries(
+        Object.entries(state.historyMetrics).filter(([runId]) => !staleRun(runId)),
+      )
       const activeHistory = focus
         ? null
         : state.activeHistory !== null && state.activeHistory !== "overview" && staleRun(state.activeHistory)
@@ -396,6 +411,7 @@ export const useStore = create<Store>((set, get) => ({
         history: nextHistory,
         historyTabs,
         historyReplays,
+        historyMetrics,
         metricHistory,
         activeId: nextActiveId,
         activeHistory,
@@ -499,6 +515,7 @@ export const useStore = create<Store>((set, get) => ({
         history: state.history.filter((entry) => !mine(entry.runId)),
         historyTabs,
         historyReplays: Object.fromEntries(Object.entries(state.historyReplays).filter(([runId]) => !mine(runId))),
+        historyMetrics: Object.fromEntries(Object.entries(state.historyMetrics).filter(([runId]) => !mine(runId))),
         metricHistory: Object.fromEntries(Object.entries(state.metricHistory).filter(([id]) => !mine(id))),
         terminalIds: state.terminalIds.filter((id) => !mine(id)),
         collapsed: Object.fromEntries(Object.entries(state.collapsed).filter(([project]) => !mine(project))),
@@ -573,8 +590,9 @@ export const useStore = create<Store>((set, get) => ({
       historyTabs: state.historyTabs.filter((id) => id !== runId),
       tabOrder: state.tabOrder.filter((key) => key !== `history:${runId}`),
       // The replay cache dies with the tab: a single replay can be 10 MB, and
-      // reopening the run just re-requests it.
+      // reopening the run just re-requests it. The timeline follows suit.
       historyReplays: Object.fromEntries(Object.entries(state.historyReplays).filter(([id]) => id !== runId)),
+      historyMetrics: Object.fromEntries(Object.entries(state.historyMetrics).filter(([id]) => id !== runId)),
       ...(state.activeHistory === runId
         ? {
             activeHistory: state.historyOpen ? ("overview" as const) : null,
@@ -589,6 +607,7 @@ export const useStore = create<Store>((set, get) => ({
       historyTabs: state.historyTabs.filter((id) => id !== runId),
       tabOrder: state.tabOrder.filter((key) => key !== `history:${runId}`),
       historyReplays: Object.fromEntries(Object.entries(state.historyReplays).filter(([id]) => id !== runId)),
+      historyMetrics: Object.fromEntries(Object.entries(state.historyMetrics).filter(([id]) => id !== runId)),
       ...(state.activeHistory === runId
         ? {
             activeHistory: state.historyOpen ? ("overview" as const) : null,
@@ -640,6 +659,22 @@ export const useStore = create<Store>((set, get) => ({
       historyReplays: {
         ...state.historyReplays,
         [runId]: { loading: false, events, truncated },
+      },
+    })),
+
+  beginHistoryMetrics: (runId) =>
+    set((state) => ({
+      historyMetrics: {
+        ...state.historyMetrics,
+        [runId]: { loading: true, samples: [] },
+      },
+    })),
+
+  setHistoryMetrics: (runId, samples) =>
+    set((state) => ({
+      historyMetrics: {
+        ...state.historyMetrics,
+        [runId]: { loading: false, samples },
       },
     })),
 

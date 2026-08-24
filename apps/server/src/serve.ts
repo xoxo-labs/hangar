@@ -33,6 +33,7 @@ import { clearRuntimeState, writeRuntimeState } from "./runtime-state.ts"
 import { SessionManager } from "./sessions.ts"
 import { loadSettings, saveSettings } from "./settings.ts"
 import { listShares, startShare, stopShare, stopOwnShares, tailscaleState } from "./tailscale.ts"
+import { serverVersion } from "./version.ts"
 import { resolveWebRoot, serveWebUi } from "./webui.ts"
 
 const LOOPBACK_ADDRESSES = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"])
@@ -440,7 +441,9 @@ export function serve(port: number, hostOverride?: string): void {
       // Git identity is computed for the wire only; the registry objects stay untouched.
       projects: projects.map((project) => ({ ...project, gitRemote: gitRemoteFor(project.path) })),
       sessions: manager.list(),
-      history: loadHistory(settings),
+      // Timelines ride getHistoryMetrics on demand; broadcasting up to 10 800
+      // samples per run with every state change swamped each broadcast.
+      history: loadHistory(settings).map(({ metricSamples: _samples, ...entry }) => entry),
       settings,
       serverName: hostname(),
       authSessions: listSessions(),
@@ -500,7 +503,15 @@ export function serve(port: number, hostOverride?: string): void {
       return
     }
     if (url.pathname === "/health") {
-      res.writeHead(200, { "content-type": "text/plain", "access-control-allow-origin": "*" })
+      // Version and pid ride the probe so the desktop shell can spot (and
+      // replace) a stale server left over from before an app update. Loopback
+      // only: remote probes get the bare ok they always did.
+      const headers: Record<string, string> = { "content-type": "text/plain", "access-control-allow-origin": "*" }
+      if (isLoopback(req)) {
+        headers["x-hangar-version"] = serverVersion()
+        headers["x-hangar-pid"] = String(process.pid)
+      }
+      res.writeHead(200, headers)
       res.end("ok")
       return
     }
@@ -881,6 +892,12 @@ export function serve(port: number, hostOverride?: string): void {
       case "getHistoryReplay": {
         const replay = loadHistoryReplay(msg.runId, loadSettings())
         socket.send(JSON.stringify({ type: "historyReplay", runId: msg.runId, ...replay } satisfies ServerMsg))
+        return
+      }
+      case "getHistoryMetrics": {
+        const entry = loadHistory(loadSettings()).find((item) => item.runId === msg.runId)
+        const samples = entry?.metricSamples ?? []
+        socket.send(JSON.stringify({ type: "historyMetrics", runId: msg.runId, samples } satisfies ServerMsg))
         return
       }
       case "deleteHistoryRun":
