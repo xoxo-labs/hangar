@@ -227,6 +227,7 @@ function PortShareDialogView({
             share={share}
             pendingKind={pendingKind}
             tailscale={tailscale}
+            loopbackOnly={loopbackOnly}
             onSelect={setSelectedKey}
           />
           <main className="flex min-w-0 flex-1 flex-col">
@@ -316,6 +317,7 @@ function PortShareDialogView({
                   share={share}
                   pendingKind={pendingKind}
                   tailscale={tailscale}
+                  loopbackOnly={loopbackOnly}
                   onTurnOn={turnOn}
                   onStop={() => actions.unsharePort(connId, port)}
                 />
@@ -373,6 +375,7 @@ function ReachRail({
   share,
   pendingKind,
   tailscale,
+  loopbackOnly,
   onSelect,
 }: {
   port: number
@@ -381,6 +384,7 @@ function ReachRail({
   share: ActiveShare | undefined
   pendingKind: PortShareKind | null
   tailscale: TailscaleState | null
+  loopbackOnly: boolean
   onSelect: (key: string) => void
 }) {
   const addresses = reaches.filter((reach): reach is AddressReach => reach.type === "address")
@@ -400,6 +404,7 @@ function ReachRail({
             share={share}
             pendingKind={pendingKind}
             tailscale={tailscale}
+            loopbackOnly={loopbackOnly}
             onSelect={onSelect}
           />
         ))}
@@ -412,6 +417,7 @@ function ReachRail({
             share={share}
             pendingKind={pendingKind}
             tailscale={tailscale}
+            loopbackOnly={loopbackOnly}
             onSelect={onSelect}
           />
         ))}
@@ -430,6 +436,7 @@ function ReachNavItem({
   share,
   pendingKind,
   tailscale,
+  loopbackOnly,
   onSelect,
 }: {
   reach: ReachOption
@@ -437,6 +444,7 @@ function ReachNavItem({
   share: ActiveShare | undefined
   pendingKind: PortShareKind | null
   tailscale: TailscaleState | null
+  loopbackOnly: boolean
   onSelect: (key: string) => void
 }) {
   const kind =
@@ -449,6 +457,9 @@ function ReachNavItem({
   const pending = kind !== null && pendingKind === kind
   const live = kind !== null && share?.kind === kind
   const unavailable = kind !== null && tailscale?.running !== true && !live
+  /* The Tailscale IP is a direct address, exactly like the LAN one: without a
+   * proxy it still answers, as long as the server listens beyond localhost.
+   * Saying "Off" here made the optional proxy read as a prerequisite. */
   const status = pending
     ? "Turning on…"
     : live
@@ -457,8 +468,10 @@ function ReachNavItem({
         : "Live"
       : unavailable
         ? "Unavailable"
-        : kind === null
-          ? "Direct"
+        : kind === null || kind === "proxy"
+          ? loopbackOnly && kind === "proxy"
+            ? "Needs proxy"
+            : "Direct"
           : "Off"
   return (
     <button
@@ -477,7 +490,13 @@ function ReachNavItem({
         <span
           className={cx(
             "flex-none text-2xs font-semibold",
-            live ? (kind === "public" ? "text-warning-10" : "text-success-10") : "text-surface-8",
+            live
+              ? kind === "public"
+                ? "text-warning-10"
+                : "text-success-10"
+              : status === "Needs proxy"
+                ? "text-warning-10"
+                : "text-surface-8",
           )}
         >
           {status}
@@ -540,17 +559,35 @@ function ReachDetails({
           ["Transport", "HTTP"],
           ["Route", proxyLive ? `Proxy to localhost:${port}` : `Direct to :${port}`],
         ]}
-        status={proxyLive ? "Proxy on" : tailscale?.running === true ? "Proxy off" : "Unavailable"}
+        status={
+          proxyLive ? "Proxy on" : tailscale?.running !== true ? "Unavailable" : loopbackOnly ? "Needs proxy" : "Direct"
+        }
         statusTone={proxyLive ? "success" : "neutral"}
         notice={
-          <WarningNotice>
-            <strong>Private HTTP origin.</strong> Clerk may show a Cloudflare block because the browser still sees this
-            100.x address. Use <strong>Tailnet HTTPS</strong> for HTTPS or origin allowlisting.
-          </WarningNotice>
+          proxyLive ? (
+            <NeutralNotice>
+              The proxy bridges this address to <code>localhost:{port}</code>. Disable it once the server listens beyond
+              localhost — direct requests are one hop shorter.
+            </NeutralNotice>
+          ) : loopbackOnly ? (
+            <WarningNotice>
+              <strong>This port answers on localhost only,</strong> so the direct address gets no reply. Enable the
+              proxy to bridge it to <code>localhost:{port}</code>.
+            </WarningNotice>
+          ) : (
+            <NeutralNotice>
+              Works as-is — requests go straight to the dev server, and the proxy stays optional (it exists for
+              localhost-only ports). For HTTPS or origin allowlisting, use <strong>Tailnet HTTPS</strong>.
+            </NeutralNotice>
+          )
         }
       />
     )
   }
+
+  // Unavailability trumps the mode's own guidance: a disabled button whose only
+  // explanation lives in a hover tooltip reads as broken, not as unavailable.
+  const unavailable = tailscale?.running !== true
 
   if (reach.kind === "tailnet") {
     return (
@@ -561,11 +598,16 @@ function ReachDetails({
           ["Transport", "HTTPS"],
           ["Route", `Proxy to localhost:${port}`],
         ]}
+        status={unavailable ? "Unavailable" : undefined}
         notice={
-          <NeutralNotice>
-            This mode proxies to <code>localhost:{port}</code>, so no server rebinding is needed. Add its MagicDNS
-            hostname to an authentication provider's allowed origins when required.
-          </NeutralNotice>
+          unavailable ? (
+            <TailscaleUnavailableNotice tailscale={tailscale} />
+          ) : (
+            <NeutralNotice>
+              This mode proxies to <code>localhost:{port}</code>, so no server rebinding is needed. Add its MagicDNS
+              hostname to an authentication provider's allowed origins when required.
+            </NeutralNotice>
+          )
         }
       />
     )
@@ -579,13 +621,32 @@ function ReachDetails({
         ["Transport", "HTTPS"],
         ["Route", `Proxy to localhost:${port}`],
       ]}
+      status={unavailable ? "Unavailable" : undefined}
       notice={
-        <WarningNotice>
-          Anyone with the link can reach <code>localhost:{port}</code>. Hangar withdraws it when the process ends or the
-          app quits.
-        </WarningNotice>
+        unavailable ? (
+          <TailscaleUnavailableNotice tailscale={tailscale} />
+        ) : (
+          <WarningNotice>
+            Anyone with the link can reach <code>localhost:{port}</code>. Hangar withdraws it when the process ends or
+            the app quits.
+          </WarningNotice>
+        )
       }
     />
+  )
+}
+
+/** Why publishing cannot happen right now, in the notice lane rather than a tooltip. */
+function TailscaleUnavailableNotice({ tailscale }: { tailscale: TailscaleState | null }) {
+  const message =
+    tailscale?.message ?? (tailscale?.installed ? "Tailscale is not running." : "Tailscale is not installed.")
+  return (
+    <WarningNotice>
+      <strong>{message.replace(/\.?$/, ".")}</strong>{" "}
+      {tailscale?.installed
+        ? "Start Tailscale on this machine to publish the port."
+        : "Publishing goes through Tailscale; install it on this machine to share the port."}
+    </WarningNotice>
   )
 }
 
@@ -655,6 +716,7 @@ function ReachAction({
   share,
   pendingKind,
   tailscale,
+  loopbackOnly,
   onTurnOn,
   onStop,
 }: {
@@ -662,6 +724,7 @@ function ReachAction({
   share: ActiveShare | undefined
   pendingKind: PortShareKind | null
   tailscale: TailscaleState | null
+  loopbackOnly: boolean
   onTurnOn: (kind: PortShareKind) => void
   onStop: () => void
 }) {
@@ -678,6 +741,29 @@ function ReachAction({
 
   const pending = pendingKind === kind
   const unavailable = tailscale?.running !== true
+
+  /* The proxy is a repair for localhost-only ports, not a switch the address
+   * depends on. Only then does it earn the primary treatment — otherwise the
+   * direct link above it already works and the button is a quiet extra. */
+  if (kind === "proxy") {
+    return (
+      <Button
+        variant={loopbackOnly ? "primary" : "default"}
+        disabled={pending || unavailable}
+        title={
+          unavailable
+            ? (tailscale?.message ?? "Tailscale is unavailable")
+            : loopbackOnly
+              ? undefined
+              : "Optional — this port is already reachable at the address above"
+        }
+        onClick={() => onTurnOn(kind)}
+      >
+        {pending ? "Turning on…" : "Enable proxy"}
+      </Button>
+    )
+  }
+
   if (kind === "public") {
     return (
       <button
@@ -699,7 +785,7 @@ function ReachAction({
       title={unavailable ? (tailscale?.message ?? "Tailscale is unavailable") : undefined}
       onClick={() => onTurnOn(kind)}
     >
-      {pending ? "Turning on…" : kind === "proxy" ? "Enable proxy" : "Turn on"}
+      {pending ? "Turning on…" : "Turn on"}
     </Button>
   )
 }
