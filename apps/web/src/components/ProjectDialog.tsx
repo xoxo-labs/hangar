@@ -267,6 +267,10 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
             </div>
           )}
 
+          <ProcessesField rows={rows} onChange={setRows} />
+
+          {/* A project-level preference, so it sits with neither the scripts
+           * above nor the process list they feed — last, out of that flow. */}
           <Field label="Browser used" hint="Overrides the global setting for every action in this project.">
             <BrowserSelect
               value={browser}
@@ -274,8 +278,6 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
               onChange={(event) => setBrowser(event.target.value as BrowserChoice | "")}
             />
           </Field>
-
-          <ProcessesField rows={rows} onChange={setRows} />
         </DialogBody>
 
         <DialogFooter>
