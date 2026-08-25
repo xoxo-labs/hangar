@@ -759,7 +759,12 @@ function updatesDisabledReason() {
   if (process.env.HANGAR_DISABLE_AUTO_UPDATE) return "Automatic updates are disabled by HANGAR_DISABLE_AUTO_UPDATE."
   if (MOCK_UPDATE_URL !== null) return null
   if (!app.isPackaged) return "Automatic updates are only available in packaged builds."
-  if (!existsSync(join(process.resourcesPath, "app-update.yml"))) return "This build has no update feed configured."
+  // electron-builder writes app-update.yml only for the dmg and zip targets, so
+  // its absence in a packaged app means `package:mac` (the --mac dir target)
+  // built this copy. Say that, rather than implying the release feed is broken.
+  if (!existsSync(join(process.resourcesPath, "app-update.yml"))) {
+    return "This copy was packaged locally (pnpm package:mac), which carries no update feed. Install a release build to get updates."
+  }
   return null
 }
 
