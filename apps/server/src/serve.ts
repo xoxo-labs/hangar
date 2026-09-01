@@ -27,6 +27,7 @@ import {
 } from "./auth.ts"
 import { expandHome, findProject, hangarHome, loadRegistry, saveRegistry, validateProject } from "./registry.ts"
 import { exportAppIntentsState, watchAppIntentsCommands } from "./appintents.ts"
+import { expectedPorts } from "./expectedPorts.ts"
 import { gitRemoteFor } from "./git.ts"
 import { deleteHistoryRun, loadHistory, loadHistoryReplay } from "./history.ts"
 import { clearRuntimeState, writeRuntimeState } from "./runtime-state.ts"
@@ -199,6 +200,39 @@ function workspaceScripts(path: string, parsed: PackageJson, manager: string): D
     const label = packageName || basename(cwd)
     return packageScripts(workspace, manager, label, cwd)
   })
+}
+
+/**
+ * Root scripts of the package.json a process starts in, for expected-port
+ * guessing. Cached by mtime the way gitRemoteFor caches the git config:
+ * stateMsg runs on every broadcast and must not re-parse package.json each time.
+ */
+const scriptsCache = new Map<string, { mtimeMs: number; scripts: Record<string, string> }>()
+
+function scriptsFor(dir: string): Record<string, string> | undefined {
+  const packagePath = join(dir, "package.json")
+  let mtimeMs: number
+  try {
+    mtimeMs = statSync(packagePath).mtimeMs
+  } catch {
+    scriptsCache.delete(packagePath)
+    return undefined
+  }
+  const cached = scriptsCache.get(packagePath)
+  if (cached !== undefined && cached.mtimeMs === mtimeMs) return cached.scripts
+  try {
+    const parsed = JSON.parse(readFileSync(packagePath, "utf8")) as PackageJson
+    const scripts = Object.fromEntries(
+      Object.entries(parsed.scripts && typeof parsed.scripts === "object" ? parsed.scripts : {}).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    )
+    scriptsCache.set(packagePath, { mtimeMs, scripts })
+    return scripts
+  } catch {
+    scriptsCache.delete(packagePath)
+    return undefined
+  }
 }
 
 function inspectProject(inputPath: string): object {
@@ -438,8 +472,23 @@ export function serve(port: number, hostOverride?: string): void {
     }
     return {
       type: "state",
-      // Git identity is computed for the wire only; the registry objects stay untouched.
-      projects: projects.map((project) => ({ ...project, gitRemote: gitRemoteFor(project.path) })),
+      // Git identity is computed for the wire only; the registry objects stay
+      // untouched. Expected ports ride the same way: guessed here from each
+      // process's command, the package.json scripts in its cwd, and the
+      // project's env, so every client can show where a stopped process will land.
+      projects: projects.map((project) => ({
+        ...project,
+        gitRemote: gitRemoteFor(project.path),
+        processes: project.processes.map((proc) => {
+          const guesses = proc.shell
+            ? []
+            : expectedPorts(proc.cmd, {
+                scripts: scriptsFor(resolve(expandHome(project.path), proc.cwd ?? "")),
+                env: project.env,
+              })
+          return guesses.length === 0 ? proc : { ...proc, expectedPorts: guesses }
+        }),
+      })),
       sessions: manager.list(),
       // Timelines ride getHistoryMetrics on demand; broadcasting up to 10 800
       // samples per run with every state change swamped each broadcast.
@@ -681,6 +730,9 @@ export function serve(port: number, hostOverride?: string): void {
         const body = (await readJsonBody(req)) as { project?: Project }
         if (!body.project) throw new Error("project is required")
         const { gitRemote: _computed, ...project } = body.project
+        // expectedPorts is server-computed the same way; never persist it.
+        if (Array.isArray(project.processes))
+          project.processes = project.processes.map(({ expectedPorts: _guessed, ...proc }) => proc)
         const errors = validateProject(project)
         if (errors.length > 0) throw new Error(errors.join("; "))
         const registry = loadRegistry()
@@ -824,8 +876,11 @@ export function serve(port: number, hostOverride?: string): void {
         manager.dismiss(msg.id)
         return
       case "upsertProject": {
-        // gitRemote is a server-computed view; never let it round-trip into projects.json.
+        // gitRemote and expectedPorts are server-computed views; never let
+        // either round-trip into projects.json.
         const { gitRemote: _computed, ...project } = msg.project
+        if (Array.isArray(project.processes))
+          project.processes = project.processes.map(({ expectedPorts: _guessed, ...proc }) => proc)
         const errors = validateProject(project)
         if (errors.length > 0) throw new Error(errors.join("; "))
         const registry = loadRegistry()

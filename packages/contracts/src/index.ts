@@ -13,6 +13,12 @@ export type ProjectProcess = {
   cwd?: string
   /** Browser override for ports opened from this process. */
   browser?: BrowserChoice
+  /**
+   * Where this process is expected to listen, guessed by the server from cmd,
+   * package.json scripts, and the project env. Wire-only like Project.gitRemote:
+   * computed at broadcast time and never persisted in the registry.
+   */
+  expectedPorts?: PortGuess[]
 }
 
 export type Project = {
@@ -171,6 +177,21 @@ export type SessionMetrics = {
   sampledAt: number
   peakCpuPercent: number
   peakMemoryBytes: number
+}
+
+/**
+ * Where a process is expected to listen, guessed from its command and its
+ * package.json scripts without running anything — the counterpart of
+ * SessionMetrics.ports for a process that is stopped or still booting.
+ */
+export type PortGuess = {
+  port: number
+  /** What produced the guess: a flag in the command, a PORT variable, or a framework default. */
+  source: "explicit" | "env" | "default"
+  /** The exact fragment behind the guess, e.g. "--port 3011", "PORT=4000", "next dev". */
+  evidence: string
+  /** Explicit flags and PORT variables are certain; framework defaults are honest guesses. */
+  certain: boolean
 }
 
 /**

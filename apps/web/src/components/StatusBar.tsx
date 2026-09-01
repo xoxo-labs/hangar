@@ -30,6 +30,7 @@ export function StatusBar() {
   const acceptRemote = useStore((s) => s.settings.connections?.acceptRemote === true)
   const connections = useStore((s) => s.connections)
   const sessions = useStore((s) => s.sessions)
+  const projects = useStore((s) => s.projects)
   const notice = useStore((s) => s.notice)
   const shares = useAllShares()
   const groups = useMemo(
@@ -40,9 +41,10 @@ export function StatusBar() {
           machine: machineLabel(connection),
           shares: connection.shares,
           sessions: sessions.filter((session) => connIdOf(session.id) === connection.config.id),
+          projects: projects.filter((project) => connIdOf(project.name) === connection.config.id),
         })),
       ),
-    [connections, sessions],
+    [connections, sessions, projects],
   )
   /*
    * One slot rather than a boolean per panel: each trigger sits behind its own
@@ -154,7 +156,9 @@ function PortsIndicator({
   open: boolean
   onToggle: () => void
 }) {
-  const rowCount = groups.reduce((total, group) => total + group.rows.length, 0)
+  // Forecast rows must not count: the trigger says what is open, and "3 open
+  // ports" over three dimmed guesses would be the confusion the dimming avoids.
+  const rowCount = groups.reduce((total, group) => total + group.rows.filter((row) => !row.expected).length, 0)
   const publicCount = shares.filter((share) => share.kind === "public").length
   const proxyCount = shares.filter((share) => share.kind === "proxy").length
   const tailnetCount = shares.filter((share) => share.kind === "tailnet").length
@@ -257,7 +261,10 @@ function MachineGroup({ group, showMachine }: { group: PortGroup; showMachine: b
       )}
       <div className="divide-y divide-surface-5">
         {group.rows.map((row) => (
-          <PortRowCard key={`${row.connId}:${row.port}:${row.session ?? "adopted"}`} row={row} />
+          <PortRowCard
+            key={`${row.connId}:${row.port}:${row.expected ? "expected" : (row.session ?? "adopted")}`}
+            row={row}
+          />
         ))}
       </div>
     </div>
@@ -267,6 +274,28 @@ function MachineGroup({ group, showMachine }: { group: PortGroup; showMachine: b
 function PortRowCard({ row }: { row: PortRow }) {
   const exposed = row.share?.kind === "public"
   const owner = row.project === undefined ? undefined : `${displayName(row.project)} / ${row.process}`
+
+  // A forecast is not a port: everything dims, the badge says so outright, and
+  // there is no QR or share control — you cannot publish what nothing holds.
+  // The evidence behind the guess rides the tooltip.
+  if (row.expected) {
+    return (
+      <div
+        className="py-2.5 text-xs text-surface-7"
+        title={`Expected from "${row.expected.evidence}"${row.expected.certain ? "" : " — a framework default, so config files may move it"}`}
+      >
+        <div className="flex items-center gap-1.5">
+          <span className="flex-none font-book text-surface-8 tabular-nums">:{row.port}</span>
+          <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{owner}</span>
+          <span className="flex-none text-2xs tracking-caps text-surface-7 uppercase">expected</span>
+        </div>
+        <div className="mt-1 text-2xs text-surface-7">
+          Not listening · {row.expected.evidence}
+          {row.expected.certain ? "" : " default"}
+        </div>
+      </div>
+    )
+  }
   const reachText = row.share ? shareLabel(row.share.kind) : row.loopbackOnly ? "Local · loopback only" : "Local"
   const compactReach =
     row.share?.kind === "proxy"

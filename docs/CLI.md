@@ -27,6 +27,16 @@ hangar ports lust/web
 hangar status lust/web
 ```
 
+`hangar ports` lists what is actually listening alongside where stopped (or still-booting) processes are *expected* to listen, guessed from each process's command and its `package.json` scripts — an explicit `--port 3011` or `PORT=4000` is reported as certain, a framework default (`next dev` → 3000, `vite` → 5173, `uvicorn` → 8000, …) as an honest guess:
+
+```sh
+hangar ports lust
+# lust/web    3000  active    127.0.0.1
+# lust/api    8000  default   uvicorn (guess)
+```
+
+Use `--active` for the old listening-ports-only listing. With `--json`, live ports keep their unchanged shape under `ports`; guesses arrive additively under `expected`, each with `project`, `process`, `port`, `source` (`explicit` | `env` | `default`), the `evidence` behind it, and `certain`.
+
 When a process dies because its port was taken, Hangar says so instead of leaving you a bare exit code — in `status`, in `--wait-port` failures, and in the session's own output:
 
 ```sh

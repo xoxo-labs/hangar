@@ -1,4 +1,4 @@
-import type { PortShare, SessionId, SessionInfo } from "@hangar/contracts"
+import type { PortGuess, PortShare, Project, SessionId, SessionInfo } from "@hangar/contracts"
 
 /**
  * One row of the status bar's port manager: a port somebody opened, merged
@@ -17,6 +17,12 @@ export type PortRow = {
   share?: PortShare
   /** Every reported binding is loopback, so no other device can reach it. */
   loopbackOnly: boolean
+  /**
+   * Set on a forecast row: nothing is listening here, this is where the
+   * process is expected to land (server-guessed from its command and scripts).
+   * Rendered dimmed and shareless so it can never pass for a live port.
+   */
+  expected?: PortGuess
 }
 
 export type PortGroup = { connId: string; machine: string; rows: PortRow[] }
@@ -24,13 +30,15 @@ export type PortGroup = { connId: string; machine: string; rows: PortRow[] }
 /**
  * One machine's contribution, shaped so this module needs nothing from the
  * store — and no runtime workspace imports, so `node --test` can load it. The
- * caller filters `sessions` down to the ones this connection owns.
+ * caller filters `sessions` (and `projects`) down to the ones this connection owns.
  */
 export type PortSource = {
   connId: string
   machine: string
   shares: PortShare[]
   sessions: SessionInfo[]
+  /** Registry projects, whose processes carry the server's expected-port guesses. */
+  projects?: Project[]
 }
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]", "::1", "localhost"])
@@ -55,6 +63,9 @@ function reachRank(row: PortRow): number {
  * a row — reachable-but-invisible is the one state this panel must not allow.
  * Public rows sort first within a machine and exposed machines head the list,
  * for the same reason flattenShares orders that way: this UI is an alarm.
+ * Expected ports trail each machine as dimmed forecasts, so a stopped process
+ * still tells you where it will land; a machine with only forecasts stays
+ * listed, because "where will this land" is worth answering before anything runs.
  */
 export function buildPortGroups(sources: PortSource[]): PortGroup[] {
   const groups = sources
@@ -88,6 +99,35 @@ export function buildPortGroups(sources: PortSource[]): PortGroup[] {
         })
       }
       rows.sort((a, b) => reachRank(a) - reachRank(b) || a.port - b.port)
+      // Forecast rows come last, after everything real. A port something live
+      // already holds gets no forecast — the row above it is the truth — and a
+      // running process that opened ports has said where it landed, which
+      // beats any guess. One forecast per port: two processes both defaulting
+      // to 3000 cannot both have it, so the first (project order) speaks.
+      const taken = new Set(rows.map((row) => row.port))
+      const expectedRows: PortRow[] = []
+      for (const project of source.projects ?? []) {
+        for (const proc of project.processes) {
+          const id = `${project.name}/${proc.name}`
+          const owner = source.sessions.find((session) => session.id === id)
+          if (owner?.status === "running" && (owner.metrics?.ports.length ?? 0) > 0) continue
+          for (const guess of proc.expectedPorts ?? []) {
+            if (taken.has(guess.port)) continue
+            taken.add(guess.port)
+            expectedRows.push({
+              connId: source.connId,
+              port: guess.port,
+              session: id,
+              project: project.name,
+              process: proc.name,
+              loopbackOnly: false,
+              expected: guess,
+            })
+          }
+        }
+      }
+      expectedRows.sort((a, b) => Number(b.expected!.certain) - Number(a.expected!.certain) || a.port - b.port)
+      rows.push(...expectedRows)
       return { connId: source.connId, machine: source.machine, rows }
     })
     .filter((group) => group.rows.length > 0)

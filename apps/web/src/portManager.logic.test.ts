@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
-import type { PortShare, SessionId, SessionInfo, SessionMetrics } from "@hangar/contracts"
+import type { PortGuess, PortShare, Project, SessionId, SessionInfo, SessionMetrics } from "@hangar/contracts"
 import { buildPortGroups, loopbackOnly, type PortSource } from "./portManager.logic.ts"
 
 function metrics(ports: number[], portBindings?: Record<number, string[]>): SessionMetrics {
@@ -31,6 +31,23 @@ function session(id: SessionId, over: Partial<SessionInfo> = {}): SessionInfo {
     cmd: "pnpm dev",
     metrics: metrics([]),
     ...over,
+  }
+}
+
+function guess(port: number, over: Partial<PortGuess> = {}): PortGuess {
+  return { port, source: "default", evidence: "next dev", certain: false, ...over }
+}
+
+/** A scoped project whose processes carry the server's expected-port guesses. */
+function project(name: string, processes: Array<[string, PortGuess[]]>): Project {
+  return {
+    name,
+    path: "~/code/app",
+    processes: processes.map(([procName, expectedPorts]) => ({
+      name: procName,
+      cmd: "pnpm dev",
+      ...(expectedPorts.length === 0 ? {} : { expectedPorts }),
+    })),
   }
 }
 
@@ -201,6 +218,110 @@ describe("buildPortGroups", () => {
     assert.deepEqual(
       buildPortGroups(sources).map((group) => group.machine),
       ["Studio", "This Mac", "Server"],
+    )
+  })
+
+  it("trails expected ports after every real row, certain first, then by port", () => {
+    const sources: PortSource[] = [
+      {
+        connId: "local",
+        machine: "This Mac",
+        shares: [],
+        sessions: [session("local::api/web", { metrics: metrics([3000]) })],
+        projects: [
+          project("local::api", [
+            ["web", []],
+            ["docs", [guess(6006, { evidence: "storybook dev" })]],
+            ["server", [guess(9000, { source: "explicit", evidence: "--port 9000", certain: true })]],
+          ]),
+        ],
+      },
+    ]
+    const rows = buildPortGroups(sources)[0]?.rows
+    assert.deepEqual(
+      rows?.map((row) => [row.port, row.expected?.source, row.session]),
+      [
+        [3000, undefined, "local::api/web"],
+        [9000, "explicit", "local::api/server"],
+        [6006, "default", "local::api/docs"],
+      ],
+    )
+  })
+
+  it("never forecasts a port something real already holds, or twice for two hopefuls", () => {
+    const sources: PortSource[] = [
+      {
+        connId: "local",
+        machine: "This Mac",
+        shares: [share(4000, "tailnet")],
+        sessions: [session("local::api/web", { metrics: metrics([3000]) })],
+        projects: [
+          project("local::api", [
+            // 3000 is held live and 4000 is shared; both forecasts would lie.
+            ["a", [guess(3000), guess(4000)]],
+            // Two processes defaulting to 5173: only the first speaks.
+            ["b", [guess(5173, { evidence: "vite" })]],
+            ["c", [guess(5173, { evidence: "vite" })]],
+          ]),
+        ],
+      },
+    ]
+    assert.deepEqual(
+      buildPortGroups(sources)[0]?.rows.map((row) => [row.port, row.session]),
+      [
+        [4000, undefined],
+        [3000, "local::api/web"],
+        [5173, "local::api/b"],
+      ],
+    )
+  })
+
+  it("drops a forecast once its process runs and reports ports, but not while it boots", () => {
+    const projects = [project("local::api", [["web", [guess(3000)]]])]
+    // Landed elsewhere: the detected row is the truth, the guess has expired.
+    const landed: PortSource[] = [
+      {
+        connId: "local",
+        machine: "This Mac",
+        shares: [],
+        sessions: [session("local::api/web", { metrics: metrics([3005]) })],
+        projects,
+      },
+    ]
+    assert.deepEqual(
+      buildPortGroups(landed)[0]?.rows.map((row) => [row.port, row.expected === undefined]),
+      [[3005, true]],
+    )
+    // Still booting: nothing detected yet, so the forecast is still the answer.
+    const booting: PortSource[] = [
+      {
+        connId: "local",
+        machine: "This Mac",
+        shares: [],
+        sessions: [session("local::api/web")],
+        projects,
+      },
+    ]
+    assert.deepEqual(
+      buildPortGroups(booting)[0]?.rows.map((row) => [row.port, row.expected !== undefined]),
+      [[3000, true]],
+    )
+  })
+
+  it("keeps a machine with only forecasts, so a cold project still answers where", () => {
+    const sources: PortSource[] = [
+      { connId: "idle", machine: "Studio", shares: [], sessions: [] },
+      {
+        connId: "local",
+        machine: "This Mac",
+        shares: [],
+        sessions: [],
+        projects: [project("local::api", [["web", [guess(3000)]]])],
+      },
+    ]
+    assert.deepEqual(
+      buildPortGroups(sources).map((group) => group.connId),
+      ["local"],
     )
   })
 

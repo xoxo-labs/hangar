@@ -25,7 +25,7 @@ Usage:
   hangar [global options] status [project[/process]] [--running] [--json]
   hangar [global options] start|stop|restart <project[/process]> [--wait-port[=<n>]] [--json]
   hangar [global options] logs <project/process> [--tail <n>] [--ansi] [--json]
-  hangar [global options] ports [project[/process]] [--json]
+  hangar [global options] ports [project[/process]] [--active] [--json]
   hangar [global options] target ls|add|rm|pair-code
   hangar run <project[/process]>       Legacy foreground runner
   hangar serve [--port <n>] [--host <addr>]   Run the Hangar server
@@ -559,7 +559,13 @@ async function cmdLogs(argv: string[]): Promise<void> {
 }
 
 async function cmdPorts(argv: string[]): Promise<void> {
-  const sessions = matchingSessions((await (await api()).sessions()).sessions, argv[0])
+  const activeIndex = argv.indexOf("--active")
+  const activeOnly = activeIndex !== -1
+  if (activeIndex !== -1) argv.splice(activeIndex, 1)
+  // Expected ports live on the broadcast projects, so this needs state, not
+  // just sessions — the sessions inside are the same ones /api/sessions serves.
+  const state = await (await api()).state()
+  const sessions = matchingSessions(state.sessions, argv[0])
   const selectedTarget = target()
   const remoteHost = selectedTarget.host.includes(":") ? `[${selectedTarget.host}]` : selectedTarget.host
   const targetIsLoopback =
@@ -581,8 +587,49 @@ async function cmdPorts(argv: string[]): Promise<void> {
       }
     }),
   )
-  success({ ports: data })
-  for (const item of data) human(`${item.session}  ${item.port}  ${item.bindings.join(", ") || "binding unknown"}`)
+  if (activeOnly) {
+    // The pre-expected-ports behaviour, kept verbatim for scripts that parse it.
+    success({ ports: data })
+    for (const item of data) human(`${item.session}  ${item.port}  ${item.bindings.join(", ") || "binding unknown"}`)
+    return
+  }
+
+  // Where the not-(yet-)listening processes are expected to land. A port some
+  // running session already holds gets no forecast — the live row is the truth
+  // — and a running process that opened ports has said where it landed, which
+  // beats any guess. Guessing itself happens on the server (expectedPorts.ts).
+  const selected = argv[0] ? selector(argv[0]) : undefined
+  const heldPorts = new Set(
+    state.sessions.flatMap((session) => (session.status === "running" ? (session.metrics?.ports ?? []) : [])),
+  )
+  const expected = state.projects
+    .filter((project) => !selected || project.name === selected.project)
+    .flatMap((project) =>
+      project.processes
+        .filter((proc) => !selected?.process || proc.name === selected.process)
+        .flatMap((proc) => {
+          const live = state.sessions.find((session) => session.id === `${project.name}/${proc.name}`)
+          if (live?.status === "running" && (live.metrics?.ports.length ?? 0) > 0) return []
+          return (proc.expectedPorts ?? [])
+            .filter((guess) => !heldPorts.has(guess.port))
+            .map((guess) => ({ project: project.name, process: proc.name, ...guess }))
+        }),
+    )
+  // `ports` keeps its exact old shape; `expected` is purely additive.
+  success({ ports: data, expected })
+  const width = Math.max(
+    0,
+    ...data.map((item) => item.session.length),
+    ...expected.map((item) => item.project.length + item.process.length + 1),
+  )
+  for (const item of data)
+    human(
+      `${item.session.padEnd(width)}  ${String(item.port).padStart(5)}  active    ${item.bindings.join(", ") || "binding unknown"}`,
+    )
+  for (const item of expected)
+    human(
+      `${`${item.project}/${item.process}`.padEnd(width)}  ${String(item.port).padStart(5)}  ${item.source.padEnd(8)}  ${item.evidence}${item.certain ? "" : " (guess)"}`,
+    )
 }
 
 async function readStdin(): Promise<string> {

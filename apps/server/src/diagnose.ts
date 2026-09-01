@@ -31,7 +31,8 @@ const NAMED_PORT = /\bports?[\s=:]+(\d{1,5})\b/gi
 const SUFFIX_PORT = /:(\d{1,5})\b/g
 const MIN_SUFFIX_PORT = 100
 
-function validPort(value: number): boolean {
+/** Shared with expectedPorts.ts — one definition of what may be called a port. */
+export function validPort(value: number): boolean {
   return Number.isInteger(value) && value > 0 && value <= 65535
 }
 
