@@ -1,3 +1,21 @@
+# Hangar 0.11.0
+
+## Ports you can see before you press play
+
+- Every process now says where it expects to listen, whether or not it is running. A stopped `web` reads **3000**, and the port manager shows it as a forecast — dimmed, badged *expected*, never counted among the live ones.
+- The guess comes from the command itself: an explicit `--port 3011`, a `PORT=` you set on the project, or the package.json script a `pnpm dev` resolves to. When the command names nothing, a table of framework defaults answers — next 3000, vite 5173, astro 4321, storybook 6006, and the rest. Hover any forecast to see the exact fragment it was read from.
+- What Hangar will not do is pretend. It does not read `next.config`, `vite.config` or `.env`, because a config format half-parsed produces wrong ports, and a wrong port is worse than a missing one. `turbo run dev` and `pnpm -r dev` reach several packages at once, so they forecast nothing at all. No guess means *no idea*, never *no ports*.
+- `hangar ports` lists forecasts under a source column next to the live ones. `--active` gives you exactly the old output and the old JSON, and the `ports` field in `--json` is untouched — the new `expected` array sits beside it.
+
+## Register a monorepo in one command
+
+- `hangar add ~/code/my-app --from-package-json` imports every root and workspace script the server detects, each as a process, with the package/script naming and working directory that make it run. Registering a monorepo stopped being a dozen `--cmd` flags.
+- The project name falls back to the package name, then the folder. `--cmd` still appends whatever package.json does not know about, and `--force` replaces an existing entry.
+
+## Smaller things
+
+- A copy built with `pnpm package:mac` used to report "This build has no update feed configured," which read like a broken release feed rather than a property of a locally packaged app. It now names what built it and points at a release build.
+
 # Hangar 0.10.0
 
 ## Session history you can curate
