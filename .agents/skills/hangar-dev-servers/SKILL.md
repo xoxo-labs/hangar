@@ -9,6 +9,7 @@ Use `hangar`, not background shell processes, for dev servers.
 
 ```sh
 hangar status --running --json
+hangar add <project-path> --from-package-json --json
 hangar start <project/process> --wait-port --json
 hangar logs <project/process> --tail 100 --json
 hangar ports <project/process> --json

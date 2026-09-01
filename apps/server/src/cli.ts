@@ -16,6 +16,7 @@ const HELP = `hangar — supervise local or remote development servers
 Usage:
   hangar [global options] ls [project] [--json]
   hangar [global options] add <name> <path> [--cmd "name=command[@cwd]"]
+  hangar [global options] add [<name>] <path> --from-package-json [--force]
   hangar [global options] add --json '<project-json>' [--force]
   hangar [global options] rm <name>
   hangar [global options] path <name>
@@ -251,14 +252,39 @@ async function cmdLs(argv: string[]): Promise<void> {
     human(`${project.name.padEnd(width)}  ${project.path}  [${project.processes.map((proc) => proc.name).join(", ")}]`)
 }
 
-function readProject(argv: string[]): { project: Project; force: boolean } {
+type DetectedProjectInfo = {
+  path: string
+  exists: boolean
+  package: null | {
+    name: string | null
+    scripts: Array<{ name: string; cmd: string; cwd?: string }>
+  }
+}
+
+function inferredProjectName(info: DetectedProjectInfo): string {
+  const folder =
+    info.path
+      .replace(/[\\/]+$/, "")
+      .split(/[\\/]/)
+      .pop() ?? ""
+  return (info.package?.name?.split("/").pop() || folder).trim().replace(/[\s/]+/g, "-")
+}
+
+async function readProject(argv: string[]): Promise<{ project: Project; force: boolean }> {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
-    options: { json: { type: "string" }, cmd: { type: "string", multiple: true }, force: { type: "boolean" } },
+    options: {
+      json: { type: "string" },
+      cmd: { type: "string", multiple: true },
+      force: { type: "boolean" },
+      "from-package-json": { type: "boolean" },
+    },
   })
   let project: Project
   if (values.json !== undefined) {
+    if (values["from-package-json"])
+      throw new CliFailure("--json and --from-package-json cannot be used together", "invalid_usage", 2)
     try {
       project = JSON.parse(values.json) as Project
     } catch (error) {
@@ -267,6 +293,31 @@ function readProject(argv: string[]): { project: Project; force: boolean } {
         "invalid_usage",
         2,
       )
+    }
+  } else if (values["from-package-json"]) {
+    if (positionals.length < 1 || positionals.length > 2)
+      throw new CliFailure("usage: hangar add [<name>] <path> --from-package-json", "invalid_usage", 2)
+    const inputPath = positionals.at(-1)!
+    // Relative paths belong to the invoking shell, not the autostarted server's cwd.
+    // A remote path, however, is meaningful only on that target and is passed through.
+    const detectionPath = isLocalTarget() && !inputPath.startsWith("~") ? resolve(inputPath) : inputPath
+    const info = (await (await api()).detect(detectionPath)) as DetectedProjectInfo
+    if (!info.exists) throw new CliFailure(`project directory does not exist: ${info.path}`, "project_path_not_found")
+    if (!info.package) throw new CliFailure(`no package.json found in ${info.path}`, "package_json_not_found")
+    if (info.package.scripts.length === 0)
+      throw new CliFailure(`no package.json scripts found in ${info.path}`, "package_scripts_not_found")
+    const name = positionals.length === 2 ? positionals[0]! : inferredProjectName(info)
+    project = {
+      name,
+      path: info.path,
+      processes: [
+        ...info.package.scripts.map(({ name: scriptName, cmd, cwd }) => ({
+          name: scriptName,
+          cmd,
+          ...(cwd ? { cwd } : {}),
+        })),
+        ...(values.cmd ?? []).map(parseCmdFlag),
+      ],
     }
   } else {
     const [name, path] = positionals
@@ -284,7 +335,7 @@ function readProject(argv: string[]): { project: Project; force: boolean } {
 }
 
 async function cmdAdd(argv: string[]): Promise<void> {
-  const { project, force } = readProject(argv)
+  const { project, force } = await readProject(argv)
   if (isLocalTarget()) {
     const registry = loadRegistry()
     const index = registry.projects.findIndex((item) => item.name === project.name)
@@ -621,7 +672,8 @@ async function cmdTarget(argv: string[]): Promise<void> {
 async function cmdDetect(argv: string[]): Promise<void> {
   const path = argv[0]
   if (!path) throw new CliFailure("usage: hangar detect <path>", "invalid_usage", 2)
-  const result = await (await api()).detect(path)
+  const detectionPath = isLocalTarget() && !path.startsWith("~") ? resolve(path) : path
+  const result = await (await api()).detect(detectionPath)
   success(result)
   if (!globalOptions.json) human(JSON.stringify(result, null, 2))
 }

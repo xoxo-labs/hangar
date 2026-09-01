@@ -45,6 +45,22 @@ hangar stop lust/web
 
 Use `--json` for scripts and coding agents. `logs --follow --json` produces JSONL.
 
+## Registering a project
+
+Import every root and workspace script detected from `package.json` in one command:
+
+```sh
+hangar add ~/code/my-app --from-package-json --json
+```
+
+The project name is inferred from the package name (or folder), the package manager is detected from `packageManager` and lockfiles, and workspace processes get `package/script` names with the correct working directory. Override the inferred name by supplying it first:
+
+```sh
+hangar add my-app ~/code/my-app --from-package-json --json
+```
+
+Use `--force` to replace an existing project with the same name. You can also append custom processes with `--cmd "name=command[@cwd]"`.
+
 ## Running the server
 
 Commands autostart a missing local server, so `hangar serve` is only needed when you want to own the process — or bind it somewhere other than loopback:

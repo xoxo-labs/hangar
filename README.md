@@ -114,6 +114,7 @@ its processes.
 
 ```sh
 hangar ls --json
+hangar add <path> --from-package-json --json
 hangar add <name> <path> --cmd "web=pnpm dev@apps/web"
 hangar --json status [project/process]
 hangar --json start project/process [--wait-port[=3000]]
