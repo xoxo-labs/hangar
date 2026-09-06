@@ -43,9 +43,26 @@ jobs:
               echo "::error::Signing certificate is set but notarization credentials are incomplete — APPLE_ID=$(state "$NOTARIZE_APPLE_ID") APPLE_APP_SPECIFIC_PASSWORD=$(state "$NOTARIZE_PASSWORD") APPLE_TEAM_ID=$(state "$NOTARIZE_TEAM_ID")"
               exit 1
             fi
+            # The certificate goes into a keychain of our own, handed over via
+            # CSC_KEYCHAIN, rather than through CSC_LINK. Given CSC_LINK,
+            # electron-builder (26.15.3) builds a temporary keychain and then
+            # runs `set-key-partition-list -k` with the *certificate's*
+            # password where the keychain's is expected; the macOS 26 runner
+            # image from 2026-08-31 rejects that ("The user name or passphrase
+            # you entered is not correct") where earlier images let it slide.
+            KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+            KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+            CERT_PATH="$RUNNER_TEMP/certificate.p12"
+            echo -n "$MAC_CERT" | base64 --decode > "$CERT_PATH"
+            security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN"
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+            security import "$CERT_PATH" -P "$MAC_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+            security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+            rm -f "$CERT_PATH"
             {
-              echo "CSC_LINK=$MAC_CERT"
-              echo "CSC_KEY_PASSWORD=$MAC_CERT_PASSWORD"
+              echo "CSC_KEYCHAIN=$KEYCHAIN"
               echo "APPLE_ID=$NOTARIZE_APPLE_ID"
               echo "APPLE_APP_SPECIFIC_PASSWORD=$NOTARIZE_PASSWORD"
               echo "APPLE_TEAM_ID=$NOTARIZE_TEAM_ID"
