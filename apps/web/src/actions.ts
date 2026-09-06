@@ -10,6 +10,7 @@ import {
 } from "@hangar/contracts"
 import { requestPairingToken, sendTo } from "./connections/manager"
 import { useStore } from "./store"
+import { preferredTerminalSize } from "./terminals"
 import { send } from "./ws"
 
 /*
@@ -20,7 +21,9 @@ import { send } from "./ws"
  */
 
 export function start(project: string, process?: string): void {
-  send({ type: "start", project, ...(process === undefined ? {} : { process }) })
+  // The pane this session will land in is the size every other pane already is,
+  // so the pty can be born at it instead of at 80x24.
+  send({ type: "start", project, ...(process === undefined ? {} : { process }), ...preferredTerminalSize() })
 }
 
 /** Adds and starts a uniquely named interactive shell at the project root. */
@@ -44,7 +47,7 @@ export function stop(project: string, process?: string): void {
 
 /** Stops running targets and starts them again on exit; idle ones just start. */
 export function restart(project: string, process?: string): void {
-  send({ type: "restart", project, ...(process === undefined ? {} : { process }) })
+  send({ type: "restart", project, ...(process === undefined ? {} : { process }), ...preferredTerminalSize() })
 }
 
 /** Closing a tab stops a live session and drops an already-dead one. */

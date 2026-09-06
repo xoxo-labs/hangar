@@ -95,6 +95,11 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body))
 }
 
+/** The pane size a start/restart request carries, when it carries one. */
+function paneSize(msg: { cols?: number; rows?: number }): { cols: number; rows: number } | undefined {
+  return typeof msg.cols === "number" && typeof msg.rows === "number" ? { cols: msg.cols, rows: msg.rows } : undefined
+}
+
 function networkInfo(): { lan: string[]; tailscale: string[] } {
   const lan: string[] = []
   const tailscale: string[] = []
@@ -671,7 +676,7 @@ export function serve(port: number, hostOverride?: string): void {
       }
       if (req.method === "GET" && url.pathname === "/api/logs") {
         const id = url.searchParams.get("id") ?? ""
-        const data = manager.snapshot(id)
+        const data = await manager.snapshot(id)
         if (data === undefined) {
           sendJson(res, 404, { error: `no session named ${JSON.stringify(id)}`, code: "session_not_found" })
           return
@@ -825,9 +830,12 @@ export function serve(port: number, hostOverride?: string): void {
     // A UI opening is the moment its answer about Tailscale matters most, and
     // the cached one may be a poll old.
     void syncShares()
-    for (const snapshot of manager.snapshots()) {
-      socket.send(JSON.stringify({ type: "snapshot", ...snapshot } satisfies ServerMsg))
-    }
+    void manager.snapshots().then((snapshots) => {
+      if (socket.readyState !== socket.OPEN) return
+      for (const snapshot of snapshots) {
+        socket.send(JSON.stringify({ type: "snapshot", ...snapshot } satisfies ServerMsg))
+      }
+    })
 
     socket.on("message", (raw) => {
       let msg: ClientMsg
@@ -854,7 +862,7 @@ export function serve(port: number, hostOverride?: string): void {
       case "start": {
         const project = findProject(loadRegistry(), msg.project)
         if (!project) throw new Error(`no project named ${JSON.stringify(msg.project)}`)
-        manager.start(project, msg.process)
+        manager.start(project, msg.process, paneSize(msg))
         return
       }
       case "stop":
@@ -863,7 +871,7 @@ export function serve(port: number, hostOverride?: string): void {
       case "restart": {
         const project = findProject(loadRegistry(), msg.project)
         if (!project) throw new Error(`no project named ${JSON.stringify(msg.project)}`)
-        manager.restart(project, msg.process)
+        manager.restart(project, msg.process, paneSize(msg))
         return
       }
       case "write":

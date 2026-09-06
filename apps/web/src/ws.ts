@@ -51,7 +51,7 @@ function handle(connId: string, msg: ServerMsg): void {
       store.updateMetrics(msg.id, msg.runId, msg.metrics)
       return
     case "snapshot":
-      writeSnapshot(msg.id, msg.data)
+      writeSnapshot(msg.id, msg.data, msg.cols, msg.rows)
       return
     case "output":
       writeOutput(msg.id, msg.data)

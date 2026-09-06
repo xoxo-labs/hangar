@@ -72,7 +72,11 @@ A mobile manager mirroring the web one, built on the shared supervisor:
   phone-sized, e.g. last 30 min).
 - Session output: keep a per-session ring buffer (~200 KB) of raw text; strip
   ANSI escape sequences for display (simple regex), render as monospace lines
-  with follow-to-bottom. `snapshot` replaces the buffer, `output` appends.
+  with follow-to-bottom. `snapshot` replaces the buffer, `output` appends. A
+  `snapshot` is the session's serialized screen (scrollback, viewport and the
+  alternate buffer when one is active) rather than the raw pty bytes, and it
+  names the `cols`/`rows` it was rendered for; a text-only client can ignore
+  those and keep stripping escapes.
 
 ### Screens (expo-router)
 

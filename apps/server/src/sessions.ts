@@ -26,9 +26,10 @@ import {
 } from "./diagnose.ts"
 import { appendHistory, ensureReplayDirectory, historyReplayPath } from "./history.ts"
 import { expandHome } from "./registry.ts"
+import { Screen } from "./screen.ts"
 
-/** Keep at most this much scrollback per session for late-joining clients. */
-const MAX_BUFFER_CHARS = 512 * 1024
+/** Size a pty is born at when no client has said how big its pane will be. */
+const DEFAULT_SIZE = { cols: 80, rows: 24 }
 const KILL_GRACE_MS = 1500
 const METRICS_INTERVAL_MS = 2_000
 /** Historical charts need much less resolution than the live inspector. */
@@ -77,49 +78,6 @@ function ensureSpawnHelperExecutable(): void {
 }
 
 type SessionLog = Pick<Session, "logPath" | "logStream" | "logBytes" | "logMaxBytes" | "logFormat">
-
-/**
- * Trimming only past this much overshoot keeps appends amortized O(1): a
- * `(buffer + data).slice(-MAX)` on every pty chunk reallocates the full 512 KB
- * scrollback per chunk, which for a 10 MB build log is gigabytes of churn.
- */
-const SCROLLBACK_TRIM_SLACK = 64 * 1024
-
-/** Rolling scrollback capped at MAX_BUFFER_CHARS, stored as chunks so appends don't copy the whole buffer. */
-export class Scrollback {
-  private chunks: string[] = []
-  private chars = 0
-  private joined: string | null = ""
-
-  append(data: string): void {
-    if (data.length === 0) return
-    this.chunks.push(data)
-    this.chars += data.length
-    this.joined = null
-    if (this.chars <= MAX_BUFFER_CHARS + SCROLLBACK_TRIM_SLACK) return
-    while (this.chunks.length > 1 && this.chars - this.chunks[0]!.length >= MAX_BUFFER_CHARS) {
-      this.chars -= this.chunks.shift()!.length
-    }
-    const excess = this.chars - MAX_BUFFER_CHARS
-    if (excess > 0) {
-      this.chunks[0] = this.chunks[0]!.slice(excess)
-      this.chars = MAX_BUFFER_CHARS
-    }
-  }
-
-  get length(): number {
-    return this.chars
-  }
-
-  tail(count: number): string {
-    return this.toString().slice(-count)
-  }
-
-  toString(): string {
-    this.joined ??= this.chunks.length === 1 ? this.chunks[0]! : this.chunks.join("")
-    return this.joined
-  }
-}
 
 function safeSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-")
@@ -209,7 +167,7 @@ type Session = {
   replayStream: WriteStream | null
   replayBytes: number
   replayTruncated: boolean
-  buffer: Scrollback
+  screen: Screen
   killTimer: NodeJS.Timeout | null
   exitDiagnosis: ExitDiagnosis | undefined
   logPath: string | undefined
@@ -329,6 +287,8 @@ export class SessionManager {
   private lastPorts = new Map<SessionId, number[]>()
   /** Sessions that should respawn (with this project config) when their exit lands. */
   private pendingRestarts = new Map<SessionId, Project>()
+  /** Last pane size each session was resized to, so a later start is born at it. */
+  private lastSizes = new Map<SessionId, { cols: number; rows: number }>()
   private sampling = false
   private sampleNumber = 0
 
@@ -364,19 +324,59 @@ export class SessionManager {
     }))
   }
 
-  snapshots(): Array<{ id: SessionId; data: string }> {
-    return [...this.sessions.values()]
-      .filter((s) => s.buffer.length > 0)
-      .map((s) => ({ id: s.id, data: s.buffer.toString() }))
+  /**
+   * The serialized screen of every session that has produced output.
+   *
+   * Two phases on purpose: every screen is flushed first, then all of them are
+   * serialized in one synchronous loop. Nothing can broadcast an `output`
+   * between that loop and the `socket.send` calls in the same tick, so a
+   * snapshot and the outputs that follow it compose exactly. Serializing across
+   * awaits would let output sent just before a snapshot vanish under the reset
+   * the client does when it applies that snapshot.
+   *
+   * The flush repeats until no screen took a write while it was pending: a
+   * chunk that lands on session A while B's flush is still outstanding has
+   * already been broadcast, so a snapshot of A that missed it would erase it.
+   * The check and the serialize run in the same synchronous stretch, which is
+   * what makes it exact; the cap only guards against a firehose.
+   */
+  async snapshots(): Promise<Array<{ id: SessionId; data: string; cols: number; rows: number }>> {
+    const sessions = [...this.sessions.values()]
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const marks = sessions.map((s) => s.screen.writes)
+      await Promise.all(sessions.map((s) => s.screen.flush()))
+      if (sessions.every((s, index) => s.screen.writes === marks[index])) break
+    }
+    return sessions
+      .map((s) => ({ id: s.id, data: s.screen.serialize(), ...s.screen.size }))
+      .filter((snapshot) => snapshot.data.length > 0)
   }
 
-  /** Current in-memory scrollback for one session. Used by bounded CLI log reads. */
-  snapshot(id: SessionId): string | undefined {
-    return this.sessions.get(id)?.buffer.toString()
+  /** Current screen of one session, serialized. Used by bounded CLI log reads. */
+  async snapshot(id: SessionId): Promise<string | undefined> {
+    const session = this.sessions.get(id)
+    if (!session) return undefined
+    await session.screen.flush()
+    return session.screen.serialize()
   }
 
-  /** Start all (or one) of a project's processes. Running sessions are left alone. */
-  start(project: Project, only?: string): void {
+  /** Validated pane size, or undefined when a client sent something unusable. */
+  private static validSize(
+    size: { cols: number; rows: number } | undefined,
+  ): { cols: number; rows: number } | undefined {
+    if (!size) return undefined
+    const { cols, rows } = size
+    if (!Number.isInteger(cols) || !Number.isInteger(rows)) return undefined
+    if (cols < 2 || cols > 1000 || rows < 2 || rows > 500) return undefined
+    return { cols, rows }
+  }
+
+  /**
+   * Start all (or one) of a project's processes. Running sessions are left alone.
+   * `size` is the pane that will show the session: the pty is born at it, so a
+   * full-screen program paints once at its final size instead of at 80x24.
+   */
+  start(project: Project, only?: string, size?: { cols: number; rows: number }): void {
     ensureSpawnHelperExecutable()
     const root = expandHome(project.path)
     if (!existsSync(root)) throw new Error(`project path does not exist: ${root}`)
@@ -397,6 +397,16 @@ export class SessionManager {
       }
       Object.assign(env, project.env)
 
+      const paneSize = SessionManager.validSize(size) ?? existing?.screen.size ?? this.lastSizes.get(id) ?? DEFAULT_SIZE
+      // Reuse the old screen so a restart keeps prior scrollback context. The
+      // replaced Session is dropped from the map below, so taking its Screen
+      // instance hands over ownership rather than sharing it.
+      const screen = existing?.screen ?? new Screen(paneSize)
+      if (existing) {
+        screen.resize(paneSize.cols, paneSize.rows)
+        screen.write(RESTART_DIVIDER)
+      }
+
       const shell = process.env.SHELL ?? defaultShell()
       // Interactive terminals stay in a login shell — a pty already makes those
       // interactive, so they read .zshrc anyway. Commands use -c and exit when
@@ -405,8 +415,8 @@ export class SessionManager {
       const displayedCommand = proc.shell ? `${shell} -l` : proc.cmd
       const pty = ptySpawn(shell, args, {
         name: "xterm-256color",
-        cols: 80,
-        rows: 24,
+        cols: paneSize.cols,
+        rows: paneSize.rows,
         cwd,
         env,
       })
@@ -416,11 +426,6 @@ export class SessionManager {
       const startedAt = Date.now()
       const runId = randomUUID()
       const replayStream = createHistoryReplay(runId, settings.sessionHistory.enabled)
-      // Reuse the old buffer so a restart keeps prior scrollback context. The
-      // replaced Session is dropped from the map below, so taking its Scrollback
-      // instance hands over ownership rather than sharing it.
-      const buffer = existing?.buffer ?? new Scrollback()
-      if (existing) buffer.append(RESTART_DIVIDER)
       const session: Session = {
         id,
         runId,
@@ -454,18 +459,18 @@ export class SessionManager {
         replayStream,
         replayBytes: 0,
         replayTruncated: false,
-        buffer,
+        screen,
         killTimer: null,
         exitDiagnosis: undefined,
         ...logging,
       }
       this.sessions.set(id, session)
-      // Live clients only get buffers as connect-time snapshots, so the divider
+      // Live clients only get screens as connect-time snapshots, so the divider
       // has to travel as output too or they'd never see the seam.
       if (existing) this.broadcast({ type: "output", id, data: RESTART_DIVIDER })
 
       pty.onData((data) => {
-        session.buffer.append(data)
+        session.screen.write(data)
         session.metrics.outputBytes += Buffer.byteLength(data)
         writeSessionLog(session, data)
         writeHistoryReplay(session, data)
@@ -478,10 +483,10 @@ export class SessionManager {
         session.exitCode = exitCode
         session.endedAt = Date.now()
         session.pty = null
-        // This is part of the server buffer, not renderer-only chrome, so it is
+        // This is part of the server-side screen, not renderer-only chrome, so it is
         // visible immediately and still present in snapshots after reconnect.
         const notice = exitNotice(exitCode)
-        session.buffer.append(notice)
+        session.screen.write(notice)
         this.broadcast({ type: "output", id, data: notice })
         session.logStream?.end()
         session.logStream = null
@@ -508,7 +513,7 @@ export class SessionManager {
     if (diagnosis) {
       session.exitDiagnosis = diagnosis
       const notice = diagnosisNotice(diagnosis.message)
-      session.buffer.append(notice)
+      session.screen.write(notice)
       this.broadcast({ type: "output", id, data: notice })
     }
     if (session.historyEnabled) {
@@ -560,7 +565,8 @@ export class SessionManager {
    * none.
    */
   private async diagnoseExit(session: Session): Promise<ExitDiagnosis | undefined> {
-    const tail = session.buffer.tail(DIAGNOSIS_TAIL_CHARS)
+    await session.screen.flush()
+    const tail = session.screen.tailText(DIAGNOSIS_TAIL_CHARS)
     const named = conflictPorts(tail)
     // Python and Django say "address already in use" without ever naming the
     // port; the ports Hangar watched this session open answer for it.
@@ -612,7 +618,7 @@ export class SessionManager {
    * Restart all (or one) of a project's processes: running sessions are stopped
    * and respawn when their exit lands; everything else just starts.
    */
-  restart(project: Project, only?: string): void {
+  restart(project: Project, only?: string, size?: { cols: number; rows: number }): void {
     const targets = only ? project.processes.filter((p) => p.name === only) : project.processes
     if (targets.length === 0) throw new Error(`no process named ${JSON.stringify(only)}`)
     for (const proc of targets) {
@@ -622,7 +628,7 @@ export class SessionManager {
         this.pendingRestarts.set(id, project)
         this.stopSession(session)
       } else {
-        this.start(project, proc.name)
+        this.start(project, proc.name, size)
       }
     }
   }
@@ -641,10 +647,13 @@ export class SessionManager {
   }
 
   resize(id: SessionId, cols: number, rows: number): void {
-    if (!Number.isInteger(cols) || !Number.isInteger(rows)) return
-    if (cols < 2 || cols > 1000 || rows < 2 || rows > 500) return
+    const size = SessionManager.validSize({ cols, rows })
+    const session = this.sessions.get(id)
+    if (!size || !session) return
+    this.lastSizes.set(id, size)
+    session.screen.resize(size.cols, size.rows)
     try {
-      this.sessions.get(id)?.pty?.resize(cols, rows)
+      session.pty?.resize(size.cols, size.rows)
     } catch {}
   }
 
@@ -653,7 +662,9 @@ export class SessionManager {
     if (!session) return
     if (session.status === "running") throw new Error(`cannot dismiss a running session: ${id}`)
     this.sessions.delete(id)
+    session.screen.dispose()
     this.lastPorts.delete(id)
+    this.lastSizes.delete(id)
     this.notifyState()
   }
 

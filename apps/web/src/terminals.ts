@@ -55,6 +55,18 @@ type Entry = {
 const entries = new Map<SessionId, Entry>()
 
 /**
+ * The size the last fitted pane settled on. A session started from the sidebar
+ * has no pane yet, so this is the best guess at the size its pty should be born
+ * at — every pane in the app is the same size.
+ */
+let lastFittedSize: { cols: number; rows: number } | null = null
+
+/** The size a newly started session's pane will most likely have, if anything is known. */
+export function preferredTerminalSize(): { cols: number; rows: number } | null {
+  return lastFittedSize
+}
+
+/**
  * Terminals are created lazily — on the first snapshot/output for a session, or
  * when its tab is opened — and then kept alive until the session disappears.
  */
@@ -107,17 +119,31 @@ export function writeOutput(id: SessionId, data: string): void {
 }
 
 /**
- * Snapshots are the full scrollback and arrive again on every reconnect, so a
- * terminal that already has content is reset (`ESC c`) before being refilled.
+ * Snapshots are the session's whole screen and arrive again on every reconnect,
+ * so a terminal that already has content is reset (`ESC c`) before being
+ * refilled. The data was serialized for a `cols`x`rows` screen, so the terminal
+ * is sized to match before it is written — otherwise absolute cursor moves in a
+ * full-screen program's output land on the wrong rows and bake into scrollback.
  */
-export function writeSnapshot(id: SessionId, data: string): void {
+export function writeSnapshot(id: SessionId, data: string, cols: number, rows: number): void {
   const fresh = !entries.has(id)
   const entry = ensure(id)
+  // Safe before open(): xterm resizes its buffers eagerly and only measures
+  // character size when a renderer exists.
+  entry.term.resize(cols, rows)
+  entry.cols = cols
+  entry.rows = rows
   if (!fresh) {
     clearMetricPositions(entry)
     entry.term.write("\x1bc")
   }
-  entry.term.write(data)
+  // xterm parses writes asynchronously and resizes synchronously, so the fit
+  // waits for the parse: done before it, the data would land at the pane's
+  // size, not the one it was serialized for. A mounted pane of a different
+  // size then reflows and tells the server.
+  entry.term.write(data, () => {
+    if (entries.get(id) === entry && entry.el) fitTerminal(id)
+  })
 }
 
 /** Associates a metrics sample with xterm's current line after pending output is parsed. */
@@ -259,6 +285,7 @@ export function fitTerminal(id: SessionId): void {
   }
 
   const { cols, rows } = entry.term
+  lastFittedSize = { cols, rows }
   if (cols === entry.cols && rows === entry.rows) return
   entry.cols = cols
   entry.rows = rows

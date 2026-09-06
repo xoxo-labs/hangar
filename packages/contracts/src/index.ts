@@ -359,12 +359,20 @@ export type WsTicketResponse = { ticket: string; expiresAt: number }
 
 /** Messages the UI sends to the server. */
 export type ClientMsg =
-  | { type: "start"; project: string; process?: string }
+  /**
+   * `cols`/`rows` are the size of the pane that will show the session, so the
+   * pty is born at its final size instead of at 80x24 and repainting on first
+   * display. Omitted when no pane has been measured yet.
+   */
+  | { type: "start"; project: string; process?: string; cols?: number; rows?: number }
   | { type: "stop"; project: string; process?: string }
   | { type: "write"; id: SessionId; data: string }
   | { type: "resize"; id: SessionId; cols: number; rows: number }
-  /** Stop then start again all (or one) of a project's processes. Not-running targets just start. */
-  | { type: "restart"; project: string; process?: string }
+  /**
+   * Stop then start again all (or one) of a project's processes. Not-running targets just start.
+   * `cols`/`rows` carry the showing pane's size, exactly as in `start`.
+   */
+  | { type: "restart"; project: string; process?: string; cols?: number; rows?: number }
   /** Remove an exited session (clears its buffer and drops it from state). */
   | { type: "dismiss"; id: SessionId }
   /** Create a project, or replace the one with the same name. */
@@ -413,8 +421,13 @@ export type ServerMsg =
     }
   /** Lightweight resource updates, kept out of full state broadcasts. */
   | { type: "metrics"; id: SessionId; runId: string; metrics: SessionMetrics }
-  /** Full scrollback of one session. Sent to a client right after connect, before live output. */
-  | { type: "snapshot"; id: SessionId; data: string }
+  /**
+   * One session's serialized screen — scrollback, viewport and the alternate
+   * buffer when one is active. Sent to a client right after connect, before
+   * live output. `cols`/`rows` are the size it was rendered for: a client
+   * resizes its terminal to them before writing `data`, then fits.
+   */
+  | { type: "snapshot"; id: SessionId; data: string; cols: number; rows: number }
   | { type: "output"; id: SessionId; data: string }
   | { type: "exit"; id: SessionId; exitCode: number | null }
   | { type: "historyReplay"; runId: string; events: HistoryOutputEvent[]; truncated: boolean }
