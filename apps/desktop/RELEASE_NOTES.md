@@ -1,3 +1,20 @@
+# Hangar 0.12.0
+
+## Terminals that come back the way you left them
+
+- Full-screen programs finally behave. `docker compose up` kept stamping its navigation menu into the scrollback, and turbo's TUI came back scrambled after a reconnect. Hangar now keeps a real terminal screen for every session on the server, and hands a reconnecting window that screen — scrollback, viewport, alternate buffer and all — instead of replaying raw bytes into a terminal of a different size.
+- A process is born at the size of the pane that will show it, not at 80×24 and resized on first display. Fewer resizes means fewer repaints, and no stale menu left behind by the first one.
+- After a restart the new run still sits below the old output with the divider between them, at whatever size the pane is now.
+
+## Wait for a line from the CLI
+
+- `hangar logs project/process --follow --until 'ready|Error' --tail 20 --timeout 30s` returns the moment a line matches, when the process exits, or when the timeout runs out — three outcomes an agent can tell apart by exit code. `--tail` now bounds what a follow prints first, and the global `--timeout` bounds the whole wait.
+- Because the logs are read off the same screen the window shows, `hangar logs` on a full-screen program gives clean text rather than its repaints.
+
+## A new mark
+
+- Hangar has a new icon: the hangar as a lit doorway with the prompt inside. It reaches the Dock, the iOS and Android home screens, the browser tab and the web app manifest in one go.
+
 # Hangar 0.11.0
 
 ## Ports you can see before you press play
