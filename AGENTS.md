@@ -4,6 +4,7 @@
 - Inspect first: `hangar status --running --json` and `hangar ls --json`.
 - Start with `hangar start project/process --wait-port --json`.
 - Read bounded output with `hangar logs project/process --tail 100 --json`.
+- Wait for a line with `hangar logs project/process --follow --until 'ready|Error' --tail 20 --timeout 30s --json`; it returns on match, on process exit, or on timeout.
 - A failed start may carry `exitDiagnosis` (e.g. a port held by another process); read it before reaching for the logs.
 - Use `hangar ports project/process --json` instead of guessing ports.
 - Select remote machines explicitly with `-t target` or `HANGAR_TARGET`.

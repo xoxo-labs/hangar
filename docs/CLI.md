@@ -53,7 +53,21 @@ hangar restart lust/web --wait-port
 hangar stop lust/web
 ```
 
-Use `--json` for scripts and coding agents. `logs --follow --json` produces JSONL.
+Use `--json` for scripts and coding agents. `logs --follow` (`-f`) streams output as it arrives, and with `--json` each chunk is one JSONL line, `{"id":…,"data":…}`.
+
+A follow is bounded, because the tool call that runs it is: `--until <regex>` stops at the first complete line matching a JavaScript regular expression, `--tail <n>` bounds the scrollback printed before the live stream (default 200), and the global `--timeout` bounds the whole wait (default 10s):
+
+```sh
+hangar logs lust/web --follow --until 'ready in|Error' --tail 20 --timeout 30s --json
+```
+
+Matching ignores colour codes, and it reads the tail-bounded scrollback too, so a line that scrolled by between `start` and `logs` still ends the wait. Three ways out, all distinguishable:
+
+- a match — exit 0, and in `--json` a final line `{"id":…,"matched":"<the line>","reason":"until"}`
+- the process exits first — exit 1, error code `exited`, with `exitCode` (and `exitDiagnosis`, when there is one) in `data`
+- the timeout expires — exit 4, error code `wait_timeout`
+
+Without `--until`, a follow ends at the process's exit with exit 0, as before. `--until` requires `--follow`, and an uncompilable pattern is a usage error (exit 2, `invalid_usage`).
 
 ## Registering a project
 

@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process"
+import { realpathSync } from "node:fs"
 import { hostname, homedir } from "node:os"
 import { resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import { parseArgs, stripVTControlCharacters } from "node:util"
 import type { CliResult, Project, ProjectProcess, ServerMsg, SessionInfo } from "@hangar/contracts"
 import { WebSocket } from "ws"
@@ -24,7 +26,7 @@ Usage:
   hangar [global options] browse [path] [--json]
   hangar [global options] status [project[/process]] [--running] [--json]
   hangar [global options] start|stop|restart <project[/process]> [--wait-port[=<n>]] [--json]
-  hangar [global options] logs <project/process> [--tail <n>] [--ansi] [--json]
+  hangar [global options] logs <project/process> [--tail <n>] [--ansi] [-f|--follow] [--until <regex>] [--json]
   hangar [global options] ports [project[/process]] [--active] [--json]
   hangar [global options] target ls|add|rm|pair-code
   hangar run <project[/process]>       Legacy foreground runner
@@ -46,7 +48,7 @@ type GlobalOptions = {
   autostart: boolean
 }
 
-class CliFailure extends Error {
+export class CliFailure extends Error {
   code: string
   exitCode: number
   data?: unknown
@@ -498,20 +500,95 @@ function tailLines(data: string, count: number): string[] {
   return data.replace(/\r\n/g, "\n").split("\n").slice(-count)
 }
 
-async function followLogs(client: HangarApi, id: string, ansi: boolean): Promise<void> {
+/**
+ * The last `count` lines of `data`, sliced out verbatim: line endings and a
+ * trailing partial line survive, so live output that continues that partial
+ * line still lines up behind it.
+ */
+export function tailText(data: string, count: number): string {
+  if (count === 0) return ""
+  // A trailing newline closes the last line rather than opening a new one.
+  let cut = data.endsWith("\n") ? data.length - 1 : data.length
+  for (let seen = 0; seen < count; seen++) {
+    const newline = data.lastIndexOf("\n", cut - 1)
+    if (newline === -1) return data
+    cut = newline
+  }
+  return data.slice(cut + 1)
+}
+
+/**
+ * Complete lines out of a stream that arrives in arbitrary chunks. `rest` is the
+ * trailing partial line and belongs at the front of the next call.
+ */
+export function splitLines(pending: string, chunk: string): { lines: string[]; rest: string } {
+  let buffer = pending + chunk
+  // A trailing \r may be the first half of a \r\n straddling two chunks, so it
+  // waits for the next one instead of ending a line twice.
+  const carry = buffer.endsWith("\r") ? "\r" : ""
+  if (carry) buffer = buffer.slice(0, -1)
+  const parts = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n")
+  const rest = parts.pop() ?? ""
+  return { lines: parts, rest: rest + carry }
+}
+
+/** Feeds a chunk through the line assembler and reports the first line that matches. */
+export function untilMatch(regex: RegExp, pending: string, chunk: string): { matched: string | null; rest: string } {
+  const { lines, rest } = splitLines(pending, chunk)
+  for (const line of lines) if (regex.test(line)) return { matched: line, rest }
+  return { matched: null, rest }
+}
+
+/** Compiles --until, so an unusable pattern fails before any socket is opened. */
+export function compileUntil(pattern: string): RegExp {
+  try {
+    return new RegExp(pattern)
+  } catch (error) {
+    throw new CliFailure(
+      `invalid --until pattern: ${error instanceof Error ? error.message : String(error)}`,
+      "invalid_usage",
+      2,
+    )
+  }
+}
+
+type FollowOptions = { ansi: boolean; tail: number; until: RegExp | null }
+type FollowOutcome =
+  | { reason: "until"; matched: string }
+  | { reason: "exit"; exitCode: number | null }
+  | { reason: "closed" }
+
+async function followLogs(client: HangarApi, id: string, options: FollowOptions): Promise<FollowOutcome> {
+  // The deadline covers the ticket round-trip too: what an agent's tool call
+  // can afford is wall clock, not time measured from when the socket opened.
+  const deadline = Date.now() + globalOptions.timeoutMs
   const ticket = client.target.token ? await client.ticket() : null
   const base = targetBase(client.target).replace(/^http/, "ws")
   const url = `${base}/ws${ticket ? `?ticket=${encodeURIComponent(ticket.ticket)}` : ""}`
-  await new Promise<void>((resolvePromise, reject) => {
+  return await new Promise<FollowOutcome>((resolvePromise, reject) => {
     const socket = new WebSocket(url)
     let settled = false
-    const finish = (error?: Error) => {
+    let pending = ""
+    const finish = (outcome?: FollowOutcome, error?: Error) => {
       if (settled) return
       settled = true
+      clearTimeout(timer)
       socket.close()
       if (error) reject(error)
-      else resolvePromise()
+      else resolvePromise(outcome ?? { reason: "closed" })
     }
+    const timer = setTimeout(
+      () =>
+        finish(
+          undefined,
+          new CliFailure(
+            options.until ? `timed out waiting for ${options.until} in ${id}` : `timed out following ${id}`,
+            "wait_timeout",
+            4,
+          ),
+        ),
+      Math.max(0, deadline - Date.now()),
+    )
     socket.on("message", (raw) => {
       let message: ServerMsg
       try {
@@ -520,13 +597,25 @@ async function followLogs(client: HangarApi, id: string, ansi: boolean): Promise
         return
       }
       if ((message.type === "snapshot" || message.type === "output") && message.id === id) {
-        const data = ansi ? message.data : stripVTControlCharacters(message.data)
-        if (globalOptions.json) process.stdout.write(JSON.stringify({ id, data }) + "\n")
-        else process.stdout.write(data)
-      } else if (message.type === "exit" && message.id === id) finish()
-      else if (message.type === "error") finish(new CliFailure(message.message, "stream_error"))
+        // Only the snapshot is scrollback; live chunks are already bounded.
+        const text = message.type === "snapshot" ? tailText(message.data, options.tail) : message.data
+        const stripped = stripVTControlCharacters(text)
+        const data = options.ansi ? text : stripped
+        // `--tail 0` empties the snapshot; that is nothing to report, not a record.
+        if (data.length > 0) {
+          if (globalOptions.json) process.stdout.write(JSON.stringify({ id, data }) + "\n")
+          else process.stdout.write(data)
+        }
+        if (options.until) {
+          // Matching always reads the stripped text, so a coloured line still matches.
+          const { matched, rest } = untilMatch(options.until, pending, stripped)
+          pending = rest
+          if (matched !== null) finish({ reason: "until", matched })
+        }
+      } else if (message.type === "exit" && message.id === id) finish({ reason: "exit", exitCode: message.exitCode })
+      else if (message.type === "error") finish(undefined, new CliFailure(message.message, "stream_error"))
     })
-    socket.on("error", (error) => finish(error))
+    socket.on("error", (error) => finish(undefined, error))
     socket.on("close", () => finish())
     const shutdown = () => finish()
     process.once("SIGINT", shutdown)
@@ -534,23 +623,57 @@ async function followLogs(client: HangarApi, id: string, ansi: boolean): Promise
   })
 }
 
+/** The reason a followed session died, if the server has settled on one. */
+async function followedExitDiagnosis(client: HangarApi, id: string): Promise<SessionInfo["exitDiagnosis"]> {
+  const found = (await client.sessions().catch(() => ({ sessions: [] as SessionInfo[] }))).sessions.find(
+    (session) => session.id === id,
+  )
+  if (!found) return undefined
+  return (found.exitDiagnosis ? found : await settledExit(client, found)).exitDiagnosis
+}
+
 async function cmdLogs(argv: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
-    options: { tail: { type: "string" }, ansi: { type: "boolean" }, follow: { type: "boolean" } },
+    options: {
+      tail: { type: "string" },
+      ansi: { type: "boolean" },
+      follow: { type: "boolean", short: "f" },
+      until: { type: "string" },
+    },
   })
   const id = positionals[0]
   const selected = selector(id)
   if (!selected.process) throw new CliFailure("logs needs a project/process selector", "invalid_usage", 2)
-  const client = await api()
-  if (values.follow) {
-    await followLogs(client, id!, values.ansi ?? false)
-    return
-  }
   const count = Number(values.tail ?? 200)
   if (!Number.isInteger(count) || count < 0)
     throw new CliFailure("--tail must be a non-negative integer", "invalid_usage", 2)
+  if (values.until !== undefined && !values.follow)
+    throw new CliFailure("--until is only valid with --follow", "invalid_usage", 2)
+  const until = values.until === undefined ? null : compileUntil(values.until)
+  const client = await api()
+  if (values.follow) {
+    const outcome = await followLogs(client, id!, { ansi: values.ansi ?? false, tail: count, until })
+    if (outcome.reason === "until") {
+      // The matching line was already streamed; JSON gets a terminator naming it.
+      if (globalOptions.json)
+        process.stdout.write(JSON.stringify({ id, matched: outcome.matched, reason: "until" }) + "\n")
+      return
+    }
+    if (outcome.reason === "exit" && until) {
+      const diagnosis = await followedExitDiagnosis(client, id!)
+      throw new CliFailure(
+        `${id} exited with code ${outcome.exitCode ?? "unknown"} before matching ${until}${
+          diagnosis ? `: ${diagnosis.message}` : ""
+        }`,
+        "exited",
+        1,
+        { id, exitCode: outcome.exitCode, ...(diagnosis ? { exitDiagnosis: diagnosis } : {}) },
+      )
+    }
+    return
+  }
   const result = await client.logs(id!)
   const text = values.ansi ? result.data : stripVTControlCharacters(result.data)
   const lines = tailLines(text, count)
@@ -805,35 +928,49 @@ async function main(): Promise<void> {
   }
 }
 
-try {
-  await main()
-} catch (error) {
-  const parseArgsError =
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof error.code === "string" &&
-    error.code.startsWith("ERR_PARSE_ARGS")
-  const failure =
-    error instanceof CliFailure
-      ? error
-      : error instanceof ApiError
-        ? new CliFailure(
-            error.message,
-            error.code,
-            error.code === "target_unreachable" || error.code === "unauthorized" ? 3 : 1,
-          )
-        : parseArgsError
-          ? new CliFailure(error instanceof Error ? error.message : String(error), "invalid_usage", 2)
-          : new CliFailure(error instanceof Error ? error.message : String(error))
-  if (globalOptions?.json) {
-    const result: CliResult = {
-      ok: false,
-      target: globalOptions.targetId,
-      error: { code: failure.code, message: failure.message },
-      ...(failure.data === undefined ? {} : { data: failure.data }),
-    }
-    process.stdout.write(JSON.stringify(result) + "\n")
-  } else process.stderr.write(failure.message + "\n")
-  process.exitCode = failure.exitCode
+/** True when this file was run as a program, false when a test imports its helpers. */
+function invokedAsCli(): boolean {
+  const entry = process.argv[1]
+  if (!entry) return false
+  try {
+    // The npm `hangar` bin is a symlink, and only one side of the comparison
+    // arrives with symlinks already resolved.
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(entry)
+  } catch {
+    return false
+  }
 }
+
+if (invokedAsCli())
+  try {
+    await main()
+  } catch (error) {
+    const parseArgsError =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      typeof error.code === "string" &&
+      error.code.startsWith("ERR_PARSE_ARGS")
+    const failure =
+      error instanceof CliFailure
+        ? error
+        : error instanceof ApiError
+          ? new CliFailure(
+              error.message,
+              error.code,
+              error.code === "target_unreachable" || error.code === "unauthorized" ? 3 : 1,
+            )
+          : parseArgsError
+            ? new CliFailure(error instanceof Error ? error.message : String(error), "invalid_usage", 2)
+            : new CliFailure(error instanceof Error ? error.message : String(error))
+    if (globalOptions?.json) {
+      const result: CliResult = {
+        ok: false,
+        target: globalOptions.targetId,
+        error: { code: failure.code, message: failure.message },
+        ...(failure.data === undefined ? {} : { data: failure.data }),
+      }
+      process.stdout.write(JSON.stringify(result) + "\n")
+    } else process.stderr.write(failure.message + "\n")
+    process.exitCode = failure.exitCode
+  }
