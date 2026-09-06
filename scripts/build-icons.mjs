@@ -125,17 +125,20 @@ const SAFE = Math.round(1024 * 0.62)
 const foreground = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">${place(GLYPH, { x: (1024 - SAFE) / 2, y: (1024 - SAFE) / 2, size: SAFE })}</svg>`
 render(foreground, { size: 1024, out: "apps/mobile/assets/adaptive-icon.png" })
 
-// Android 13 themed icons recolor a single-channel mark; !important is how CSS
-// overrides the gradients the presentation attributes name.
-const monochrome = foreground.replace(
-  "<defs>",
-  "<style>path { fill: #ffffff !important; stroke: none !important; }</style><defs>",
-)
+// Android 13 themed icons recolor a single-channel mark, so the artwork has to
+// be reduced to a silhouette: the four wall pieces and the two prompt strokes,
+// all white. The door interior, the roof slats, the glow and the drop shadows
+// would only read as smudges once the launcher turns the alpha into a tint.
+const MONO_KEEP = /<(path|rect)\b[^>]*fill="(?:url\(#paint[6-9]_[^)]*\)|#5ED9D1)"[^>]*\/>/g
+const silhouette = (GLYPH.match(MONO_KEEP) ?? []).map((element) => element.replace(/fill="[^"]*"/, 'fill="#ffffff"'))
+if (silhouette.length !== 6)
+  throw new Error(`expected 6 silhouette pieces in hangar-glyph.svg, found ${silhouette.length}`)
+const monochrome = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><svg x="${(1024 - SAFE) / 2}" y="${(1024 - SAFE) / 2}" width="${SAFE}" height="${SAFE}" viewBox="0 0 ${SRC} ${SRC}">${silhouette.join("")}</svg></svg>`
 render(monochrome, { size: 1024, out: "apps/mobile/assets/adaptive-icon-monochrome.png" })
 
 const plate = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 800 800">
   <rect width="800" height="800" fill="url(#plate)"/>
-  <defs><linearGradient id="plate" x1="415" y1="795" x2="415" y2="0" gradientUnits="userSpaceOnUse"><stop/><stop offset="1" stop-color="#363636"/></linearGradient></defs>
+  <defs><linearGradient id="plate" x1="758" y1="800" x2="87" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#090C11"/><stop offset="0.175838" stop-color="#010406"/><stop offset="0.701509" stop-color="#14191F"/><stop offset="1" stop-color="#1E1E26"/></linearGradient></defs>
 </svg>`
 render(plate, { size: 1024, out: "apps/mobile/assets/adaptive-icon-background.png", opaque: true })
 
@@ -156,7 +159,7 @@ for (const size of [32, 180, 192, 512]) {
 // safe-zone trick: plate to the edges, mark at 62%.
 const maskable = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <rect width="1024" height="1024" fill="url(#plate)"/>
-  <defs><linearGradient id="plate" x1="531" y1="1017" x2="531" y2="0" gradientUnits="userSpaceOnUse"><stop/><stop offset="1" stop-color="#363636"/></linearGradient></defs>
+  <defs><linearGradient id="plate" x1="970" y1="1024" x2="111" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#090C11"/><stop offset="0.175838" stop-color="#010406"/><stop offset="0.701509" stop-color="#14191F"/><stop offset="1" stop-color="#1E1E26"/></linearGradient></defs>
   ${place(GLYPH, { x: (1024 - SAFE) / 2, y: (1024 - SAFE) / 2, size: SAFE })}
 </svg>`
 render(maskable, { size: 512, out: "apps/web/public/icon-512-maskable.png", opaque: true })
