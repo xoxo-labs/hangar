@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react"
+import { Check, ChevronRight } from "lucide-react"
 import { useState, type ReactNode } from "react"
 import { cx } from "../ui/cx"
 import { TextInput } from "../ui/Field"
@@ -108,25 +108,32 @@ export function DetectedScripts({
                   return (
                     <div
                       key={script.name}
-                      /* An already-added script dims as a whole row: the quiet "Added"
-                       * label alone read as one more thing to click. */
+                      /* An already-added script dims as a whole row and gets a
+                       * check: dimming alone read as "unavailable", and the
+                       * quiet "Added" label alone read as one more thing to click. */
                       className={cx(
-                        "grid min-h-[28px] grid-cols-[minmax(70px,0.7fr)_minmax(120px,2fr)_42px] items-center gap-2 border-b border-surface-4 px-[7px] py-[3px] last:border-b-0",
-                        added && "opacity-45",
+                        "grid min-h-[28px] grid-cols-[minmax(70px,0.7fr)_minmax(120px,2fr)_58px] items-center gap-2 border-b border-surface-4 px-[7px] py-[3px] last:border-b-0",
+                        added && "opacity-60",
                       )}
                       title={added ? `${script.name} is already a process` : `${script.name}: ${script.value}`}
                     >
                       {/* The name is a label, not code — only the command earns monospace. */}
                       <span className={cx(ELLIPSIS, "text-sm text-surface-12")}>{label}</span>
                       <span className={cx(ELLIPSIS, "font-mono text-xs text-surface-9")}>{script.value}</span>
-                      <button
-                        type="button"
-                        className={cx(ADD_BUTTON, "justify-self-end")}
-                        disabled={added}
-                        onClick={() => onAdd(script)}
-                      >
-                        {added ? "Added" : "+ Add"}
-                      </button>
+                      {added ? (
+                        <span className="flex items-center gap-1 justify-self-end py-[3px] text-sm text-success-11">
+                          <Check className="size-[12px]" strokeWidth={2.25} aria-hidden="true" />
+                          Added
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className={cx(ADD_BUTTON, "justify-self-end")}
+                          onClick={() => onAdd(script)}
+                        >
+                          + Add
+                        </button>
+                      )}
                     </div>
                   )
                 })}

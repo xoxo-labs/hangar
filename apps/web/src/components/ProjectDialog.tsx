@@ -12,6 +12,7 @@ import { Field, Select, TextInput } from "../ui/Field"
 import { IconButton } from "../ui/IconButton"
 import { BrowserSelect } from "./BrowserSelect"
 import { DetectedScripts } from "./DetectedScripts"
+import { MachineTabs, useMachineNames } from "./MachineTabs"
 import type { PackageScript } from "./packageScripts.logic"
 import { PathBrowser, type PathBrowserHandle } from "./PathBrowser"
 import { type Row, toProject, uniqueTerminalName, validate } from "./projectForm.logic"
@@ -44,10 +45,53 @@ export function ProjectDialog() {
 
   // Remounting per open keeps the form state fresh without an explicit reset.
   if (!open) return null
-  return <Editor key={editing ?? "__new__"} editing={editing} initialPath={initialPath} />
+  if (editing === null) return <Editor key="__new__" editing={null} initialPath={initialPath} />
+  return <MachineTabsEditor key={editing} editing={editing} />
 }
 
-function Editor({ editing, initialPath }: { editing: string | null; initialPath: string }) {
+/**
+ * Editing a project that the same repo has on several machines: one tab per
+ * Mac, each editing that Mac's own registry entry. The list only ever merges
+ * by repo, so the tabs are exactly the machines the sidebar folded together.
+ */
+function MachineTabsEditor({ editing }: { editing: string }) {
+  const connections = useStore((s) => s.connections)
+  const names = useMachineNames(editing)
+  const [active, setActive] = useState(editing)
+  const [dirty, setDirty] = useState(false)
+  const current = names.includes(active) ? active : editing
+
+  if (names.length < 2) return <Editor editing={editing} initialPath="" />
+
+  const tabs = (
+    <MachineTabs
+      names={names}
+      active={current}
+      /* A switch remounts the form: it cannot carry edits over, so it waits
+       * until they are saved or cancelled rather than losing them. */
+      locked={dirty ? "Save or cancel your changes first" : undefined}
+      onSelect={setActive}
+    />
+  )
+  const on = machineLabel(connectionOf(connections, connIdOf(current)))
+  return <Editor key={current} editing={current} initialPath="" tabs={tabs} on={on} onDirtyChange={setDirty} />
+}
+
+function Editor({
+  editing,
+  initialPath,
+  tabs,
+  on,
+  onDirtyChange,
+}: {
+  editing: string | null
+  initialPath: string
+  /** The machine tabs of a merged project; the machine field steps aside for them. */
+  tabs?: ReactNode
+  /** The Mac this copy lives on, named where the form acts on one of several. */
+  on?: string
+  onDirtyChange?: (dirty: boolean) => void
+}) {
   const closeEditor = useStore((s) => s.closeEditor)
   const existing = useStore((s) => s.projects.find((p) => p.name === editing))
   const running = useStore((s) =>
@@ -105,6 +149,12 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
 
   const problem = useMemo(() => validate(name, path, rows), [name, path, rows])
   const valid = problem === null
+
+  const draft = JSON.stringify(toProject(scoped(connId, name), path, rows, existing?.env, browser))
+  const baseline = useRef(draft)
+  useEffect(() => {
+    onDirtyChange?.(draft !== baseline.current)
+  }, [draft, onDirtyChange])
 
   const save = (): void => {
     if (!valid) return
@@ -175,138 +225,157 @@ function Editor({ editing, initialPath }: { editing: string | null; initialPath:
     <Overlay onDismiss={closeEditor}>
       <Dialog
         label={editing === null ? "Add project" : `Edit ${displayName(editing)}`}
-        className="w-[min(620px,100%)]!"
+        /* With tabs the height is pinned, as in Settings: each Mac's copy has
+         * its own number of rows, and a box that resized around them would
+         * re-centre and jump at every switch. The body scrolls instead. */
+        className={
+          tabs === undefined
+            ? "w-[min(620px,100%)]!"
+            : "h-[min(680px,calc(100vh-48px))] w-[min(780px,100%)]! overflow-hidden"
+        }
         onKeyDown={onKeyDown}
       >
-        <DialogHeader title={editing === null ? "Add project" : "Edit project"} />
-
-        <DialogBody>
-          {machineField}
-          {/* One field for both doors. The listing is a typeahead over the field's own
-           * value — a trailing "/" lists a folder, anything else filters it — so the
-           * path stays editable and browsable at once, on any machine. */}
-          <div className={FIELD}>
-            <label className={FIELD_LABEL} htmlFor="project-path">
-              Project folder
-            </label>
-            <div className="flex w-full gap-1.5">
-              <TextInput
-                mono
-                id="project-path"
-                autoFocus={editing === null}
-                value={path}
-                spellCheck={false}
-                autoComplete="off"
-                placeholder="~/code/my-app"
-                onChange={(e) => setPath(e.target.value)}
-                onFocus={() => setPathFocused(true)}
-                onBlur={() => setPathFocused(false)}
-                onKeyDown={(event) => {
-                  // The listing gets first refusal on the navigation keys; everything
-                  // it declines keeps bubbling to the dialog's own handler.
-                  if (browserRef.current?.handleKeyDown(event)) event.stopPropagation()
-                }}
-              />
-              {canPickNatively && (
-                <Button className="flex-none whitespace-nowrap" disabled={browsing} onClick={() => void browse()}>
-                  {browsing ? "Opening…" : "Choose…"}
-                </Button>
-              )}
-            </div>
-            {pathFocused && <PathBrowser ref={browserRef} config={config} path={path} onPick={setPath} />}
-            <span className={FIELD_HINT}>
-              {inspecting ? (
-                "Inspecting package.json and workspaces…"
-              ) : pathFocused ? (
-                <>
-                  <kbd>↑↓</kbd> to move, <kbd>↵</kbd> to open a folder, <kbd>⇥</kbd> to complete.
-                </>
-              ) : (
-                <>
-                  <code>~</code> expands to the home directory on {machineLabel(machine)}.
-                </>
-              )}
-            </span>
-          </div>
-
-          <Field
-            label="Name"
-            hint={
-              editing === null
-                ? "Derived from the folder or package.json; no spaces or slashes."
-                : "The name identifies the project and can't change."
-            }
-          >
-            <TextInput
-              value={name}
-              readOnly={editing !== null}
-              spellCheck={false}
-              autoComplete="off"
-              placeholder="my-app"
-              onChange={(e) => {
-                nameEdited.current = true
-                setName(e.target.value)
-              }}
+        {/* With machine tabs the dialog becomes a row: the tabs on the left,
+         * the form — header, body, footer — as the column beside them. */}
+        <div className={cx("flex min-h-0 flex-1", tabs === undefined && "flex-col")}>
+          {tabs}
+          <main className="flex min-w-0 flex-1 flex-col">
+            <DialogHeader
+              title={editing === null ? "Add project" : tabs === undefined ? "Edit project" : `Edit project on ${on}`}
             />
-          </Field>
 
-          {projectInfo?.package && projectInfo.package.scripts.length > 0 && (
-            /* Keyed by folder so the panel's filter resets with the script list.
-             * Collapsed in Edit mode: processes are the errand there, and the
-             * list was pushing them below the fold. */
-            <DetectedScripts
-              key={projectInfo.path}
-              pkg={projectInfo.package}
-              addedNames={new Set(rows.map((row) => row.name.trim()))}
-              onAdd={addPackageScript}
-              collapsible
-              defaultOpen={editing === null}
-              hint={
+            {/* The gutter is reserved up front: the script list arrives after the
+             * form, and a scrollbar that appears with it would shove everything
+             * left. */}
+            <DialogBody className={cx(tabs !== undefined && "flex-1 [scrollbar-gutter:stable]")}>
+              {tabs === undefined && machineField}
+              {/* One field for both doors. The listing is a typeahead over the field's own
+               * value — a trailing "/" lists a folder, anything else filters it — so the
+               * path stays editable and browsable at once, on any machine. */}
+              <div className={FIELD}>
+                <label className={FIELD_LABEL} htmlFor="project-path">
+                  Project folder
+                </label>
+                <div className="flex w-full gap-1.5">
+                  <TextInput
+                    mono
+                    id="project-path"
+                    autoFocus={editing === null}
+                    value={path}
+                    spellCheck={false}
+                    autoComplete="off"
+                    placeholder="~/code/my-app"
+                    onChange={(e) => setPath(e.target.value)}
+                    onFocus={() => setPathFocused(true)}
+                    onBlur={() => setPathFocused(false)}
+                    onKeyDown={(event) => {
+                      // The listing gets first refusal on the navigation keys; everything
+                      // it declines keeps bubbling to the dialog's own handler.
+                      if (browserRef.current?.handleKeyDown(event)) event.stopPropagation()
+                    }}
+                  />
+                  {canPickNatively && (
+                    <Button className="flex-none whitespace-nowrap" disabled={browsing} onClick={() => void browse()}>
+                      {browsing ? "Opening…" : "Choose…"}
+                    </Button>
+                  )}
+                </div>
+                {pathFocused && <PathBrowser ref={browserRef} config={config} path={path} onPick={setPath} />}
                 <span className={FIELD_HINT}>
-                  {projectInfo.package.workspaceScriptCount
-                    ? "Workspace scripts use package/script names and run from that package's folder."
-                    : "Add any scripts you want, then edit them or add custom commands below."}
+                  {inspecting ? (
+                    "Inspecting package.json and workspaces…"
+                  ) : pathFocused ? (
+                    <>
+                      <kbd>↑↓</kbd> to move, <kbd>↵</kbd> to open a folder, <kbd>⇥</kbd> to complete.
+                    </>
+                  ) : (
+                    <>
+                      <code>~</code> expands to the home directory on {machineLabel(machine)}.
+                    </>
+                  )}
                 </span>
-              }
-            />
-          )}
+              </div>
 
-          <ProcessesField rows={rows} onChange={setRows} />
+              <Field
+                label="Name"
+                hint={
+                  editing === null
+                    ? "Derived from the folder or package.json; no spaces or slashes."
+                    : "The name identifies the project and can't change."
+                }
+              >
+                <TextInput
+                  value={name}
+                  readOnly={editing !== null}
+                  spellCheck={false}
+                  autoComplete="off"
+                  placeholder="my-app"
+                  onChange={(e) => {
+                    nameEdited.current = true
+                    setName(e.target.value)
+                  }}
+                />
+              </Field>
 
-          {/* A project-level preference, so it sits with neither the scripts
-           * above nor the process list they feed — last, out of that flow. */}
-          <Field label="Browser used" hint="Overrides the global setting for every action in this project.">
-            <BrowserSelect
-              value={browser}
-              inheritLabel="Use global setting"
-              onChange={(event) => setBrowser(event.target.value as BrowserChoice | "")}
-            />
-          </Field>
-        </DialogBody>
+              {projectInfo?.package && projectInfo.package.scripts.length > 0 && (
+                /* Keyed by folder so the panel's filter resets with the script list.
+                 * Open in Edit mode too: collapsed, it was easy to miss that the
+                 * scripts were there at all, and the body scrolls now. */
+                <DetectedScripts
+                  key={projectInfo.path}
+                  pkg={projectInfo.package}
+                  addedNames={new Set(rows.map((row) => row.name.trim()))}
+                  onAdd={addPackageScript}
+                  collapsible
+                  hint={
+                    <span className={FIELD_HINT}>
+                      {projectInfo.package.workspaceScriptCount
+                        ? "Workspace scripts use package/script names and run from that package's folder."
+                        : "Add any scripts you want, then edit them or add custom commands below."}
+                    </span>
+                  }
+                />
+              )}
 
-        <DialogFooter>
-          {editing !== null && (
-            <RemoveProjectButton
-              running={running}
-              onRemove={() => {
-                actions.removeProject(editing)
-                closeEditor()
-              }}
-            />
-          )}
-          <span className="flex-1" />
-          {problem !== null && <span className={cx(ELLIPSIS, "text-sm text-surface-9")}>{problem}</span>}
-          <Button onClick={closeEditor}>Cancel</Button>
-          <Button
-            variant="primary"
-            disabled={!valid}
-            title={valid ? "Save (⌘↵)" : (problem ?? undefined)}
-            data-shortcut-hint="↵"
-            onClick={save}
-          >
-            Save
-          </Button>
-        </DialogFooter>
+              <ProcessesField rows={rows} onChange={setRows} />
+
+              {/* A project-level preference, so it sits with neither the scripts
+               * above nor the process list they feed — last, out of that flow. */}
+              <Field label="Browser used" hint="Overrides the global setting for every action in this project.">
+                <BrowserSelect
+                  value={browser}
+                  inheritLabel="Use global setting"
+                  onChange={(event) => setBrowser(event.target.value as BrowserChoice | "")}
+                />
+              </Field>
+            </DialogBody>
+
+            <DialogFooter>
+              {editing !== null && (
+                <RemoveProjectButton
+                  running={running}
+                  on={on}
+                  onRemove={() => {
+                    actions.removeProject(editing)
+                    closeEditor()
+                  }}
+                />
+              )}
+              <span className="flex-1" />
+              {problem !== null && <span className={cx(ELLIPSIS, "text-sm text-surface-9")}>{problem}</span>}
+              <Button onClick={closeEditor}>Cancel</Button>
+              <Button
+                variant="primary"
+                disabled={!valid}
+                title={valid ? "Save (⌘↵)" : (problem ?? undefined)}
+                data-shortcut-hint="↵"
+                onClick={save}
+              >
+                Save
+              </Button>
+            </DialogFooter>
+          </main>
+        </div>
       </Dialog>
     </Overlay>
   )
@@ -528,12 +597,18 @@ function ProcRow({
 }
 
 /** Two-step remove: the first click arms the button, blurring disarms it. */
-function RemoveProjectButton({ running, onRemove }: { running: boolean; onRemove: () => void }) {
+function RemoveProjectButton({ running, on, onRemove }: { running: boolean; on?: string; onRemove: () => void }) {
   const [confirming, setConfirming] = useState(false)
   return (
     // The span carries the tooltip: browsers swallow hover on a disabled button.
     <span
-      title={running ? "Stop this project's processes before removing it" : "Remove this project from the registry"}
+      title={
+        running
+          ? "Stop this project's processes before removing it"
+          : on === undefined
+            ? "Remove this project from the registry"
+            : `Remove this project from ${on} only; its other machines keep theirs`
+      }
     >
       <Button
         variant="danger"
@@ -542,7 +617,7 @@ function RemoveProjectButton({ running, onRemove }: { running: boolean; onRemove
         onClick={() => (confirming ? onRemove() : setConfirming(true))}
         onBlur={() => setConfirming(false)}
       >
-        {confirming ? "Really remove?" : "Remove project"}
+        {confirming ? "Really remove?" : on === undefined ? "Remove project" : `Remove from ${on}`}
       </Button>
     </span>
   )

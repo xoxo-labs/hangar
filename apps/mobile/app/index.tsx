@@ -1,4 +1,4 @@
-import { buildSidebarModel, displayName, flatEntries, type SidebarEntry } from "@hangar/client-core"
+import { buildSidebarEntries, displayName, type SidebarEntry } from "@hangar/client-core"
 import { Stack, useRouter } from "expo-router"
 import { useState } from "react"
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
@@ -84,7 +84,7 @@ function MachineList({ machines, query }: { machines: Machine[]; query: string }
 /**
  * Every project on every machine, one entry per repo: a project registered on
  * two machines collapses into a single block listing both machines' processes,
- * exactly as the desktop sidebar groups them (`buildSidebarModel`) — search
+ * exactly as the desktop sidebar groups them (`buildSidebarEntries`) — search
  * included, so a name match keeps a merged repo whole and a process-only match
  * narrows it to the machines that have that process.
  */
@@ -97,7 +97,7 @@ function ProjectList({ machines, query }: { machines: Machine[]; query: string }
   const labels = new Map(machines.map((machine) => [machine.config.id, machineLabel(machine)]))
   const connIds = machines.map((machine) => machine.config.id)
   const search = normalizeQuery(query)
-  const entries = flatEntries(buildSidebarModel(connIds, world.projects, search))
+  const entries = buildSidebarEntries(connIds, world.projects, search)
 
   if (entries.length === 0) {
     return (

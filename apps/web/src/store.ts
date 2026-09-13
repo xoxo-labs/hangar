@@ -327,10 +327,12 @@ export const useStore = create<Store>((set, get) => ({
         if (known) known.push(project)
         else byConn.set(owner, [project])
       }
+      // Connection order first; a machine the list no longer knows (removed
+      // mid-flight, or this very message racing its own registration) keeps
+      // its projects at the end rather than losing them.
       const connOrder = Object.keys(state.connections)
-      const nextProjects = (connOrder.includes(connId) ? connOrder : [...connOrder, connId]).flatMap(
-        (id) => byConn.get(id) ?? [],
-      )
+      const order = [...connOrder, ...[...byConn.keys()].filter((id) => !connOrder.includes(id))]
+      const nextProjects = order.flatMap((id) => byConn.get(id) ?? [])
 
       const next = new Map(sessions.map((s) => [s.id, s]))
       const ordered: SessionInfo[] = []

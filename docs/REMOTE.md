@@ -164,8 +164,21 @@ only ever sees **scoped** values:
     `qrcode` + `@types/qrcode`); paired-clients list with revoke.
   - "Paired machines": add (host + port + code, or pasted `host:port#CODE`
     string), remove, per-connection status dot, Retry when `blocked`.
-- Sidebar: with >1 connection, group projects under machine headers
-  (label/serverName + status dot). Local group first.
+- Sidebar: projects stay top level whatever machine they live on; there are
+  no machine headers. Local registry order first, then each paired machine's
+  own projects in its order. The same repo (by normalized `gitRemote`) on two
+  connected machines merges into one card in its local slot, listing every
+  machine's processes in one flat list (`buildSidebarEntries` in
+  `packages/client-core`). Badges are restrained: a local-only card shows
+  nothing; a mixed card marks its remote rows with a server glyph; a
+  remote-only card carries the glyph on its header and its rows stay clean;
+  when a card spans more than one paired machine, remote rows also name the
+  machine. Machine status, rename, remove live in Settings → Connections; the
+  sidebar only shows a one-line notice with Retry for a paired machine that
+  is blocked, or has been reconnecting for more than a few seconds.
+- Editing a merged project opens one tab per machine: each tab edits that
+  machine's registry entry (path, processes, removal) independently. Start,
+  restart and stop "all" in a merged card's menu are per machine.
 - Ports/links panel: per-connection `network-info` (bearer where remote).
   Opening and copying a detected port resolve through the same per-machine
   "Reach ports at" choice; only **Automatic** differs, because the two links

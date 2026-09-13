@@ -1,18 +1,10 @@
-import {
-  buildSidebarModel,
-  connIdOf,
-  displayName,
-  flatEntries,
-  LOCAL_CONN_ID,
-  type SidebarEntry,
-  type SidebarPart,
-} from "@hangar/client-core"
+import { buildSidebarEntries, connIdOf, displayName, LOCAL_CONN_ID, type SidebarEntry } from "@hangar/client-core"
 import { type Project, type SessionInfo, sessionId } from "@hangar/contracts"
-import { ChevronRight, CircleHelp, Globe, History, Play, Plus, RotateCw, Settings, Square } from "lucide-react"
-import { type DragEvent, type FormEvent, useMemo, useState } from "react"
+import { ChevronRight, CircleHelp, Globe, History, Play, Plus, RotateCw, Server, Settings, Square } from "lucide-react"
+import { type DragEvent, type FormEvent, useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import * as actions from "../actions"
-import { removeConnection, retryConnection, updateConnection } from "../connections"
+import { retryConnection } from "../connections"
 import { useDesktopUpdate } from "../hooks/useDesktopUpdate"
 import { type ActiveShare, shareLabel, useShareForSession } from "../shares"
 import { CONNECTION_LABEL, connectionTone, describe, hasHighCpu, toneOf } from "../status"
@@ -51,7 +43,6 @@ const ROW_ACTIONS =
  * right-1 anchor. */
 const LABEL = "min-w-0 flex-1 overflow-hidden whitespace-nowrap"
 const FADE = "mask-r-from-[calc(100%-8px)]"
-const FADE_CLEARS_ONE = "mask-r-from-[calc(100%-30px)] mask-r-to-[calc(100%-22px)]"
 const FADE_CLEARS_TWO = "mask-r-from-[calc(100%-59px)] mask-r-to-[calc(100%-51px)]"
 const FADE_HOVER_ONE =
   "group-hover:mask-r-from-[calc(100%-30px)] group-hover:mask-r-to-[calc(100%-22px)] group-focus-within:mask-r-from-[calc(100%-30px)] group-focus-within:mask-r-to-[calc(100%-22px)]"
@@ -83,15 +74,15 @@ export function Sidebar({
   const byId = useMemo(() => new Map(sessions.map((s) => [s.id, s])), [sessions])
 
   const query = filter.trim().toLowerCase()
-  // One machine is the overwhelming case and must look exactly as it always has:
-  // headers only appear once a second machine is paired, and the same repo on
-  // two machines only merges into one entry there.
-  const machines = Object.values(connections)
-  const groups = useMemo(
-    () => buildSidebarModel(Object.keys(connections), projects, query),
+  // Projects are the list, whatever machine they live on. The same repo on two
+  // machines merges into one entry in its local slot; a project only a paired
+  // Mac has follows in that Mac's own order. One machine comes out exactly as
+  // it went in.
+  const entries = useMemo(
+    () => buildSidebarEntries(Object.keys(connections), projects, query),
     [connections, projects, query],
   )
-  const visible = useMemo(() => flatEntries(groups), [groups])
+  const localNames = projects.filter((item) => connIdOf(item.name) === LOCAL_CONN_ID).map((item) => item.name)
 
   const renderProject = (entry: SidebarEntry) => (
     <ProjectRow
@@ -99,6 +90,9 @@ export function Sidebar({
       entry={entry}
       filtering={query !== ""}
       byId={byId}
+      /* Order is a per-registry thing and only this Mac's registry is dragged
+       * here; a paired Mac's projects keep the order that Mac has. */
+      reorderable={connIdOf(entry.key) === LOCAL_CONN_ID}
       dragging={dragging === entry.key}
       dropSide={dropTarget?.name === entry.key ? dropTarget.side : null}
       onDragStart={() => {
@@ -112,7 +106,7 @@ export function Sidebar({
       }}
       onDrop={(side) => {
         if (dragging !== null && dragging !== entry.key) {
-          const names = projects.map((item) => item.name).filter((item) => item !== dragging)
+          const names = localNames.filter((item) => item !== dragging)
           const targetIndex = names.indexOf(entry.key)
           names.splice(targetIndex + (side === "after" ? 1 : 0), 0, dragging)
           actions.reorderProjects(names)
@@ -172,6 +166,7 @@ export function Sidebar({
       </header>
 
       <nav className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pt-1 pb-3">
+        <ConnectionNotices connections={connections} />
         <div className="flex items-center justify-between px-1.5 pt-[7px] pb-2 text-xs font-semibold tracking-caps text-surface-9 uppercase">
           <span>Projects</span>
           <button
@@ -198,25 +193,8 @@ export function Sidebar({
             }}
           />
         )}
-        {visible.length === 0 && query !== "" ? (
+        {entries.length === 0 && query !== "" ? (
           <p className="mx-1.5 my-3 text-sm text-surface-9">No matches</p>
-        ) : machines.length > 1 ? (
-          groups.map((group) => {
-            const connection = connections[group.connId]
-            // A machine with nothing to show is still worth a header. This is
-            // especially important for a paired machine that has never connected:
-            // its header is where Retry, Rename and Remove remain available.
-            return (
-              <section key={group.connId} className="mb-1">
-                {connection && <MachineHeader connection={connection} />}
-                {group.entries.length === 0 ? (
-                  <p className="mx-1.5 mt-0.5 mb-2 text-sm text-surface-9">No projects</p>
-                ) : (
-                  group.entries.map(renderProject)
-                )}
-              </section>
-            )
-          })
         ) : projects.length === 0 ? (
           <p className="mx-1.5 my-3 text-base leading-relaxed text-surface-10">
             No projects registered yet.
@@ -224,7 +202,7 @@ export function Sidebar({
             Add one below, or run <code>hangar add</code>.
           </p>
         ) : (
-          visible.map(renderProject)
+          entries.map(renderProject)
         )}
 
         {projects.length === 0 && (
@@ -285,163 +263,70 @@ export function Sidebar({
   )
 }
 
-/**
- * Group header for one machine. It carries the only status the sidebar shows for
- * a paired Mac, so a connection that stopped working is visible without opening
- * Settings — and can be retried from here.
- */
-function MachineHeader({ connection }: { connection: ConnectionState }) {
-  const { config, status } = connection
-  const label = machineLabel(connection)
-  const remote = config.id !== LOCAL_CONN_ID
-  const blocked = status === "blocked"
-  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
-  const [renaming, setRenaming] = useState(false)
-  const [removing, setRemoving] = useState(false)
+/** How long a paired Mac may be quiet before the sidebar says so. */
+const CONNECTION_NOTICE_GRACE_MS = 5000
 
+/**
+ * The only machine chrome the sidebar carries: one quiet line per paired Mac
+ * that is not answering, with the retry the supervisor would otherwise wait
+ * for. A brief reconnect stays silent; managing machines is a Settings matter.
+ */
+function ConnectionNotices({ connections }: { connections: Record<string, ConnectionState> }) {
+  const troubled = Object.values(connections).filter(
+    (connection) => connection.config.id !== LOCAL_CONN_ID && connection.status !== "connected",
+  )
+  if (troubled.length === 0) return null
   return (
-    <div
-      className={cx(
-        "flex min-h-[22px] items-center gap-[7px] rounded-md px-1.5 pt-2 pb-1",
-        remote && "hover:bg-surface-a3",
-      )}
-      onContextMenu={(event) => {
-        if (!remote) return
-        event.preventDefault()
-        setContextMenuPosition({ x: event.clientX, y: event.clientY })
-      }}
-    >
-      <Dot
-        tone={connectionTone(status)}
-        small
-        title={`${config.host}:${config.port} — ${connection.error ?? CONNECTION_LABEL[status]}`}
-      />
-      <span className="min-w-0 flex-1 overflow-hidden text-2xs font-semibold tracking-caps whitespace-nowrap text-surface-9 uppercase mask-r-from-[calc(100%-8px)]">
-        {label}
-      </span>
-      {blocked && (
-        <button
-          type="button"
-          className="rounded-md px-1.5! py-0.5! text-2xs! font-semibold! tracking-caps text-danger-11! uppercase hover:bg-surface-a3!"
-          title={connection.error ?? "This machine rejected the saved pairing"}
-          onClick={() => retryConnection(config.id)}
-        >
-          Retry
-        </button>
-      )}
-      {remote && (
-        <Menu
-          title={`Actions for ${label}`}
-          showTrigger={false}
-          contextPosition={contextMenuPosition}
-          onOpenChange={(open) => {
-            if (!open) setContextMenuPosition(null)
-          }}
-          items={[
-            { label: "Rename…", onSelect: () => setRenaming(true) },
-            {
-              label: "Retry now",
-              disabled: status === "connected",
-              onSelect: () => retryConnection(config.id),
-            },
-            MENU_SEPARATOR,
-            { label: "Remove…", onSelect: () => setRemoving(true) },
-          ]}
-        />
-      )}
-      {renaming && <RenameMachineDialog connection={connection} onClose={() => setRenaming(false)} />}
-      {removing && <RemoveMachineDialog connection={connection} onClose={() => setRemoving(false)} />}
+    <div className="flex flex-col gap-0.5 px-0.5 pt-1.5">
+      {troubled.map((connection) => (
+        <ConnectionNotice key={connection.config.id} connection={connection} />
+      ))}
     </div>
   )
 }
 
-function RenameMachineDialog({ connection, onClose }: { connection: ConnectionState; onClose: () => void }) {
-  const [name, setName] = useState(machineLabel(connection))
-  const trimmed = name.trim()
-  const unchanged = trimmed === connection.config.label
-
-  const submit = (event: FormEvent): void => {
-    event.preventDefault()
-    if (trimmed === "" || unchanged) return
-    updateConnection(connection.config.id, { label: trimmed })
-    onClose()
-  }
-
-  return createPortal(
-    <Overlay onDismiss={onClose}>
-      <Dialog
-        label={`Rename ${machineLabel(connection)}`}
-        className="max-w-[360px]"
-        onKeyDown={(event) => {
-          if (event.key === "Escape") onClose()
-        }}
-      >
-        <form onSubmit={submit}>
-          <DialogHeader title="Rename machine" />
-          <DialogBody>
-            <label className="flex flex-col gap-1.5 text-sm text-surface-10">
-              Name
-              <input
-                autoFocus
-                className="w-full rounded-md border border-surface-5 bg-surface-1 px-2.5 py-1.5 text-md text-surface-12 focus:border-accent-9 focus:outline-none"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                onFocus={(event) => event.currentTarget.select()}
-              />
-            </label>
-          </DialogBody>
-          <DialogFooter>
-            <Button type="button" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={trimmed === "" || unchanged}>
-              Rename
-            </Button>
-          </DialogFooter>
-        </form>
-      </Dialog>
-    </Overlay>,
-    document.body,
-  )
-}
-
-function RemoveMachineDialog({ connection, onClose }: { connection: ConnectionState; onClose: () => void }) {
+function ConnectionNotice({ connection }: { connection: ConnectionState }) {
+  const { config, status } = connection
+  const blocked = status === "blocked"
+  // A blocked pairing is news at once; a reconnect earns a line only once it
+  // has outlasted the blip a sleeping Mac or a flapping tailnet produces.
+  const [settled, setSettled] = useState(blocked)
+  useEffect(() => {
+    if (blocked) {
+      setSettled(true)
+      return
+    }
+    setSettled(false)
+    const timer = window.setTimeout(() => setSettled(true), CONNECTION_NOTICE_GRACE_MS)
+    return () => window.clearTimeout(timer)
+  }, [blocked, status])
+  if (!settled) return null
   const label = machineLabel(connection)
-  return createPortal(
-    <Overlay onDismiss={onClose}>
-      <Dialog
-        label={`Remove ${label}`}
-        className="max-w-[400px]"
-        onKeyDown={(event) => {
-          if (event.key === "Escape") onClose()
-        }}
+  return (
+    <div
+      className="flex min-h-[24px] items-center gap-[7px] rounded-md px-1.5 text-xs text-surface-9"
+      title={`${config.host}:${config.port} — ${connection.error ?? CONNECTION_LABEL[status]}`}
+    >
+      <Dot tone={connectionTone(status)} small />
+      <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap mask-r-from-[calc(100%-8px)]">
+        <span className="font-semibold text-surface-10">{label}</span> {CONNECTION_LABEL[status]}
+      </span>
+      <button
+        type="button"
+        className={cx(
+          "rounded-md px-1.5! py-0.5! text-2xs! font-semibold! tracking-caps uppercase hover:bg-surface-a3!",
+          blocked ? "text-danger-11!" : "text-surface-9! hover:text-surface-12!",
+        )}
+        title={blocked ? (connection.error ?? "This machine rejected the saved pairing") : "Try again now"}
+        onClick={() => retryConnection(config.id)}
       >
-        <DialogHeader title="Remove machine?" />
-        <DialogBody>
-          <p className="m-0 text-base leading-relaxed text-surface-10">
-            Remove <strong className="text-surface-12">{label}</strong> from paired machines? You can pair it again
-            later.
-          </p>
-        </DialogBody>
-        <DialogFooter>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button
-            variant="danger"
-            onClick={() => {
-              onClose()
-              removeConnection(connection.config.id)
-            }}
-          >
-            Remove
-          </Button>
-        </DialogFooter>
-      </Dialog>
-    </Overlay>,
-    document.body,
+        Retry
+      </button>
+    </div>
   )
 }
 
-/** The project-level actions, shared by an entry's header and its machine sub-headers. */
+/** The project-level actions of one machine's project. */
 function projectMenuItems(
   project: Project,
   running: boolean,
@@ -488,11 +373,14 @@ function ProjectRow({
   onDragOver,
   onDrop,
   onDragEnd,
+  reorderable,
 }: {
   /** One project — or the same repo on several machines, merged into one entry. */
   entry: SidebarEntry
   filtering: boolean
   byId: Map<string, SessionInfo>
+  /** Whether this entry takes part in drag-to-reorder at all. */
+  reorderable: boolean
   dragging: boolean
   dropSide: "before" | "after" | null
   onDragStart: () => void
@@ -500,10 +388,23 @@ function ProjectRow({
   onDrop: (side: "before" | "after") => void
   onDragEnd: () => void
 }) {
-  // The anchor machine owns the header: its name, its path, its actions.
+  // The anchor machine owns the header: its name, its path, and — where the
+  // menu acts on one machine — its actions. It is this Mac whenever this Mac
+  // has the project.
   const anchor = entry.parts[0]
   const project = anchor.project
   const merged = entry.parts.length > 1
+  const connections = useStore((s) => s.connections)
+  const remoteParts = entry.parts.filter((part) => part.connId !== LOCAL_CONN_ID)
+  const machineName = (connId: string): string => {
+    const connection = connections[connId]
+    return connection ? machineLabel(connection) : connId
+  }
+  // Rows say which Mac they run on only where the card does not already: a
+  // mixed card marks its remote rows; a card spanning several paired Macs
+  // names the Mac as well, since one glyph could mean either.
+  const rowIcon = entry.presence === "mixed"
+  const rowTag = remoteParts.length > 1
   const collapsed = useStore((s) => s.collapsed[entry.key] ?? false)
   const toggleCollapsed = useStore((s) => s.toggleCollapsed)
   const openEditor = useStore((s) => s.openEditor)
@@ -522,10 +423,6 @@ function ProjectRow({
   const warningProcesses = all.filter(({ part, process }) =>
     hasHighCpu(byId.get(sessionId(part.project.name, process.name))),
   )
-  // The header's menu acts on the anchor machine alone, so it follows that one.
-  const anchorRunning = project.processes.some(
-    (process) => byId.get(sessionId(project.name, process.name))?.status === "running",
-  )
   const expanded = !collapsed || filtering
 
   const dragOver = (event: DragEvent<HTMLElement>): void => {
@@ -535,7 +432,9 @@ function ProjectRow({
     onDragOver(event.clientY < rect.top + rect.height / 2 ? "before" : "after")
   }
 
-  const menuItems = projectMenuItems(project, anchorRunning, openEditor, requestConfirm, () => setAddingProcess(true))
+  const menuItems = merged
+    ? mergedMenuItems(entry, byId, machineName, openEditor, () => setAddingProcess(true))
+    : projectMenuItems(project, running, openEditor, requestConfirm, () => setAddingProcess(true))
 
   return (
     <section
@@ -547,8 +446,9 @@ function ProjectRow({
         dropSide === "after" &&
           "after:pointer-events-none after:absolute after:-bottom-1 after:right-1 after:left-1 after:z-[2] after:h-0.5 after:rounded-xs after:bg-accent-9 after:content-['']",
       )}
-      onDragOver={dragOver}
+      onDragOver={reorderable ? dragOver : undefined}
       onDrop={(event) => {
+        if (!reorderable) return
         event.preventDefault()
         const rect = event.currentTarget.getBoundingClientRect()
         onDrop(event.clientY < rect.top + rect.height / 2 ? "before" : "after")
@@ -558,8 +458,8 @@ function ProjectRow({
         className={cx(ROW, "group hover:bg-surface-a3")}
         /* Reordering a filtered list against the full registry order is
          * ambiguous, so dragging waits until the filter is cleared. */
-        draggable={!filtering}
-        title={filtering ? undefined : "Drag to reorder project"}
+        draggable={reorderable && !filtering}
+        title={reorderable && !filtering ? "Drag to reorder project" : undefined}
         onDragStart={(event) => {
           event.dataTransfer.effectAllowed = "move"
           event.dataTransfer.setData("text/plain", entry.key)
@@ -590,6 +490,11 @@ function ProjectRow({
               tone="warning"
               title={`High CPU: ${[...new Set(warningProcesses.map(({ process }) => process.name))].join(", ")}`}
             />
+          )}
+          {entry.presence === "remote-only" && (
+            /* The whole card lives elsewhere, so the card says so once and its
+             * rows stay as clean as a local project's. */
+            <MachineGlyph title={`On ${entry.parts.map((part) => machineName(part.connId)).join(", ")}`} />
           )}
           <span
             className={cx(
@@ -636,111 +541,90 @@ function ProjectRow({
         </div>
       </div>
 
-      {addingProcess && <AddProcessDialog project={project} onClose={() => setAddingProcess(false)} />}
+      {addingProcess && (
+        <AddProcessDialog
+          projects={[project, ...entry.parts.slice(1).map((part) => part.project)]}
+          onClose={() => setAddingProcess(false)}
+        />
+      )}
 
-      {expanded &&
-        (merged ? (
-          <div className="mt-[3px] mb-0 ml-2.5 border-l border-surface-5 pl-2">
-            {entry.parts.map((part) => (
-              <MachineSection key={part.connId} part={part} byId={byId} />
-            ))}
-          </div>
-        ) : (
-          <ul className="mt-[3px] mr-0 mb-0 ml-2.5 list-none border-l border-surface-5 py-0 pr-0 pl-2">
-            {anchor.processes.map((proc) => (
+      {expanded && (
+        /* One flat list whatever the machines: every row keeps its scoped ids,
+         * so starting, stopping and focusing all reach the Mac the row belongs to. */
+        <ul className="mt-[3px] mr-0 mb-0 ml-2.5 list-none border-l border-surface-5 py-0 pr-0 pl-2">
+          {entry.parts.flatMap((part) =>
+            part.processes.map((proc) => (
               <ProcessRow
-                key={proc.name}
-                project={project.name}
+                key={`${part.project.name}/${proc.name}`}
+                project={part.project.name}
                 name={proc.name}
                 cmd={proc.shell ? "Interactive shell" : proc.cmd}
                 description={proc.description}
-                session={byId.get(sessionId(project.name, proc.name))}
+                session={byId.get(sessionId(part.project.name, proc.name))}
+                machine={
+                  part.connId === LOCAL_CONN_ID
+                    ? undefined
+                    : { label: machineName(part.connId), icon: rowIcon, tag: rowTag }
+                }
               />
-            ))}
-          </ul>
-        ))}
+            )),
+          )}
+        </ul>
+      )}
     </section>
   )
 }
 
-/**
- * One machine's half of a merged entry: which Mac these processes run on, and
- * that Mac's own project actions. Every row underneath keeps its scoped ids, so
- * starting, stopping and focusing all reach the machine the row belongs to.
- */
-function MachineSection({ part, byId }: { part: SidebarPart; byId: Map<string, SessionInfo> }) {
-  const connection = useStore((s) => s.connections[part.connId])
-  const openEditor = useStore((s) => s.openEditor)
-  const requestConfirm = useStore((s) => s.requestConfirm)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
-  const [addingProcess, setAddingProcess] = useState(false)
-  const project = part.project
-  const running = project.processes.some(
-    (process) => byId.get(sessionId(project.name, process.name))?.status === "running",
-  )
-  const label = connection ? machineLabel(connection) : part.connId
-
+/** The two stacked boxes that mean "runs on another Mac". */
+function MachineGlyph({ title }: { title: string }) {
   return (
-    <section className="mb-0.5">
-      <div
-        className={cx(ROW, "group")}
-        onContextMenu={(event) => {
-          event.preventDefault()
-          setContextMenuPosition({ x: event.clientX, y: event.clientY })
-        }}
-      >
-        <div className={cx(ROW_MAIN, "min-h-[22px]")} title={project.path}>
-          <Dot
-            tone={connection ? connectionTone(connection.status) : "idle"}
-            small
-            title={
-              connection
-                ? `${connection.config.host}:${connection.config.port} — ${connection.error ?? CONNECTION_LABEL[connection.status]}`
-                : label
-            }
-          />
-          <span
-            className={cx(
-              LABEL,
-              "text-2xs font-semibold tracking-caps text-surface-9 uppercase",
-              menuOpen ? FADE_CLEARS_ONE : FADE,
-              FADE_HOVER_ONE,
-            )}
-          >
-            {label}
-          </span>
-        </div>
-
-        <div className={cx(ROW_ACTIONS, menuOpen && "opacity-100")}>
-          <Menu
-            title={`More actions for ${displayName(project.name)} on ${label}`}
-            contextPosition={contextMenuPosition}
-            onOpenChange={(open) => {
-              setMenuOpen(open)
-              if (!open) setContextMenuPosition(null)
-            }}
-            items={projectMenuItems(project, running, openEditor, requestConfirm, () => setAddingProcess(true))}
-          />
-        </div>
-      </div>
-
-      {addingProcess && <AddProcessDialog project={project} onClose={() => setAddingProcess(false)} />}
-
-      <ul className="m-0 list-none p-0">
-        {part.processes.map((proc) => (
-          <ProcessRow
-            key={proc.name}
-            project={project.name}
-            name={proc.name}
-            cmd={proc.shell ? "Interactive shell" : proc.cmd}
-            description={proc.description}
-            session={byId.get(sessionId(project.name, proc.name))}
-          />
-        ))}
-      </ul>
-    </section>
+    <span className="flex-none text-surface-9" title={title}>
+      <Server className="size-[11px]" aria-hidden="true" />
+    </span>
   )
+}
+
+/**
+ * The header menu of a merged entry. Start, restart and stop act on one
+ * machine's project, so each Mac gets its own; editing opens every machine's
+ * copy at once, and deleting happens per machine in there.
+ */
+function mergedMenuItems(
+  entry: SidebarEntry,
+  byId: Map<string, SessionInfo>,
+  machineName: (connId: string) => string,
+  openEditor: (project?: string) => void,
+  onAddProcess: () => void,
+): MenuItem[] {
+  const requestConfirm = useStore.getState().requestConfirm
+  const anchor = entry.parts[0]
+  return [
+    { label: "Add process…", onSelect: onAddProcess },
+    { label: "Open empty terminal", onSelect: () => actions.openEmptyTerminal(anchor.project) },
+    ...entry.parts.flatMap((part): MenuItem[] => {
+      const project = part.project
+      const on = machineName(part.connId)
+      const running = project.processes.some(
+        (process) => byId.get(sessionId(project.name, process.name))?.status === "running",
+      )
+      return [
+        MENU_SEPARATOR,
+        { label: `Start all on ${on}`, onSelect: () => actions.start(project.name) },
+        {
+          label: `Restart all on ${on}`,
+          disabled: !running,
+          onSelect: () => requestConfirm({ action: "restart", project: project.name }),
+        },
+        {
+          label: `Stop all on ${on}`,
+          disabled: !running,
+          onSelect: () => requestConfirm({ action: "stop", project: project.name }),
+        },
+      ]
+    }),
+    MENU_SEPARATOR,
+    { label: "Edit project…", onSelect: () => openEditor(anchor.project.name) },
+  ]
 }
 
 /**
@@ -759,12 +643,15 @@ function ProcessRow({
   cmd,
   description,
   session,
+  machine,
 }: {
   project: string
   name: string
   cmd: string
   description: string | undefined
   session: SessionInfo | undefined
+  /** Set on a row that runs on a paired Mac: which one, and how loudly to say so. */
+  machine: { label: string; icon: boolean; tag: boolean } | undefined
 }) {
   const activeId = useStore((s) => s.activeId)
   const setActive = useStore((s) => s.setActive)
@@ -813,7 +700,15 @@ function ProcessRow({
             />
           </span>
         )}
-        <span className={cx(LABEL, "text-base", FADE, running ? FADE_HOVER_TWO : FADE_HOVER_ONE)}>{name}</span>
+        {machine?.icon && <MachineGlyph title={`Runs on ${machine.label}`} />}
+        <span className={cx(LABEL, "text-base", FADE, running ? FADE_HOVER_TWO : FADE_HOVER_ONE)}>
+          {name}
+          {machine?.tag && (
+            <span className="ml-1.5 text-2xs text-surface-9" title={`Runs on ${machine.label}`}>
+              {machine.label}
+            </span>
+          )}
+        </span>
       </button>
 
       <Menu

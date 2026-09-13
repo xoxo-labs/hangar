@@ -1,4 +1,4 @@
-import { buildSidebarModel, flatEntries, LOCAL_CONN_ID, scoped } from "@hangar/client-core"
+import { buildSidebarEntries, LOCAL_CONN_ID, scoped } from "@hangar/client-core"
 import { sessionId } from "@hangar/contracts"
 import { type DeepLinkTarget, parseDeepLink } from "./links"
 import { useStore } from "./store"
@@ -69,7 +69,7 @@ function waitForRegistry(target: DeepLinkTarget): void {
 /** The sidebar row a project appears in, which is what collapse state is keyed by. */
 function collapseKey(name: string): string {
   const state = useStore.getState()
-  const entries = flatEntries(buildSidebarModel(Object.keys(state.connections), state.projects, ""))
+  const entries = buildSidebarEntries(Object.keys(state.connections), state.projects, "")
   const entry = entries.find((item) => item.parts.some((part) => part.project.name === name))
   return entry?.key ?? name
 }

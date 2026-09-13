@@ -1,11 +1,13 @@
 import type { Project, ProjectProcess } from "@hangar/contracts"
-import { connIdOf, displayName } from "./scope.ts"
+import { connIdOf, displayName, LOCAL_CONN_ID } from "./scope.ts"
 
 /**
- * The project list of a multi-machine client, machine by machine. When the same repo is
- * registered on more than one connected machine it collapses into ONE entry
- * listing every machine's processes under it. This is presentation only:
- * identity stays per-connection, every part keeps its own scoped project.
+ * The project list of a multi-machine client. Projects stay top level whatever
+ * machine they live on; a machine is where a project runs, not a place in the
+ * list. When the same repo is registered on more than one connected machine it
+ * collapses into ONE entry listing every machine's processes. This is
+ * presentation only: identity stays per-connection, every part keeps its own
+ * scoped project.
  */
 
 /** One machine's contribution to an entry. */
@@ -16,43 +18,42 @@ export type SidebarPart = {
   processes: ProjectProcess[]
 }
 
+/**
+ * Where an entry lives relative to this machine. It drives the badges: a
+ * local-only project needs no marker, a mixed one marks its remote rows, and
+ * a remote-only one is marked as a whole.
+ */
+export type Presence = "local-only" | "remote-only" | "mixed"
+
 export type SidebarEntry = {
   /** Collapse key and drag id: the anchor machine's scoped project name. */
   key: string
   /** Contributing machines in connection order; more than one means a merged repo. */
   parts: [SidebarPart, ...SidebarPart[]]
-}
-
-export type SidebarGroup = {
-  connId: string
-  entries: SidebarEntry[]
+  presence: Presence
 }
 
 /**
- * Groups the projects the sidebar should render.
+ * Builds the entries the sidebar renders, in order: the local registry first,
+ * merged repos sitting in their local slot, then each paired machine's own
+ * projects in that machine's order.
  *
- * `connIds` is the connection order (local first); every one of them gets a
- * group, empty ones included, so machines with no projects keep a header.
- * `query` is the filter, already trimmed and lowercased.
+ * `connIds` is the connection order (local first); `query` is the filter,
+ * already trimmed and lowercased.
  */
-export function buildSidebarModel(connIds: string[], projects: Project[], query: string): SidebarGroup[] {
-  const entries = filterEntries(mergeEntries(connIds, projects), query)
-
-  const groups = new Map<string, SidebarEntry[]>(connIds.map((connId) => [connId, []]))
-  for (const entry of entries) {
-    const connId = entry.parts[0].connId
-    const known = groups.get(connId)
-    // A project scoped to a machine that is no longer connected still renders,
-    // in a group of its own — same as it did before grouping existed.
-    if (known) known.push(entry)
-    else groups.set(connId, [entry])
-  }
-  return [...groups].map(([connId, entries]) => ({ connId, entries }))
+export function buildSidebarEntries(connIds: string[], projects: Project[], query: string): SidebarEntry[] {
+  return filterEntries(mergeEntries(connIds, projects), query)
 }
 
-/** Every entry of the model, in render order — the flat list of a lone machine. */
-export function flatEntries(groups: SidebarGroup[]): SidebarEntry[] {
-  return groups.flatMap((group) => group.entries)
+/** The machines an entry spans, in connection order. */
+export function entryConnIds(entry: SidebarEntry): string[] {
+  return entry.parts.map((part) => part.connId)
+}
+
+function presenceOf(parts: SidebarPart[]): Presence {
+  const local = parts.some((part) => part.connId === LOCAL_CONN_ID)
+  const remote = parts.some((part) => part.connId !== LOCAL_CONN_ID)
+  return local && remote ? "mixed" : local ? "local-only" : "remote-only"
 }
 
 /**
@@ -68,7 +69,7 @@ function mergeEntries(connIds: string[], projects: Project[]): SidebarEntry[] {
   )
   // Grouping is a multi-machine affair; one connection is the overwhelming case
   // and must come out exactly as it went in.
-  if (connIds.length < 2) return parts.map((part) => ({ key: part.project.name, parts: [part] }))
+  if (connIds.length < 2) return parts.map((part) => entryOf([part])!)
 
   const rank = new Map(connIds.map((connId, index) => [connId, index]))
   const byRemote = new Map<string, SidebarPart[]>()
@@ -94,7 +95,7 @@ function mergeEntries(connIds: string[], projects: Project[]): SidebarEntry[] {
   for (const part of parts) {
     const entry = merged.get(part.project.name)
     if (entry === undefined) {
-      entries.push({ key: part.project.name, parts: [part] })
+      entries.push(entryOf([part])!)
       continue
     }
     // The merged entry takes the anchor's slot and vanishes from the others'.
@@ -108,7 +109,9 @@ function mergeEntries(connIds: string[], projects: Project[]): SidebarEntry[] {
 /** Keys an entry by its anchor — the first machine still in it. */
 function entryOf(parts: SidebarPart[]): SidebarEntry | null {
   const [anchor, ...rest] = parts
-  return anchor === undefined ? null : { key: anchor.project.name, parts: [anchor, ...rest] }
+  return anchor === undefined
+    ? null
+    : { key: anchor.project.name, parts: [anchor, ...rest], presence: presenceOf(parts) }
 }
 
 /**
