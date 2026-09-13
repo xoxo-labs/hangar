@@ -1,3 +1,16 @@
+# Hangar 0.14.0
+
+## Update a paired Mac from here
+
+- A Mac that runs the Hangar app can now be updated from any window paired to it. Its update shows up as its own pill above the sidebar footer — "Mac mini · Update available", then "Downloading (42%)", then "Restart to update" — and Settings → Connections shows the same next to the machine, with its version.
+- Restarting asks first, because it stops every process on that Mac. Then the pill reads "Restarting…" while the app over there relaunches, this window keeps knocking every second, and the moment the machine answers on the new version the pill is gone. If it never comes back within four minutes, the usual reconnect notice takes over.
+- Nothing changes for a machine running `hangar serve` on its own: it has no app to update, so it shows nothing. That path is a separate piece of work.
+
+## Fixes
+
+- Sharing a port said "Tailscale is not responding" on every Mac where Hangar had been started at login rather than from a terminal — which is most of them. The Tailscale command-line tool behaves differently when no shell launched it; Hangar now runs it the way a terminal would. Sharing works again without restarting Tailscale.
+- Right-clicking a process with one live port offers a plain "Share…". A process holding several — a dev server plus the helpers it spawns — lists them with the port its command announces first.
+
 # Hangar 0.13.0
 
 ## One list of projects, whatever Mac they run on
