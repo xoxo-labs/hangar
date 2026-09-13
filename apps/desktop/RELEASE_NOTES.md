@@ -1,3 +1,23 @@
+# Hangar 0.13.0
+
+## One list of projects, whatever Mac they run on
+
+- The sidebar no longer sorts projects under machine headers. A project is the unit; the Mac it runs on is a detail of the row. The same repo registered on two connected Macs shows as one card, in the slot your own registry gives it, with every Mac's processes in one flat list.
+- Rows from a paired Mac carry a small server glyph; hover it to see which Mac. A project that exists only on another Mac carries the glyph on its card instead, and its rows stay as clean as a local project's. When one card spans several paired Macs, each remote row also names its Mac.
+- Your registry comes first, in your order, then each paired Mac's own projects in that Mac's order. Dragging still reorders this Mac's projects; a paired Mac keeps the order it has.
+- Machine status, rename and remove moved to Settings → Connections. The sidebar keeps one quiet line, with a Retry, for a paired Mac that rejected its pairing or has been reconnecting for more than a few seconds. A brief blip says nothing.
+
+## Edit and add per Mac
+
+- Editing a project the sidebar merged opens with a machine column on the left, the way Settings lays out its categories. Each tab edits that Mac's own entry — path, processes, removal — and the header says which Mac you are on. Tabs wait while you have unsaved changes rather than losing them, and the box keeps its size as you switch.
+- Add process has the same column. It lists what the project already runs on that Mac, offers that Mac's package.json scripts, and marks the ones already in with a check. Right-click a merged card for Start all, Restart all and Stop all per Mac.
+
+## Smaller things
+
+- Inspecting a folder's package.json is cached per machine and shared between dialogs, so switching tabs is instant, and a dialog never claims "no package.json" about a folder it has not looked at yet.
+- Detected scripts stay open when editing a project; collapsed, they were easy to miss.
+- A project whose Mac was removed while an update was in flight stays in the list instead of vanishing.
+
 # Hangar 0.12.0
 
 ## Terminals that come back the way you left them
