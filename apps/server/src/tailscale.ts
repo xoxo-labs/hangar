@@ -211,11 +211,24 @@ export function stateFromStatus(status: BackendStatus): Omit<TailscaleState, "in
 
 type RunFailure = Error & { stdout?: string; stderr?: string }
 
+/**
+ * PURE. The environment the CLI runs with. The macOS app-bundle CLI decides
+ * from `SHLVL` whether a shell is driving it: without one it assumes a bare
+ * launch, tries to start the GUI, and answers "The Tailscale GUI failed to
+ * start" with exit 0 and no JSON — which a login-launched app or a headless
+ * `hangar serve` under launchd never has. Claiming a shell makes it talk to
+ * the running daemon like `tailscale` in a terminal does.
+ */
+export function cliEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return env.SHLVL === undefined ? { ...env, SHLVL: "1" } : env
+}
+
 function run(args: string[]): Promise<{ stdout: string; stderr: string }> {
   const bin = tailscaleBin()
   if (bin === null) return Promise.reject(new Error("Tailscale is not installed on this machine"))
   return new Promise((resolve, reject) => {
-    execFile(bin, args, { encoding: "utf8", timeout: EXEC_TIMEOUT_MS }, (error, stdout, stderr) => {
+    const options = { encoding: "utf8" as const, timeout: EXEC_TIMEOUT_MS, env: cliEnv(process.env) }
+    execFile(bin, args, options, (error, stdout, stderr) => {
       if (error) reject(Object.assign(error, { stdout, stderr }) as RunFailure)
       else resolve({ stdout, stderr })
     })

@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import type { ServeConfig } from "./tailscale.ts"
 import {
+  cliEnv,
   funnelDenied,
   pickServePort,
   readShares,
@@ -216,4 +217,11 @@ test("TAILSCALE_BIN wins the binary lookup, but only when it exists", () => {
     if (previous === undefined) delete process.env.TAILSCALE_BIN
     else process.env.TAILSCALE_BIN = previous
   }
+})
+
+test("the CLI is run as if from a shell, so the app-bundle binary talks to the daemon", () => {
+  assert.equal(cliEnv({ HOME: "/Users/x" }).SHLVL, "1")
+  assert.equal(cliEnv({ HOME: "/Users/x", SHLVL: "3" }).SHLVL, "3")
+  const env = { HOME: "/Users/x", SHLVL: "3" }
+  assert.equal(cliEnv(env), env)
 })
