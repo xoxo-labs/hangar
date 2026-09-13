@@ -35,6 +35,7 @@ import { SessionManager } from "./sessions.ts"
 import { loadSettings, saveSettings } from "./settings.ts"
 import { listShares, startShare, stopShare, stopOwnShares, tailscaleState } from "./tailscale.ts"
 import { serverVersion } from "./version.ts"
+import { connectDesktopBridge } from "./desktop-bridge.ts"
 import { resolveWebRoot, serveWebUi } from "./webui.ts"
 
 const LOOPBACK_ADDRESSES = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"])
@@ -503,6 +504,8 @@ export function serve(port: number, hostOverride?: string): void {
       authSessions: listSessions(),
       shares,
       tailscale,
+      version: serverVersion(),
+      desktopUpdate: desktop.state(),
     }
   }
   const broadcastState = (): void => {
@@ -513,6 +516,9 @@ export function serve(port: number, hostOverride?: string): void {
       // The Spotlight snapshot must never break state broadcasting.
     }
   }
+  // The desktop app's updater, relayed for every client. Wired after
+  // broadcastState so its first snapshot can go straight out.
+  const desktop = connectDesktopBridge(() => broadcastState())
 
   const manager = new SessionManager(broadcast, broadcastState, loadSettings)
 
@@ -927,6 +933,9 @@ export function serve(port: number, hostOverride?: string): void {
       case "revokeAuthSession":
         revokeSession(msg.id)
         broadcastState()
+        return
+      case "desktopUpdate":
+        desktop.request(msg.action)
         return
       case "sharePort":
       case "unsharePort": {

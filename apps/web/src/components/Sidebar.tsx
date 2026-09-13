@@ -218,7 +218,23 @@ export function Sidebar({
       <div className="flex flex-none flex-col gap-1 border-t border-surface-5 p-2">
         {/* Above the footer row, full width: complaints said the old 30px icon
          * was invisible. Appearing shifts the row below, which is the point. */}
-        <SidebarUpdateButton update={update} />
+        <SidebarUpdateButton
+          update={update}
+          onDownload={() => void window.hangarDesktop?.downloadUpdate()}
+          onInstall={() => void window.hangarDesktop?.installUpdate()}
+        />
+        {Object.values(connections)
+          .filter((connection) => connection.config.id !== LOCAL_CONN_ID)
+          .map((connection) => (
+            <SidebarUpdateButton
+              key={connection.config.id}
+              update={connection.desktopUpdate}
+              restarting={isRestarting(connection)}
+              machine={machineLabel(connection)}
+              onDownload={() => actions.desktopUpdate(connection.config.id, "download")}
+              onInstall={() => actions.desktopUpdate(connection.config.id, "install")}
+            />
+          ))}
         <div className="flex items-center gap-1">
           <button
             type="button"
@@ -263,6 +279,11 @@ export function Sidebar({
   )
 }
 
+/** Still within the window an install restart is given to bring the machine back. */
+function isRestarting(connection: ConnectionState): boolean {
+  return connection.restarting !== null && Date.now() - connection.restarting.since < actions.RESTART_WAIT_MS
+}
+
 /** How long a paired Mac may be quiet before the sidebar says so. */
 const CONNECTION_NOTICE_GRACE_MS = 5000
 
@@ -272,8 +293,11 @@ const CONNECTION_NOTICE_GRACE_MS = 5000
  * for. A brief reconnect stays silent; managing machines is a Settings matter.
  */
 function ConnectionNotices({ connections }: { connections: Record<string, ConnectionState> }) {
+  // A machine restarting into an update is expected to be quiet; its pill
+  // already says so, and a "reconnecting" line under it would read as trouble.
   const troubled = Object.values(connections).filter(
-    (connection) => connection.config.id !== LOCAL_CONN_ID && connection.status !== "connected",
+    (connection) =>
+      connection.config.id !== LOCAL_CONN_ID && connection.status !== "connected" && !isRestarting(connection),
   )
   if (troubled.length === 0) return null
   return (
@@ -561,6 +585,7 @@ function ProjectRow({
                 cmd={proc.shell ? "Interactive shell" : proc.cmd}
                 description={proc.description}
                 session={byId.get(sessionId(part.project.name, proc.name))}
+                expectedPorts={(proc.expectedPorts ?? []).filter((guess) => guess.certain).map((guess) => guess.port)}
                 machine={
                   part.connId === LOCAL_CONN_ID
                     ? undefined
@@ -631,9 +656,24 @@ function mergedMenuItems(
  * The process menu only navigates into sharing. Reach choices and every on/off
  * action live in the modal, so this menu cannot drift into a second sharing UI.
  */
-function shareMenuItems(share: ActiveShare | undefined, ports: number[], open: (port: number) => void): MenuItem[] {
-  const available = [...new Set([...(share === undefined ? [] : [share.port]), ...ports])]
+function shareMenuItems(
+  share: ActiveShare | undefined,
+  ports: number[],
+  expected: number[],
+  open: (port: number) => void,
+): MenuItem[] {
+  // A live share first, then the ports the command itself announces, then
+  // whatever else the process tree opened — a dev server's helpers, say.
+  const available = [
+    ...new Set([
+      ...(share === undefined ? [] : [share.port]),
+      ...expected.filter((port) => ports.includes(port)),
+      ...ports,
+    ]),
+  ]
   if (available.length === 0) return []
+  // One port is the overwhelming case, and naming it there is just noise.
+  if (available.length === 1) return [MENU_SEPARATOR, { label: "Share…", onSelect: () => open(available[0]!) }]
   return [MENU_SEPARATOR, ...available.map((port) => ({ label: `Share :${port}…`, onSelect: () => open(port) }))]
 }
 
@@ -643,6 +683,7 @@ function ProcessRow({
   cmd,
   description,
   session,
+  expectedPorts,
   machine,
 }: {
   project: string
@@ -650,6 +691,8 @@ function ProcessRow({
   cmd: string
   description: string | undefined
   session: SessionInfo | undefined
+  /** The ports the command announces, most certain first; they lead the share menu. */
+  expectedPorts: number[]
   /** Set on a row that runs on a paired Mac: which one, and how loudly to say so. */
   machine: { label: string; icon: boolean; tag: boolean } | undefined
 }) {
@@ -667,7 +710,12 @@ function ProcessRow({
   const share = useShareForSession(id)
   // Ports are detected on a live process. An exited process can still open the
   // modal for a live share so the user always has a route to stop it.
-  const shareItems = shareMenuItems(share, running ? (session?.metrics?.ports ?? []) : [], setSharingPort)
+  const shareItems = shareMenuItems(
+    share,
+    running ? (session?.metrics?.ports ?? []) : [],
+    expectedPorts,
+    setSharingPort,
+  )
 
   return (
     <li

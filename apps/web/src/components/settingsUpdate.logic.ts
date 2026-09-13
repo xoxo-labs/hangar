@@ -60,7 +60,7 @@ export function describeCheckResult(state: DesktopUpdateState): { title: string;
 }
 
 export type SidebarUpdate = {
-  kind: Exclude<UpdateActionKind, "check">
+  kind: Exclude<UpdateActionKind, "check"> | "restarting"
   /** Non-null exactly while a download runs. */
   percent: number | null
   /** Short copy shown inside the pill itself. */
@@ -76,7 +76,12 @@ export type SidebarUpdate = {
  * Checking stays in Settings — the sidebar only appears when a single click
  * has something to do.
  */
-export function resolveSidebarUpdate(state: DesktopUpdateState | null): SidebarUpdate | null {
+export function resolveSidebarUpdate(state: DesktopUpdateState | null, restarting = false): SidebarUpdate | null {
+  // A machine on its way back from an install has nothing to click and, once
+  // it is down, no updater state to show either; the wait itself is the news.
+  if (restarting) {
+    return { kind: "restarting", percent: null, text: "Restarting…", label: "Restarting to install the update" }
+  }
   if (state === null) return null
   if (state.status === "downloading") {
     const percent = clampPercent(state.downloadPercent)

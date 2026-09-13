@@ -392,6 +392,8 @@ export type ClientMsg =
   | { type: "createPairingToken" }
   /** Revoke a paired client's session token. */
   | { type: "revokeAuthSession"; id: string }
+  /** Drives the desktop app supervising this server: check the feed, download, or restart into the download. */
+  | { type: "desktopUpdate"; action: DesktopUpdateAction }
   /**
    * Publish a detected port through Tailscale. `session` is bare (the owning
    * machine's own id), because the share belongs to the machine: the client
@@ -418,6 +420,14 @@ export type ServerMsg =
       shares?: PortShare[]
       /** Whether this machine can share at all, for the offer/repair UI. Absent on older servers. */
       tailscale?: TailscaleState
+      /** This server's version, so a paired client can tell when a restart landed. Absent on older servers. */
+      version?: string
+      /**
+       * The desktop app's updater, when one supervises this server: a paired
+       * client drives it through `desktopUpdate`. Null for a headless server,
+       * absent on older servers.
+       */
+      desktopUpdate?: DesktopUpdateState | null
     }
   /** Lightweight resource updates, kept out of full state broadcasts. */
   | { type: "metrics"; id: SessionId; runId: string; metrics: SessionMetrics }
@@ -442,6 +452,8 @@ export function sessionId(project: string, process: string): SessionId {
 }
 
 /** Desktop auto-update state, pushed from the Electron main process to the renderer. */
+export type DesktopUpdateAction = "check" | "download" | "install"
+
 export type DesktopUpdateStatus =
   | "disabled"
   | "idle"

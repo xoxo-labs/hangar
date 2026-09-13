@@ -143,3 +143,17 @@ describe("describeCheckResult", () => {
     assert.match(describeCheckResult(state({ status: "error" })).body, /could not reach/)
   })
 })
+
+describe("resolveSidebarUpdate while restarting", () => {
+  it("shows the wait, whatever the updater last said", () => {
+    assert.equal(resolveSidebarUpdate(null, true)?.kind, "restarting")
+    assert.equal(
+      resolveSidebarUpdate(state({ status: "downloaded", downloadedVersion: "1.2.3" }), true)?.text,
+      "Restarting…",
+    )
+  })
+
+  it("is inert once the machine is back", () => {
+    assert.equal(resolveSidebarUpdate(null, false), null)
+  })
+})

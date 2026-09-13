@@ -2,13 +2,14 @@ import { LOCAL_CONN_ID, parseScoped } from "@hangar/client-core"
 import {
   sessionId,
   type AppSettings,
+  type DesktopUpdateAction,
   type PairingInfo,
   type PortShareKind,
   type Project,
   type SessionId,
   type SessionInfo,
 } from "@hangar/contracts"
-import { requestPairingToken, sendTo } from "./connections/manager"
+import { expectRestart, requestPairingToken, sendTo } from "./connections/manager"
 import { useStore } from "./store"
 import { preferredTerminalSize } from "./terminals"
 import { send } from "./ws"
@@ -147,4 +148,21 @@ export function sharePort(connId: string, port: number, kind: PortShareKind, ses
 /** Withdraws a share. Serve config Hangar did not create is left alone. */
 export function unsharePort(connId: string, port: number): void {
   sendTo(connId, { type: "unsharePort", port })
+}
+
+/** How long a machine gets to come back on the new version before the wait is given up. */
+export const RESTART_WAIT_MS = 4 * 60_000
+
+/**
+ * Drives the desktop updater on any machine — check, download, or restart into
+ * the download. An install is a planned outage: the connection is marked as
+ * restarting and told to retry quickly until the machine answers again.
+ */
+export function desktopUpdate(connId: string, action: DesktopUpdateAction): void {
+  if (action === "install") {
+    const connection = useStore.getState().connections[connId]
+    useStore.getState().setRestarting(connId, { fromVersion: connection?.version ?? null, since: Date.now() })
+    expectRestart(connId, RESTART_WAIT_MS)
+  }
+  sendTo(connId, { type: "desktopUpdate", action })
 }

@@ -197,6 +197,23 @@ only ever sees **scoped** values:
 - Command palette: entries already enumerate scoped projects; ensure labels go
   through `displayName` and remote entries mention the machine.
 
+## Updating a paired Mac
+
+A paired Mac that runs the desktop app can be updated from any client. The
+Electron shell spawns its server with a Node IPC channel (`stdio[3]`), pushes
+its updater state down it, and the server puts that state on the wire as
+`desktopUpdate` in every `state` message, next to its own `version`. A client
+sends `{ type: "desktopUpdate", action }` (`check` | `download` | `install`)
+to the machine, which the server relays up the channel; the answer is the
+next state broadcast. Installing restarts the app over there, so the client
+marks the connection as restarting, keeps its retries at one second for up
+to four minutes (`expectRestart`), and treats the first `state` back with a
+different `version` as the landing. The sidebar shows one pill per machine
+("Mac mini · Update available", "Downloading (42%)", "Restart to update",
+"Restarting…"); Settings → Connections carries the same as a line and a
+button. A headless `hangar serve` has no updater and reports `null`; nothing
+is shown for it. See `apps/server/src/desktop-bridge.ts`.
+
 ## Headless
 
 The server serves the built web UI on its own port, so a Mac with no display

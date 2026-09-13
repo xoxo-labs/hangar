@@ -18,6 +18,12 @@ export type Supervisor = {
   retry: () => void
   /** Ambient wakeup (back online, tab visible, app foregrounded): only revives a blocked connection. */
   wake: () => void
+  /**
+   * The machine is about to restart on purpose (an update install): for the
+   * next `ms` every retry comes after one second instead of climbing the
+   * ladder, so a fifteen-second restart does not read as a minute of silence.
+   */
+  expectRestart: (ms: number) => void
   send: (msg: ClientMsg) => boolean
   dispose: () => void
 }
@@ -42,6 +48,8 @@ export function createSupervisor(initial: ConnectionConfig, hooks: SupervisorHoo
   let blocked = false
   let disposed = false
   let connectedAt = 0
+  /** Until when retries stay flat at one second — see `expectRestart`. */
+  let fastUntil = 0
   /** Bumped whenever an in-flight attempt is superseded (retry, config change, dispose). */
   let generation = 0
 
@@ -70,7 +78,7 @@ export function createSupervisor(initial: ConnectionConfig, hooks: SupervisorHoo
 
   const scheduleRetry = (): void => {
     if (disposed || blocked || timer !== null) return
-    const delay = BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)] ?? 1_000
+    const delay = Date.now() < fastUntil ? 1_000 : (BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)] ?? 1_000)
     attempt += 1
     status("reconnecting", null)
     timer = setTimeout(() => {
@@ -174,6 +182,9 @@ export function createSupervisor(initial: ConnectionConfig, hooks: SupervisorHoo
       attempt = 0
       drop()
       void open()
+    },
+    expectRestart: (ms) => {
+      fastUntil = Date.now() + ms
     },
     send: (msg) => {
       if (socket === null || socket.readyState !== WebSocket.OPEN) return false

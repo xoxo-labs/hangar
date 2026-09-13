@@ -127,9 +127,16 @@ function spawnServer() {
   const executable = app.isPackaged ? process.execPath : "node"
   const env = app.isPackaged ? { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...appIntentsEnv() } : process.env
   const child = spawn(executable, [SERVER_ENTRY, "serve", "--port", String(PORT)], {
-    stdio: "inherit",
+    // The fourth slot is a Node IPC channel: the server relays this app's
+    // updater to every client it serves, paired Macs included, and hands
+    // their update requests back. See apps/server/src/desktop-bridge.ts.
+    stdio: ["inherit", "inherit", "inherit", "ipc"],
     detached: true,
     env,
+  })
+  child.on("message", (msg) => {
+    if (serverChild !== child) return
+    void handleServerMessage(msg)
   })
 
   // A server that survives this long has genuinely started; later exits are
@@ -157,6 +164,41 @@ function spawnServer() {
   })
 
   return child
+}
+
+/** The current updater state, or the honest "disabled" one before the updater loads. */
+function currentUpdateState() {
+  return updater ? updater.getState() : disabledUpdateState()
+}
+
+/** Pushes the updater state to the server child, which broadcasts it to its clients. */
+function pushUpdateState(state = currentUpdateState()) {
+  const child = serverChild
+  if (!child || !child.connected) return
+  try {
+    child.send({ type: "desktopUpdateState", state })
+  } catch {
+    // The channel closes with the child; the exit handler deals with that.
+  }
+}
+
+/** A message from the server child over its IPC channel. */
+async function handleServerMessage(msg) {
+  if (!msg || typeof msg !== "object") return
+  if (msg.type === "hello") {
+    pushUpdateState()
+    return
+  }
+  if (msg.type === "desktopUpdate") {
+    if (!updater) {
+      pushUpdateState()
+      return
+    }
+    // A paired Mac asked; the answer is the state change the updater broadcasts.
+    if (msg.action === "check") await updater.check()
+    else if (msg.action === "download") await updater.download()
+    else if (msg.action === "install") await updater.install()
+  }
 }
 
 function scheduleServerRestart() {
@@ -799,6 +841,7 @@ async function startUpdater() {
       mockFeedUrl: MOCK_UPDATE_URL,
       broadcast: (state) => {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("hangar:update-state", state)
+        pushUpdateState(state)
       },
       // quitAndInstall's app.quit() would hard-kill the server child before the
       // will-quit handler runs; stop it here so it gets SIGTERM and grace.

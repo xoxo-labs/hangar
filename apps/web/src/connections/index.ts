@@ -1,5 +1,6 @@
 export {
   addConnection,
+  expectRestart,
   listConnections,
   removeConnection,
   requestPairingToken,

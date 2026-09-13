@@ -94,6 +94,11 @@ export function retryConnection(connId: string): void {
   supervisors.get(connId)?.retry()
 }
 
+/** The machine is restarting on purpose: keep its retries quick for a while. */
+export function expectRestart(connId: string, ms: number): void {
+  supervisors.get(connId)?.expectRestart(ms)
+}
+
 /** False when the connection has no open socket; the message is dropped, as before. */
 export function sendTo(connId: string, msg: ClientMsg): boolean {
   return supervisors.get(connId)?.send(msg) ?? false

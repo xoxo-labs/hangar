@@ -13,6 +13,7 @@ import { Field, TextInput } from "../ui/Field"
 import { IconButton } from "../ui/IconButton"
 import { ToggleRow } from "../ui/ToggleRow"
 import { Dot } from "./Dot"
+import { resolveUpdateAction, updateStatusLine } from "./settingsUpdate.logic"
 
 /** One boxed row, the same surface the toggle rows use. */
 const CARD = "w-full rounded-md border border-surface-5 bg-surface-a2 p-[9px]"
@@ -275,15 +276,17 @@ function MachineRow({ connection }: { connection: ConnectionState }) {
         <small className="truncate text-xs text-surface-9">
           <code className={cx(MONO, "bg-transparent! p-0!")}>
             {config.host}:{config.port}
-          </code>{" "}
-          · {connection.error ?? CONNECTION_LABEL[status]}
+          </code>
+          {connection.version !== null && ` · v${connection.version}`} · {connection.error ?? CONNECTION_LABEL[status]}
         </small>
+        <MachineUpdateLine connection={connection} />
       </span>
       {status === "blocked" && (
         <Button className="flex-none" onClick={() => retryConnection(config.id)}>
           Retry
         </Button>
       )}
+      <MachineUpdateButton connection={connection} />
       {!editing && (
         <IconButton
           className="size-[26px] flex-none"
@@ -309,6 +312,63 @@ function MachineRow({ connection }: { connection: ConnectionState }) {
         {confirming ? "Really remove?" : "Remove"}
       </Button>
     </div>
+  )
+}
+
+/** Whether an install restart is still being waited for. */
+function restartingOn(connection: ConnectionState): boolean {
+  return connection.restarting !== null && Date.now() - connection.restarting.since < actions.RESTART_WAIT_MS
+}
+
+/**
+ * The paired Mac's own updater, one line under its address: what the desktop
+ * app over there reports, or nothing at all for a headless server.
+ */
+function MachineUpdateLine({ connection }: { connection: ConnectionState }) {
+  const update = connection.desktopUpdate
+  if (restartingOn(connection)) {
+    return <small className="text-xs text-accent-11">Restarting to install the update…</small>
+  }
+  if (update === null || update.status === "idle" || update.status === "disabled") return null
+  return <small className="text-xs text-surface-9">{updateStatusLine(update)}</small>
+}
+
+/** Download, restart or retry on the paired Mac — the same single button Settings → About has for this Mac. */
+function MachineUpdateButton({ connection }: { connection: ConnectionState }) {
+  const [confirming, setConfirming] = useState(false)
+  const update = connection.desktopUpdate
+  if (update === null || restartingOn(connection) || connection.status !== "connected") return null
+  const action = resolveUpdateAction(update)
+  if (action === null || action.kind === "check") return null
+  const on = machineLabel(connection)
+  if (action.kind === "install") {
+    return (
+      <Button
+        variant="primary"
+        className={cx("flex-none", confirming && "bg-accent-10! text-white!")}
+        title={`Stops every process on ${on}, then Hangar restarts there on the new version`}
+        onBlur={() => setConfirming(false)}
+        onClick={() => {
+          if (!confirming) {
+            setConfirming(true)
+            return
+          }
+          setConfirming(false)
+          actions.desktopUpdate(connection.config.id, "install")
+        }}
+      >
+        {confirming ? `Really restart ${on}?` : "Restart & install"}
+      </Button>
+    )
+  }
+  return (
+    <Button
+      variant="primary"
+      className="flex-none"
+      onClick={() => actions.desktopUpdate(connection.config.id, "download")}
+    >
+      {action.label}
+    </Button>
   )
 }
 

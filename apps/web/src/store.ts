@@ -5,6 +5,7 @@ import {
   sessionId,
   type AppSettings,
   type AuthSessionInfo,
+  type DesktopUpdateState,
   type HistoryOutputEvent,
   type PortShare,
   type Project,
@@ -33,6 +34,16 @@ export type ConnectionState = {
   shares: PortShare[]
   /** Whether this machine can share a port; null until the server says. */
   tailscale: TailscaleState | null
+  /** The server's version; null until it says (older servers never do). */
+  version: string | null
+  /** The desktop app's updater on that machine; null for a headless server or until it says. */
+  desktopUpdate: DesktopUpdateState | null
+  /**
+   * An install was requested: the machine is expected to drop and come back on
+   * another version. Cleared by the first `state` that reports a version other
+   * than the one it left on, or by the UI once it has waited long enough.
+   */
+  restarting: { fromVersion: string | null; since: number } | null
   /** A `state` has landed at least once, so the next one is a reconnect snapshot. */
   hasState: boolean
   /** Set while a reconnect snapshot is pending: its new sessions must not grab focus. */
@@ -64,6 +75,9 @@ function freshConnection(config: ConnectionConfig): ConnectionState {
     authSessions: [],
     shares: [],
     tailscale: null,
+    version: null,
+    desktopUpdate: null,
+    restarting: null,
     hasState: false,
     suppressFocus: false,
   }
@@ -223,12 +237,16 @@ type Store = {
       authSessions?: AuthSessionInfo[]
       shares?: PortShare[]
       tailscale?: TailscaleState
+      version?: string
+      desktopUpdate?: DesktopUpdateState | null
     },
   ) => void
   updateMetrics: (id: SessionId, runId: string, metrics: SessionMetrics) => void
   /** Adds a connection, or replaces its config while keeping what it has received. */
   upsertConnection: (config: ConnectionConfig) => void
   setConnectionStatus: (connId: string, status: ConnectionStatus, error?: string | null) => void
+  /** Marks a machine as restarting into an update, or clears the mark. */
+  setRestarting: (connId: string, restarting: ConnectionState["restarting"]) => void
   /** Removes a connection and purges everything scoped to it. */
   dropConnection: (connId: string) => void
   setActive: (id: SessionId | null) => void
@@ -441,6 +459,15 @@ export const useStore = create<Store>((set, get) => ({
             // An older server sends nothing here; keeping the last answer would
             // claim a sharing capability this machine never reported.
             tailscale: incoming.tailscale ?? null,
+            version: incoming.version ?? null,
+            desktopUpdate: incoming.desktopUpdate ?? null,
+            // Back on a different version: the restart it was waiting for landed.
+            restarting:
+              connection.restarting !== null &&
+              incoming.version !== undefined &&
+              incoming.version !== connection.restarting.fromVersion
+                ? null
+                : connection.restarting,
             hasState: true,
             suppressFocus: false,
           },
@@ -483,6 +510,13 @@ export const useStore = create<Store>((set, get) => ({
           [config.id]: existing ? { ...existing, config } : freshConnection(config),
         },
       }
+    }),
+
+  setRestarting: (connId, restarting) =>
+    set((state) => {
+      const connection = state.connections[connId]
+      if (!connection) return state
+      return { connections: { ...state.connections, [connId]: { ...connection, restarting } } }
     }),
 
   setConnectionStatus: (connId, status, error = null) =>
